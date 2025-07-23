@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 )
 
 func childProcessEntry() {
@@ -18,10 +19,12 @@ func childProcessEntry() {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
 		die(fmt.Errorf("%s failed: %v", pname, err))
 	}
+	// Ignore errors (bash exits with an error if last executed command
+	// exited with an error)
+	cmd.Wait()
 }
 
 func die(err error) {
@@ -51,7 +54,12 @@ func main() {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWNS |
+			syscall.CLONE_NEWIPC |
+			syscall.CLONE_NEWPID |
+			syscall.CLONE_NEWUSER,
+	}
 	if err := cmd.Start(); err != nil {
 		die(fmt.Errorf("failed to start jailed child process: %v", err))
 	}
