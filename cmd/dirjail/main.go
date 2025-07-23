@@ -20,15 +20,15 @@ func childProcessEntry() {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		die(fmt.Errorf("%s failed: %v", pname, err))
+		die("%s failed: %v", pname, err)
 	}
 	// Ignore errors (bash exits with an error if last executed command
 	// exited with an error)
 	cmd.Wait()
 }
 
-func die(err error) {
-	fmt.Fprintln(os.Stderr, "Error:", err)
+func die(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
 	os.Exit(1)
 }
 
@@ -47,7 +47,7 @@ func main() {
 
 	err := flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
-		die(err)
+		die("failed to parse command line: %v", err)
 	}
 
 	cmd := exec.Command(os.Args[0], "-child")
@@ -59,6 +59,8 @@ func main() {
 			syscall.CLONE_NEWIPC |
 			syscall.CLONE_NEWPID |
 			syscall.CLONE_NEWUSER,
+		// Keep using current user uid an gid in the jail (so the user is
+		// recognized as the same user)
 		UidMappings: []syscall.SysProcIDMap{
 			{
 				ContainerID: os.Getuid(),
@@ -73,11 +75,12 @@ func main() {
 				Size:        1,
 			},
 		},
+		// TODO: disalow changing of the group memership
 	}
 	if err := cmd.Start(); err != nil {
-		die(fmt.Errorf("failed to start jailed child process: %v", err))
+		die("failed to start jailed child process: %v", err)
 	}
 	if err := cmd.Wait(); err != nil {
-		die(fmt.Errorf("jailed process exited with error: %v", err))
+		die("jailed process exited with error: %v", err)
 	}
 }
