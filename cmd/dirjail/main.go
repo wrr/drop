@@ -59,6 +59,20 @@ func main() {
 			syscall.CLONE_NEWIPC |
 			syscall.CLONE_NEWPID |
 			syscall.CLONE_NEWUSER,
+		UidMappings: []syscall.SysProcIDMap{
+			{
+				ContainerID: os.Getuid(),
+				HostID:      os.Getuid(),
+				Size:        1,
+			},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{
+				ContainerID: os.Getgid(),
+				HostID:      os.Getgid(),
+				Size:        1,
+			},
+		},
 	}
 	if err := cmd.Start(); err != nil {
 		die(fmt.Errorf("failed to start jailed child process: %v", err))
