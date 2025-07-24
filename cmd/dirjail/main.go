@@ -3,22 +3,23 @@ package main
 import (
 	"flag"
 	"fmt"
+	"golang.org/x/sys/unix" // Needed only for CAP_SYS_ADMIN const
+	"kernel.org/pub/linux/libs/security/libcap/cap"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"syscall"
-	"golang.org/x/sys/unix" 	// Needed only for CAP_SYS_ADMIN const
-	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
 type JailPaths struct {
-	jailDir    string
-	emptyDir   string
-	emptyFile  string
-	newRootDir string
-	newHomeDir string
-	homeDir    string
+	jailDir     string
+	emptyDir    string
+	emptyFile   string
+	rootDir     string
+	homeDir     string
+	tmpDir      string
+	hostHomeDir string
 }
 
 func die(format string, args ...interface{}) {
@@ -65,14 +66,19 @@ func initFS() JailPaths {
 
 	jailDir := filepath.Join(cwd, ".dirjail")
 	paths := JailPaths{
-		jailDir:    jailDir,
-		emptyDir:   filepath.Join(jailDir, "empty"),
-		emptyFile:  filepath.Join(jailDir, "empty_file"),
-		newRootDir: filepath.Join(jailDir, "root"),
-		newHomeDir: filepath.Join(jailDir, "home"),
-		homeDir:    homeDir(),
+		jailDir:     jailDir,
+		emptyDir:    filepath.Join(jailDir, "empty"),
+		emptyFile:   filepath.Join(jailDir, "empty_file"),
+		rootDir:     filepath.Join(jailDir, "root"),
+		homeDir:     filepath.Join(jailDir, "home"),
+		tmpDir:      filepath.Join(jailDir, "tmp"),
+		hostHomeDir: homeDir(),
 	}
 
+	// Create necessary directories
+	if err := os.MkdirAll(paths.homeDir, 0755); err != nil {
+		die("failed to create directory %s: %v", paths.emptyDir, err)
+	}
 	if err := os.MkdirAll(paths.emptyDir, 0755); err != nil {
 		die("failed to create directory %s: %v", paths.emptyDir, err)
 	}
@@ -106,11 +112,14 @@ func childProcessEntry() {
 
 	syscall.Chdir("/")
 
-	mountDir("/", dirs.newRootDir, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
+	mountDir("/", dirs.rootDir, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
 	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
 		die("mount proc failed: %v", err)
 	}
+
+	homeDirDst := filepath.Join(dirs.rootDir, dirs.hostHomeDir)
+	mountDir(dirs.homeDir, homeDirDst, syscall.MS_BIND|syscall.MS_REC)
 
 	// Drop CAP_SYS_ADMIN in a user namespace that was needed to execute
 	// mounts. This is done just in case and can be revisited later,
