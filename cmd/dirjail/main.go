@@ -131,6 +131,8 @@ func childProcessEntry() {
 	// normal practice.
 	dropAllCaps()
 
+	os.Setenv("debian_chroot", "dirjail")
+
 	// TODO: use SHELL env variable
 	pname := "bash"
 	cmd := exec.Command(pname)
@@ -166,7 +168,8 @@ func main() {
 		die("failed to parse command line: %v", err)
 	}
 
-	// /proc/self/exe would be better, because it handles the case of the current binary being removed
+	// /proc/self/exe would be better, because it handles the case of
+	// the current binary being removed
 	cmd := exec.Command(os.Args[0], "-child")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
