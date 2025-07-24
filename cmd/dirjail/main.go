@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"golang.org/x/sys/unix" // Needed only for CAP_SYS_ADMIN const
+	"golang.org/x/sys/unix" // Needed only for CAP_* consts
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 	"os"
 	"os/exec"
@@ -13,13 +13,14 @@ import (
 )
 
 type JailPaths struct {
-	jailDir     string
-	emptyDir    string
-	emptyFile   string
-	rootDir     string
-	homeDir     string
-	tmpDir      string
-	hostHomeDir string
+	cwd       string
+	base      string
+	root      string
+	home      string
+	tmp       string
+	hostHome  string
+	emptyDir  string
+	emptyFile string
 }
 
 func die(format string, args ...interface{}) {
@@ -64,20 +65,21 @@ func initFS() JailPaths {
 		die("get current directory failed: %v", err)
 	}
 
-	jailDir := filepath.Join(cwd, ".dirjail")
+	base := filepath.Join(cwd, ".dirjail")
 	paths := JailPaths{
-		jailDir:     jailDir,
-		emptyDir:    filepath.Join(jailDir, "empty"),
-		emptyFile:   filepath.Join(jailDir, "empty_file"),
-		rootDir:     filepath.Join(jailDir, "root"),
-		homeDir:     filepath.Join(jailDir, "home"),
-		tmpDir:      filepath.Join(jailDir, "tmp"),
-		hostHomeDir: homeDir(),
+		cwd:       cwd,
+		base:      base,
+		root:      filepath.Join(base, "root"),
+		home:      filepath.Join(base, "home"),
+		tmp:       filepath.Join(base, "tmp"),
+		hostHome:  homeDir(),
+		emptyDir:  filepath.Join(base, "empty"),
+		emptyFile: filepath.Join(base, "empty_file"),
 	}
 
 	// Create necessary directories
-	if err := os.MkdirAll(paths.homeDir, 0755); err != nil {
-		die("failed to create directory %s: %v", paths.emptyDir, err)
+	if err := os.MkdirAll(paths.home, 0755); err != nil {
+		die("failed to create directory %s: %v", paths.home, err)
 	}
 	if err := os.MkdirAll(paths.emptyDir, 0755); err != nil {
 		die("failed to create directory %s: %v", paths.emptyDir, err)
@@ -112,23 +114,27 @@ func childProcessEntry() {
 
 	syscall.Chdir("/")
 
-	mountDir("/", dirs.rootDir, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
+	mountDir("/", dirs.root, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
 	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
 		die("mount proc failed: %v", err)
 	}
 
-	homeDirDst := filepath.Join(dirs.rootDir, dirs.hostHomeDir)
-	mountDir(dirs.homeDir, homeDirDst, syscall.MS_BIND|syscall.MS_REC)
+	homeDst := filepath.Join(dirs.root, dirs.hostHome)
+	mountDir(dirs.home, homeDst, syscall.MS_BIND|syscall.MS_REC)
 
-	// Drop CAP_SYS_ADMIN in a user namespace that was needed to execute
-	// mounts. This is done just in case and can be revisited later,
-	// currently there is no case which shows that dropping
-	// CAP_SYS_ADMIN is required to guarantee proper isolation. This is
-	// admin in a user namespace, so has only as much privileges as the
-	// user that created the namespace, keeping the admin would be more
-	// or less equivalent of running as root in a Docker container - a
-	// normal practice.
+	if err := syscall.Chroot(dirs.root); err != nil {
+		die("chroot to %s failed: %v", dirs.root, err)
+	}
+
+	// Drop all the capabilities in the user namespace. This is done
+	// just in case and can be revisited later, currently there is no
+	// case which shows that dropping capabilities is required to
+	// guarantee proper isolation. Even with capabilities kept,
+	// processes in the namespace only have privileges that the user
+	// that created the namespace had, keeping the capabilities would be
+	// more or less equivalent of running as root in a Docker container
+	// - a normal practice.
 	dropAllCaps()
 
 	os.Setenv("debian_chroot", "dirjail")
@@ -181,20 +187,20 @@ func main() {
 			syscall.CLONE_NEWUSER),
 		// Code running in a user namespace just after clone() and before
 		// execve() system calls has all capabilities in this namespace.
-		// This allows such code to setup the namespace with all required
-		// mount() calls.
+		// This allows such code to setup the namespace with mount()
+		// and chroot() calls.
 		// Unfortunately, GO doesn't allow to execute any user provided
 		// code between clone() and execve()
 		// (https://github.com/golang/go/issues/12125)
 		//
 		// The first process executed within the namespace with execve no
-		// longer has all capabilities in the namespace (unless it has
-		// root uid, but we don't want this). We need to pass
-		// CAP_SYS_ADMIN capability to this process, so the process can
-		// call mount(), and then we drop CAP_SYS_ADMIN.  For the detailed
-		// description of how capabilities are passed and dropped in the
-		// user namespace see: man 7 user_namespaces
-		AmbientCaps: []uintptr{unix.CAP_SYS_ADMIN},
+		// longer has any capabilities in the namespace (unless it has
+		// root uid, but we don't want this). We need to pass required
+		// capabilities to this process, so the process can call mount()
+		// and chroot(), and then we drop these capabilities. For the
+		// detailed description of how capabilities are propagated
+		// in the user namespace see: man 7 user_namespaces
+		AmbientCaps: []uintptr{unix.CAP_SYS_ADMIN, unix.CAP_SYS_CHROOT},
 
 		// Keep using current user uid an gid in the jail (so the user is
 		// recognized as the same user)
