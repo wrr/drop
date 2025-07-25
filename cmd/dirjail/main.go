@@ -164,17 +164,25 @@ func childProcessEntry() {
 	mountEntries(dirs.hostHome, dirs.home, cfg.HomeVisible, true)
 	mountEntries(dirs.hostHome, dirs.home, cfg.HomeWriteable, false)
 
-	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
-		dief("mount proc failed: %v", err)
-	}
-
 	mountDir("/", dirs.root, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
 	homeDst := filepath.Join(dirs.root, dirs.hostHome)
 	mountDir(dirs.home, homeDst, syscall.MS_BIND|syscall.MS_REC)
 
+	// Mount current working directory
+	mountDir(dirs.cwd, filepath.Join(dirs.root, dirs.cwd), syscall.MS_BIND|syscall.MS_REC)
+
 	if err := syscall.Chroot(dirs.root); err != nil {
 		dief("chroot to %s failed: %v", dirs.root, err)
+	}
+
+	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
+		dief("mount proc failed: %v", err)
+	}
+
+	// Change working directory to what it was originally
+	if err := syscall.Chdir(dirs.cwd); err != nil {
+		dief("chdir to %s failed: %v", dirs.cwd, err)
 	}
 
 	// Drop all the capabilities in the user namespace.
