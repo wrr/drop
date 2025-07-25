@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"syscall"
 
 	"github.com/wrr/dirjail/internal/config"
@@ -66,15 +68,55 @@ func homeDir() string {
 	return currentUser.HomeDir
 }
 
+func tmpDirName(cwd string) string {
+	dname := strings.ReplaceAll(cwd, "/", "-")
+	// Keep only a-z, A-Z, 0-9, and - characters
+	reg := regexp.MustCompile("[^a-zA-Z0-9-]")
+	return "dirjail" + reg.ReplaceAllString(dname, "") + "-"
+}
+
+func initTmpSubDir(paths *JailPaths) string {
+	dirNameFile := filepath.Join(paths.base, ".tmp")
+
+	// if dirNameFile exists, read its content
+	if data, err := os.ReadFile(dirNameFile); err == nil {
+		// No error.
+		dirName := strings.TrimSpace(string(data))
+
+		if dirName != "" {
+			// Check if directory exists, is owned by current user, and has 700 permissions
+			tmpSubDir := filepath.Join(os.TempDir(), dirName)
+
+			if stat, err := os.Stat(tmpSubDir); err == nil && stat.IsDir() {
+				if sysStats, ok := stat.Sys().(*syscall.Stat_t); ok {
+					currentUID := os.Getuid()
+					if int(sysStats.Uid) == currentUID && stat.Mode().Perm() == 0700 {
+						return tmpSubDir
+					}
+				}
+			}
+		}
+	}
+
+	// New tmp sub directory is needed.
+	tmpSubDir, err := os.MkdirTemp("", tmpDirName(paths.cwd))
+	if err != nil {
+		dief("failed to create temporary directory: %v", err)
+	}
+	dirName := filepath.Base(tmpSubDir)
+
+	// Write the directory name to the file, so the dir can be re-used by
+	// other dirjails with the same id
+	if err := os.WriteFile(dirNameFile, []byte(dirName), 0600); err != nil {
+		dief("failed to write to %v: %v", dirNameFile, err)
+	}
+	return tmpSubDir
+}
+
 func initFS() JailPaths {
 	cwd, err := os.Getwd()
 	if err != nil {
 		dief("get current directory failed: %v", err)
-	}
-
-	tmpSrc, err := os.MkdirTemp("", "dirjail-")
-	if err != nil {
-		dief("Failed to create temporary directory: %v", err)
 	}
 
 	base := filepath.Join(cwd, ".dirjail")
@@ -85,11 +127,11 @@ func initFS() JailPaths {
 		root:      root,
 		hostHome:  homeDir(),
 		home:      filepath.Join(base, "home"),
-		tmpSrc:    tmpSrc,
 		tmpDst:    filepath.Join(root, os.TempDir()),
 		emptyDir:  filepath.Join(base, "empty"),
 		emptyFile: filepath.Join(base, "empty_file"),
 	}
+	paths.tmpSrc = initTmpSubDir(&paths)
 
 	// Create necessary directories
 	if err := os.MkdirAll(paths.home, 0755); err != nil {
@@ -220,7 +262,6 @@ func childProcessEntry() {
 }
 
 func main() {
-
 	if len(os.Args) > 1 && os.Args[1] == "-child" {
 		fmt.Printf("Child started %v\n", os.Args[0])
 		childProcessEntry()
