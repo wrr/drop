@@ -10,6 +10,8 @@ import (
 	"os/user"
 	"path/filepath"
 	"syscall"
+
+	"github.com/wrr/dirjail/internal/config"
 )
 
 type JailPaths struct {
@@ -23,20 +25,24 @@ type JailPaths struct {
 	emptyFile string
 }
 
-func die(format string, args ...interface{}) {
+func dief(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
 	os.Exit(1)
+}
+
+func die(err error) {
+	dief("%v", err)
 }
 
 func dropAllCaps() {
 	old := cap.GetProc()
 	empty := cap.NewSet()
 	if err := empty.SetProc(); err != nil {
-		die("failed to drop privilege: %q -> %q: %v", old, empty, err)
+		dief("failed to drop privilege: %q -> %q: %v", old, empty, err)
 	}
 	now := cap.GetProc()
 	if cf, _ := now.Cf(empty); cf != 0 {
-		die("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
+		dief("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
 	}
 }
 
@@ -44,7 +50,7 @@ func createEmptyFile(path string) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_TRUNC, 0600)
 	if err != nil {
 		if !os.IsExist(err) {
-			die("failed to create empty file %s: %v", path, err)
+			dief("failed to create empty file %s: %v", path, err)
 		}
 	} else {
 		file.Close()
@@ -54,7 +60,7 @@ func createEmptyFile(path string) {
 func homeDir() string {
 	currentUser, err := user.Current()
 	if err != nil {
-		die("failed to get current user: %v", err)
+		dief("failed to get current user: %v", err)
 	}
 	return currentUser.HomeDir
 }
@@ -62,7 +68,7 @@ func homeDir() string {
 func initFS() JailPaths {
 	cwd, err := os.Getwd()
 	if err != nil {
-		die("get current directory failed: %v", err)
+		dief("get current directory failed: %v", err)
 	}
 
 	base := filepath.Join(cwd, ".dirjail")
@@ -79,10 +85,10 @@ func initFS() JailPaths {
 
 	// Create necessary directories
 	if err := os.MkdirAll(paths.home, 0755); err != nil {
-		die("failed to create directory %s: %v", paths.home, err)
+		dief("failed to create directory %s: %v", paths.home, err)
 	}
 	if err := os.MkdirAll(paths.emptyDir, 0755); err != nil {
-		die("failed to create directory %s: %v", paths.emptyDir, err)
+		dief("failed to create directory %s: %v", paths.emptyDir, err)
 	}
 	createEmptyFile(paths.emptyFile)
 	return paths
@@ -91,20 +97,20 @@ func initFS() JailPaths {
 func doMount(src, dst string, mountflags uintptr) {
 	fmt.Printf("Mounting %s to %s\n", src, dst)
 	if err := syscall.Mount(src, dst, "", mountflags, ""); err != nil {
-		die("mount %s to %s failed: %v", src, dst, err)
+		dief("mount %s to %s failed: %v", src, dst, err)
 	}
 	// mount and remount is needed for RDONLY to work:
 	// https://github.com/opencontainers/runc/blob/675292473b3ad4c131b900806077148a556d78c9/libcontainer/rootfs_linux.go#L581
 	if mountflags&syscall.MS_RDONLY != 0 {
 		if err := syscall.Mount(dst, dst, "", syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_BIND, ""); err != nil {
-			die("readonly re-mount of %s failed: %v", dst, err)
+			dief("readonly re-mount of %s failed: %v", dst, err)
 		}
 	}
 }
 
 func mountDir(src, dst string, mountflags uintptr) {
 	if err := os.MkdirAll(dst, 0700); err != nil {
-		die("failed to create directory %s: %v", dst, err)
+		dief("failed to create directory %s: %v", dst, err)
 	}
 	doMount(src, dst, mountflags)
 }
@@ -117,14 +123,14 @@ func childProcessEntry() {
 	mountDir("/", dirs.root, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
 	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
-		die("mount proc failed: %v", err)
+		dief("mount proc failed: %v", err)
 	}
 
 	homeDst := filepath.Join(dirs.root, dirs.hostHome)
 	mountDir(dirs.home, homeDst, syscall.MS_BIND|syscall.MS_REC)
 
 	if err := syscall.Chroot(dirs.root); err != nil {
-		die("chroot to %s failed: %v", dirs.root, err)
+		dief("chroot to %s failed: %v", dirs.root, err)
 	}
 
 	// Drop all the capabilities in the user namespace. This is done
@@ -148,7 +154,7 @@ func childProcessEntry() {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		die("%s failed: %v", pname, err)
+		dief("%s failed: %v", pname, err)
 	}
 	// Ignore errors (bash exits with an error if last executed command
 	// exited with an error)
@@ -171,7 +177,7 @@ func main() {
 
 	err := flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
-		die("failed to parse command line: %v", err)
+		dief("failed to parse command line: %v", err)
 	}
 
 	// /proc/self/exe would be better, because it handles the case of
@@ -206,6 +212,7 @@ func main() {
 		// recognized as the same user)
 		UidMappings: []syscall.SysProcIDMap{
 			{
+				//ContainerID: os.Getuid(),
 				ContainerID: os.Getuid(),
 				HostID:      os.Getuid(),
 				Size:        1,
@@ -221,9 +228,18 @@ func main() {
 		GidMappingsEnableSetgroups: false,
 	}
 	if err := cmd.Start(); err != nil {
-		die("jailed process start failed: %v", err)
+		dief("jailed process start failed: %v", err)
 	}
 	if err := cmd.Wait(); err != nil {
-		die("jailed process exited with error: %v", err)
+		if exitError, ok := err.(*exec.ExitError); ok {
+			if exitError.ExitCode() != 1 {
+				// If exit code is 1, child should already print an
+				// error message.
+				fmt.Fprintf(os.Stderr, "Error: jailed process failed\n")
+			}
+			// Propage exit code of the child
+			os.Exit(exitError.ExitCode())
+		}
+		dief("jailed process failed to run: %v", err)
 	}
 }
