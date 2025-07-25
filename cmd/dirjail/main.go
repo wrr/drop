@@ -164,11 +164,11 @@ func childProcessEntry() {
 	mountEntries(dirs.hostHome, dirs.home, cfg.HomeVisible, true)
 	mountEntries(dirs.hostHome, dirs.home, cfg.HomeWriteable, false)
 
-	mountDir("/", dirs.root, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
-
 	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
 		dief("mount proc failed: %v", err)
 	}
+
+	mountDir("/", dirs.root, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
 	homeDst := filepath.Join(dirs.root, dirs.hostHome)
 	mountDir(dirs.home, homeDst, syscall.MS_BIND|syscall.MS_REC)
@@ -177,14 +177,10 @@ func childProcessEntry() {
 		dief("chroot to %s failed: %v", dirs.root, err)
 	}
 
-	// Drop all the capabilities in the user namespace. This is done
-	// just in case and can be revisited later, currently there is no
-	// case which shows that dropping capabilities is required to
-	// guarantee proper isolation. Even with capabilities kept,
-	// processes in the namespace only have privileges that the user
-	// that created the namespace had, keeping the capabilities would be
-	// more or less equivalent of running as root in a Docker container
-	// - a normal practice.
+	// Drop all the capabilities in the user namespace.
+	//
+	// CAP_SYS_ADMIN would allow the user to umount dirjail mounts and
+	// access the original directories (home dir, proc etc.)
 	dropAllCaps()
 
 	os.Setenv("debian_chroot", "dirjail")
