@@ -115,10 +115,54 @@ func mountDir(src, dst string, mountflags uintptr) {
 	doMount(src, dst, mountflags)
 }
 
+func mountFile(src, dst string, mountflags uintptr) {
+	dstParent := filepath.Dir(dst)
+	if err := os.MkdirAll(dstParent, 0755); err != nil {
+		dief("failed to create directory %s: %v", dstParent, err)
+	}
+	// Mount destination must exist, create an empty file to be the
+	// destination mount point
+	if _, err := os.Stat(dst); os.IsNotExist(err) {
+		createEmptyFile(dst)
+	}
+	doMount(src, dst, mountflags)
+}
+
+func mountEntries(srcDir, dstDir string, entries []string, readonly bool) {
+	mountflags := uintptr(syscall.MS_BIND)
+	if readonly {
+		mountflags |= syscall.MS_RDONLY
+	}
+
+	for _, entry := range entries {
+		entryPath := filepath.Join(srcDir, entry)
+		newEntryPath := filepath.Join(dstDir, entry)
+
+		if info, err := os.Stat(entryPath); err == nil {
+			if info.IsDir() {
+				mountDir(entryPath, newEntryPath, mountflags)
+			} else {
+				mountFile(entryPath, newEntryPath, mountflags)
+			}
+		} else {
+			fmt.Printf("Not mounting %s, no such file or directory\n", entryPath)
+		}
+	}
+}
+
 func childProcessEntry() {
 	dirs := initFS()
 
+	configPath := filepath.Join(dirs.hostHome, ".dirjail")
+	cfg, err := config.Read(configPath)
+	if err != nil {
+		die(err)
+	}
+
 	syscall.Chdir("/")
+
+	mountEntries(dirs.hostHome, dirs.home, cfg.HomeVisible, true)
+	mountEntries(dirs.hostHome, dirs.home, cfg.HomeWriteable, false)
 
 	mountDir("/", dirs.root, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
