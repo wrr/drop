@@ -18,9 +18,10 @@ type JailPaths struct {
 	cwd       string
 	base      string
 	root      string
-	home      string
-	tmp       string
 	hostHome  string
+	home      string
+	tmpSrc    string
+	tmpDst    string
 	emptyDir  string
 	emptyFile string
 }
@@ -71,14 +72,21 @@ func initFS() JailPaths {
 		dief("get current directory failed: %v", err)
 	}
 
+	tmpSrc, err := os.MkdirTemp("", "dirjail-")
+	if err != nil {
+		dief("Failed to create temporary directory: %v", err)
+	}
+
 	base := filepath.Join(cwd, ".dirjail")
+	root := filepath.Join(base, "root")
 	paths := JailPaths{
 		cwd:       cwd,
 		base:      base,
-		root:      filepath.Join(base, "root"),
-		home:      filepath.Join(base, "home"),
-		tmp:       filepath.Join(base, "tmp"),
+		root:      root,
 		hostHome:  homeDir(),
+		home:      filepath.Join(base, "home"),
+		tmpSrc:    tmpSrc,
+		tmpDst:    filepath.Join(root, os.TempDir()),
 		emptyDir:  filepath.Join(base, "empty"),
 		emptyFile: filepath.Join(base, "empty_file"),
 	}
@@ -151,9 +159,9 @@ func mountEntries(srcDir, dstDir string, entries []string, readonly bool) {
 }
 
 func childProcessEntry() {
-	dirs := initFS()
+	paths := initFS()
 
-	configPath := filepath.Join(dirs.hostHome, ".dirjail")
+	configPath := filepath.Join(paths.hostHome, ".dirjail")
 	cfg, err := config.Read(configPath)
 	if err != nil {
 		die(err)
@@ -161,19 +169,21 @@ func childProcessEntry() {
 
 	syscall.Chdir("/")
 
-	mountEntries(dirs.hostHome, dirs.home, cfg.HomeVisible, true)
-	mountEntries(dirs.hostHome, dirs.home, cfg.HomeWriteable, false)
+	mountEntries(paths.hostHome, paths.home, cfg.HomeVisible, true)
+	mountEntries(paths.hostHome, paths.home, cfg.HomeWriteable, false)
 
-	mountDir("/", dirs.root, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
+	mountDir("/", paths.root, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
-	homeDst := filepath.Join(dirs.root, dirs.hostHome)
-	mountDir(dirs.home, homeDst, syscall.MS_BIND|syscall.MS_REC)
+	homeDst := filepath.Join(paths.root, paths.hostHome)
+	mountDir(paths.home, homeDst, syscall.MS_BIND|syscall.MS_REC)
+
+	mountDir(paths.tmpSrc, paths.tmpDst, syscall.MS_BIND)
 
 	// Mount current working directory
-	mountDir(dirs.cwd, filepath.Join(dirs.root, dirs.cwd), syscall.MS_BIND|syscall.MS_REC)
+	mountDir(paths.cwd, filepath.Join(paths.root, paths.cwd), syscall.MS_BIND|syscall.MS_REC)
 
-	if err := syscall.Chroot(dirs.root); err != nil {
-		dief("chroot to %s failed: %v", dirs.root, err)
+	if err := syscall.Chroot(paths.root); err != nil {
+		dief("chroot to %s failed: %v", paths.root, err)
 	}
 
 	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
@@ -181,8 +191,8 @@ func childProcessEntry() {
 	}
 
 	// Change working directory to what it was originally
-	if err := syscall.Chdir(dirs.cwd); err != nil {
-		dief("chdir to %s failed: %v", dirs.cwd, err)
+	if err := syscall.Chdir(paths.cwd); err != nil {
+		dief("chdir to %s failed: %v", paths.cwd, err)
 	}
 
 	// Drop all the capabilities in the user namespace.
