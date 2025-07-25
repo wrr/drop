@@ -131,8 +131,6 @@ func initFS() JailPaths {
 		emptyDir:  filepath.Join(base, "empty"),
 		emptyFile: filepath.Join(base, "empty_file"),
 	}
-	paths.tmpSrc = initTmpSubDir(&paths)
-
 	// Create necessary directories
 	if err := os.MkdirAll(paths.home, 0755); err != nil {
 		dief("failed to create directory %s: %v", paths.home, err)
@@ -141,6 +139,8 @@ func initFS() JailPaths {
 		dief("failed to create directory %s: %v", paths.emptyDir, err)
 	}
 	createEmptyFile(paths.emptyFile)
+	paths.tmpSrc = initTmpSubDir(&paths)
+
 	return paths
 }
 
