@@ -22,7 +22,7 @@ import (
 type JailPaths struct {
 	cwd       string
 	base      string
-	root      string
+	fsRoot    string
 	hostHome  string
 	home      string
 	tmpSrc    string
@@ -123,14 +123,14 @@ func initFS() JailPaths {
 	}
 
 	base := filepath.Join(cwd, ".dirjail")
-	root := filepath.Join(base, "root")
+	fsRoot := filepath.Join(base, "root")
 	paths := JailPaths{
 		cwd:       cwd,
 		base:      base,
-		root:      root,
+		fsRoot:    fsRoot,
 		hostHome:  homeDir(),
 		home:      filepath.Join(base, "home"),
-		tmpDst:    filepath.Join(root, os.TempDir()),
+		tmpDst:    filepath.Join(fsRoot, os.TempDir()),
 		emptyDir:  filepath.Join(base, "empty"),
 		emptyFile: filepath.Join(base, "empty_file"),
 	}
@@ -257,27 +257,30 @@ func childProcessEntry() {
 
 	syscall.Chdir("/")
 
+	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
+		dief("mount proc failed: %v", err)
+	}
+	hideProcFiles(cfg.ProcReadable, &paths)
+
 	mountEntries(paths.hostHome, paths.home, cfg.HomeVisible, true)
 	mountEntries(paths.hostHome, paths.home, cfg.HomeWriteable, false)
 
-	mountDir("/", paths.root, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
+	mountDir("/", paths.fsRoot, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
-	homeDst := filepath.Join(paths.root, paths.hostHome)
+	homeDst := filepath.Join(paths.fsRoot, paths.hostHome)
 	mountDir(paths.home, homeDst, syscall.MS_BIND|syscall.MS_REC)
 
 	mountDir(paths.tmpSrc, paths.tmpDst, syscall.MS_BIND)
 
 	// Mount current working directory
-	mountDir(paths.cwd, filepath.Join(paths.root, paths.cwd), syscall.MS_BIND|syscall.MS_REC)
+	mountDir(paths.cwd, filepath.Join(paths.fsRoot, paths.cwd), syscall.MS_BIND|syscall.MS_REC)
 
-	if err := syscall.Chroot(paths.root); err != nil {
-		dief("chroot to %s failed: %v", paths.root, err)
+	if err := syscall.Chroot(paths.fsRoot); err != nil {
+		dief("chroot to %s failed: %v", paths.fsRoot, err)
 	}
 
-	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
-		dief("mount proc failed: %v", err)
-	}
-	hideProcFiles(cfg.ProcReadable, &paths)
+	// Hide dirjail root directory
+	mountDir(paths.emptyDir, paths.base, syscall.MS_BIND|syscall.MS_RDONLY)
 
 	// Change working directory to what it was originally
 	if err := syscall.Chdir(paths.cwd); err != nil {
