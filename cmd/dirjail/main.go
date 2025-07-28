@@ -1,15 +1,18 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"golang.org/x/sys/unix" // Needed only for CAP_* consts
+	"io/fs"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -200,6 +203,49 @@ func mountEntries(srcDir, dstDir string, entries []string, readonly bool) {
 	}
 }
 
+var digitsRegex = regexp.MustCompile(`^\d+$`)
+
+func allDigits(s string) bool {
+	return digitsRegex.MatchString(s)
+}
+
+func hideProcFiles(procAccessible []string, paths *JailPaths) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		dief("Failed to read /proc: %v", err)
+	}
+
+	procAccessible = append(procAccessible, "uptime", "loadavg", "meminfo", "stat")
+
+	for _, entry := range entries {
+		name := entry.Name()
+		fullPath := filepath.Join("/proc", name)
+
+		// Proc entries with all digits are connected to processes with
+		// the same id. Proc contains only processes started in the jail,
+		// so all these entries are accessible.
+		accessible := allDigits(name) || slices.Contains(procAccessible, name)
+		if accessible {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// Removed after ReadDir returned
+				continue
+			}
+			dief("failed to retrieve file info for %s %v", fullPath, err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			// skip symlinks such as /proc/self
+		} else if info.IsDir() {
+			mountDir(paths.emptyDir, fullPath, syscall.MS_BIND|syscall.MS_RDONLY)
+		} else {
+			mountFile(paths.emptyFile, fullPath, syscall.MS_BIND|syscall.MS_RDONLY)
+		}
+	}
+}
+
 func childProcessEntry() {
 	paths := initFS()
 
@@ -231,6 +277,7 @@ func childProcessEntry() {
 	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
 		dief("mount proc failed: %v", err)
 	}
+	hideProcFiles(cfg.ProcReadable, &paths)
 
 	// Change working directory to what it was originally
 	if err := syscall.Chdir(paths.cwd); err != nil {
