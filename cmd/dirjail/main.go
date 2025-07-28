@@ -53,7 +53,7 @@ func dropAllCaps() {
 }
 
 func createEmptyFile(path string) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_TRUNC, 0600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_TRUNC, 0000)
 	if err != nil {
 		if !os.IsExist(err) {
 			dief("failed to create empty file %s: %v", path, err)
@@ -135,10 +135,10 @@ func initFS() JailPaths {
 		emptyFile: filepath.Join(base, "empty_file"),
 	}
 	// Create necessary directories
-	if err := os.MkdirAll(paths.home, 0755); err != nil {
+	if err := os.MkdirAll(paths.home, 0700); err != nil {
 		dief("failed to create directory %s: %v", paths.home, err)
 	}
-	if err := os.MkdirAll(paths.emptyDir, 0755); err != nil {
+	if err := os.MkdirAll(paths.emptyDir, 0000); err != nil {
 		dief("failed to create directory %s: %v", paths.emptyDir, err)
 	}
 	createEmptyFile(paths.emptyFile)
