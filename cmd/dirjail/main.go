@@ -52,15 +52,55 @@ func dropAllCaps() {
 	}
 }
 
-func createEmptyFile(path string) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_TRUNC, 0000)
+func createEmptyFile(path string) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
 	if err != nil {
-		if !os.IsExist(err) {
-			dief("failed to create empty file %s: %v", path, err)
-		}
-	} else {
-		file.Close()
+		return fmt.Errorf("failed creating %s: %w", path, err)
 	}
+	return file.Close()
+}
+
+func ensureDirWithNoPerms(path string) error {
+	if info, err := os.Stat(path); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("%s is not a directory", path)
+		}
+		if info.Mode().Perm() == 0000 {
+			// Directory exists and has correct permissions.
+			return nil
+		}
+		// Directory doesn't have correct permissions, remove
+		// and recreate it.
+		if err := os.RemoveAll(path); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return os.Mkdir(path, 0000)
+}
+
+func ensureEmptyFile(path string) error {
+	if info, err := os.Stat(path); err == nil {
+		// File exists.
+		if info.Mode().Perm() == 0000 && info.Size() == 0 {
+			// File already has correct permissions and is empty.
+			return nil
+		}
+		// File is not empty or doesn't have correct permissions, remove
+		// and recreate it.
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
+	if err != nil {
+		return err
+	}
+	return file.Close()
 }
 
 func homeDir() string {
@@ -138,10 +178,13 @@ func initFS() JailPaths {
 	if err := os.MkdirAll(paths.home, 0700); err != nil {
 		dief("failed to create directory %s: %v", paths.home, err)
 	}
-	if err := os.MkdirAll(paths.emptyDir, 0000); err != nil {
-		dief("failed to create directory %s: %v", paths.emptyDir, err)
+
+	if err := ensureDirWithNoPerms(paths.emptyDir); err != nil {
+		die(err)
 	}
-	createEmptyFile(paths.emptyFile)
+	if err := ensureEmptyFile(paths.emptyFile); err != nil {
+		die(err)
+	}
 	paths.tmpSrc = initTmpSubDir(&paths)
 
 	return paths
@@ -170,7 +213,7 @@ func mountDir(src, dst string, mountflags uintptr) {
 
 func mountFile(src, dst string, mountflags uintptr) {
 	dstParent := filepath.Dir(dst)
-	if err := os.MkdirAll(dstParent, 0755); err != nil {
+	if err := os.MkdirAll(dstParent, 0750); err != nil {
 		dief("failed to create directory %s: %v", dstParent, err)
 	}
 	// Mount destination must exist, create an empty file to be the
