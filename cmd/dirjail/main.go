@@ -258,7 +258,7 @@ func hideProcFiles(procAccessible []string, paths *JailPaths) {
 		dief("Failed to read /proc: %v", err)
 	}
 
-	procAccessible = append(procAccessible, "uptime", "loadavg", "meminfo", "stat")
+	procAccessible = append(procAccessible, "uptime", "loadavg", "meminfo", "stat", "sys")
 
 	for _, entry := range entries {
 		name := entry.Name()
@@ -304,6 +304,23 @@ func childProcessEntry() {
 		dief("mount proc failed: %v", err)
 	}
 	hideProcFiles(cfg.ProcReadable, &paths)
+
+	if err := syscall.Mount("/dev", "/dev", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
+		dief("mount /dev failed: %v", err)
+	}
+
+	if err := os.Mkdir("/dev/pts", 0700); err != nil {
+		die(err)
+	}
+	if err := syscall.Mount("/dev/pts", "/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
+		dief("mount /dev/pts failed: %v", err)
+	}
+
+	if err := syscall.Mount("/run", "/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
+		dief("mount /run failed: %v", err)
+	}
+
+	mountDir(paths.emptyDir, "/sys", syscall.MS_BIND|syscall.MS_RDONLY)
 
 	mountEntries(paths.hostHome, paths.home, cfg.HomeVisible, true)
 	mountEntries(paths.hostHome, paths.home, cfg.HomeWriteable, false)
