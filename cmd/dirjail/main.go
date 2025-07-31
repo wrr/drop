@@ -300,32 +300,32 @@ func childProcessEntry() {
 
 	syscall.Chdir("/")
 
-	if err := syscall.Mount("/proc", "/proc", "proc", 0, ""); err != nil {
-		dief("mount proc failed: %v", err)
-	}
-	hideProcFiles(cfg.ProcReadable, &paths)
-
-	if err := syscall.Mount("/dev", "/dev", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
-		dief("mount /dev failed: %v", err)
-	}
-
-	if err := os.Mkdir("/dev/pts", 0700); err != nil {
-		die(err)
-	}
-	if err := syscall.Mount("/dev/pts", "/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
-		dief("mount /dev/pts failed: %v", err)
-	}
-
-	if err := syscall.Mount("/run", "/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
-		dief("mount /run failed: %v", err)
-	}
-
-	mountDir(paths.emptyDir, "/sys", syscall.MS_BIND|syscall.MS_RDONLY)
-
 	mountEntries(paths.hostHome, paths.home, cfg.HomeVisible, true)
 	mountEntries(paths.hostHome, paths.home, cfg.HomeWriteable, false)
 
 	mountDir("/", paths.fsRoot, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
+
+	if err := syscall.Mount("", paths.fsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
+		dief("mount /run failed: %v", err)
+	}
+
+	if err := syscall.Mount("", paths.fsRoot+"/dev", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID, "mode=755"); err != nil {
+		dief("mount /dev failed: %v", err)
+	}
+	// mkdev is not allowed in the container when running as a user,
+	// even if unix.CAP_MKNOD is passed, so we map some host devices to
+	// the container /dev instead.
+	devices := []string{"null", "zero", "full", "random", "urandom"}
+	mountEntries("/dev", paths.fsRoot+"/dev", devices, false)
+
+	mountEntries("/dev", paths.fsRoot+"/dev/test/", devices, false)
+
+	if err := os.Mkdir(paths.fsRoot+"/dev/pts", 0700); err != nil {
+		die(err)
+	}
+	if err := syscall.Mount("", paths.fsRoot+"/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
+		dief("mount /dev/pts failed: %v", err)
+	}
 
 	homeDst := filepath.Join(paths.fsRoot, paths.hostHome)
 	mountDir(paths.home, homeDst, syscall.MS_BIND|syscall.MS_REC)
@@ -338,6 +338,11 @@ func childProcessEntry() {
 	if err := syscall.Chroot(paths.fsRoot); err != nil {
 		dief("chroot to %s failed: %v", paths.fsRoot, err)
 	}
+
+	if err := syscall.Mount("", "/proc", "proc", 0, ""); err != nil {
+		dief("mount proc failed: %v", err)
+	}
+	hideProcFiles(cfg.ProcReadable, &paths)
 
 	// Hide dirjail root directory
 	mountDir(paths.emptyDir, paths.base, syscall.MS_BIND|syscall.MS_RDONLY)
