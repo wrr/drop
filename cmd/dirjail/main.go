@@ -312,6 +312,14 @@ func childProcessEntry() {
 	if err := syscall.Mount("", paths.fsRoot+"/dev", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID, "mode=755"); err != nil {
 		dief("mount /dev failed: %v", err)
 	}
+
+	if err := os.Mkdir(paths.fsRoot+"/dev/shm", 700); err != nil {
+		die(err)
+	}
+	if err := syscall.Mount("", paths.fsRoot+"/dev/shm", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, "mode=1777"); err != nil {
+		dief("mount /dev failed: %v", err)
+	}
+
 	// mkdev is not allowed in the container when running as a user,
 	// even if unix.CAP_MKNOD is passed, so we map some host devices to
 	// the container /dev instead.
