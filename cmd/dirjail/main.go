@@ -289,7 +289,7 @@ func hideProcFiles(procAccessible []string, paths *JailPaths) {
 	}
 }
 
-func childProcessEntry() {
+func childProcessEntry(progWithArgs []string) {
 	paths := initFS()
 
 	configPath := filepath.Join(paths.hostHome, ".dirjail")
@@ -368,16 +368,22 @@ func childProcessEntry() {
 
 	os.Setenv("debian_chroot", "dirjail")
 
-	// TODO: use SHELL env variable
-	pname := "bash"
-	cmd := exec.Command(pname)
+	var cmd *exec.Cmd
+
+	if len(progWithArgs) == 0 {
+		// TODO: use SHELL env variable
+		progWithArgs = []string{"bash"}
+	}
+
+	pname := progWithArgs[0]
+	cmd = exec.Command(pname, progWithArgs[1:]...)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		dief("%s failed: %v", pname, err)
+		dief("%s failed: %v", progWithArgs[0], err)
 	}
 	// Ignore errors (bash exits with an error if last executed command
 	// exited with an error)
@@ -387,13 +393,16 @@ func childProcessEntry() {
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-child" {
 		fmt.Printf("Child started %v\n", os.Args[0])
-		childProcessEntry()
+		childProcessEntry(os.Args[2:])
 		os.Exit(0)
 	}
 	fmt.Println("Parent started")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "dirjail limits programs abilities to read and write user's files\nOptions:\n")
+		fmt.Fprintf(os.Stderr, `dirjail limits programs abilities to read and write user's files
+Usage: dirjail [command...]
+Options:
+`)
 		flag.PrintDefaults()
 	}
 
@@ -404,7 +413,8 @@ func main() {
 
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
-	cmd := exec.Command(os.Args[0], "-child")
+	childArgs := append([]string{"-child"}, flag.Args()...)
+	cmd := exec.Command(os.Args[0], childArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
