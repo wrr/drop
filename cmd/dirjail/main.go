@@ -25,6 +25,7 @@ type JailPaths struct {
 	fsRoot     string
 	hostHome   string
 	home       string
+	etc        string
 	tmpSrc     string
 	tmpDst     string
 	emptyDir   string
@@ -174,19 +175,25 @@ func initFS() JailPaths {
 
 	base := filepath.Join(cwd, ".dirjail")
 	fsRoot := filepath.Join(base, "root")
+	etc := filepath.Join(base, "etc")
 	paths := JailPaths{
 		cwd:        cwd,
 		base:       base,
 		fsRoot:     fsRoot,
 		hostHome:   homeDir(),
 		home:       filepath.Join(base, "home"),
+		etc:        etc,
 		tmpDst:     filepath.Join(fsRoot, os.TempDir()),
 		emptyDir:   filepath.Join(base, "empty"),
 		emptyFile:  filepath.Join(base, "empty_file"),
-		resolvConf: filepath.Join(base, "resolv.conf"),
+		resolvConf: filepath.Join(etc, "resolv.conf"),
 	}
 	// Create necessary directories
 	if err := os.MkdirAll(paths.home, 0700); err != nil {
+		dief("failed to create directory %s: %v", paths.home, err)
+	}
+
+	if err := os.MkdirAll(paths.etc, 0700); err != nil {
 		dief("failed to create directory %s: %v", paths.home, err)
 	}
 
@@ -320,8 +327,21 @@ func childProcessEntry(progWithArgs []string) {
 
 	mountDir("/", paths.fsRoot, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
-	mountFile(paths.resolvConf, filepath.Join(paths.fsRoot, "/etc/resolv.conf"),
-		syscall.MS_BIND|syscall.MS_RDONLY)
+	// For DNS to work in the container /etc/resolv.conf needs to be
+	// overwritten. We use overlayfs for this instead of bind mounting
+	// /etc/resolv.conf. On Ubuntu /etc/resolv.conf is a symlink to
+	// ../run/systemd/resolve/stub-resolv.conf. It is not possible for a
+	// bind mount to replace a symlink, so our resolv.conf would still
+	// need to be at ../run/systemd/resolve/stub-resolv.conf. Having
+	// read-only overlayfs with our /etc/resolv.conf in a top level hides
+	// the symlink, so is more elegant and also allows to easily replace more
+	// config files as needed.
+	//
+	// Readonly overlayfs does not require upperdir= and workdir= params.
+	opts := "lowerdir=/home/j/code/dirjail/.dirjail/etc/:/etc"
+	if err := syscall.Mount("overlay", paths.fsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
+		dief("mount /etc failed: %v", err)
+	}
 
 	if err := syscall.Mount("", paths.fsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
 		dief("mount /run failed: %v", err)
