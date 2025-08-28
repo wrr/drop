@@ -20,19 +20,24 @@ import (
 )
 
 type JailPaths struct {
-	cwd       string
-	base      string
-	fsRoot    string
-	hostHome  string
-	home      string
-	tmpSrc    string
-	tmpDst    string
-	emptyDir  string
-	emptyFile string
+	cwd        string
+	base       string
+	fsRoot     string
+	hostHome   string
+	home       string
+	tmpSrc     string
+	tmpDst     string
+	emptyDir   string
+	emptyFile  string
+	resolvConf string
+}
+
+func errorf(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
 }
 
 func dief(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
+	errorf(format, args...)
 	os.Exit(1)
 }
 
@@ -156,6 +161,11 @@ func initTmpSubDir(paths *JailPaths) string {
 	return tmpSubDir
 }
 
+func writeResolvConf(path string) error {
+	content := "nameserver 10.0.2.3"
+	return os.WriteFile(path, []byte(content), 0600)
+}
+
 func initFS() JailPaths {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -165,14 +175,15 @@ func initFS() JailPaths {
 	base := filepath.Join(cwd, ".dirjail")
 	fsRoot := filepath.Join(base, "root")
 	paths := JailPaths{
-		cwd:       cwd,
-		base:      base,
-		fsRoot:    fsRoot,
-		hostHome:  homeDir(),
-		home:      filepath.Join(base, "home"),
-		tmpDst:    filepath.Join(fsRoot, os.TempDir()),
-		emptyDir:  filepath.Join(base, "empty"),
-		emptyFile: filepath.Join(base, "empty_file"),
+		cwd:        cwd,
+		base:       base,
+		fsRoot:     fsRoot,
+		hostHome:   homeDir(),
+		home:       filepath.Join(base, "home"),
+		tmpDst:     filepath.Join(fsRoot, os.TempDir()),
+		emptyDir:   filepath.Join(base, "empty"),
+		emptyFile:  filepath.Join(base, "empty_file"),
+		resolvConf: filepath.Join(base, "resolv.conf"),
 	}
 	// Create necessary directories
 	if err := os.MkdirAll(paths.home, 0700); err != nil {
@@ -185,6 +196,10 @@ func initFS() JailPaths {
 	if err := ensureEmptyFile(paths.emptyFile); err != nil {
 		die(err)
 	}
+	if err := writeResolvConf(paths.resolvConf); err != nil {
+		dief("failed to create resolv.conf file: %v", err)
+	}
+
 	paths.tmpSrc = initTmpSubDir(&paths)
 
 	return paths
@@ -305,6 +320,9 @@ func childProcessEntry(progWithArgs []string) {
 
 	mountDir("/", paths.fsRoot, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
+	mountFile(paths.resolvConf, filepath.Join(paths.fsRoot, "/etc/resolv.conf"),
+		syscall.MS_BIND|syscall.MS_RDONLY)
+
 	if err := syscall.Mount("", paths.fsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
 		dief("mount /run failed: %v", err)
 	}
@@ -422,7 +440,8 @@ Options:
 		Cloneflags: (syscall.CLONE_NEWNS |
 			syscall.CLONE_NEWIPC |
 			syscall.CLONE_NEWPID |
-			syscall.CLONE_NEWUSER),
+			syscall.CLONE_NEWUSER |
+			syscall.CLONE_NEWNET),
 		// Code running in a user namespace just after clone() and before
 		// execve() system calls has all capabilities in this namespace.
 		// This allows such code to setup the namespace with mount()
@@ -438,7 +457,9 @@ Options:
 		// and chroot(), and then we drop these capabilities. For the
 		// detailed description of how capabilities are propagated
 		// in the user namespace see: man 7 user_namespaces
-		AmbientCaps: []uintptr{unix.CAP_SYS_ADMIN, unix.CAP_SYS_CHROOT},
+		//
+		// CAP_DAC_OVERRIDE and CAP_FOWNER are needed to mount overlayfs
+		AmbientCaps: []uintptr{unix.CAP_SYS_ADMIN, unix.CAP_SYS_CHROOT, unix.CAP_DAC_OVERRIDE, unix.CAP_FOWNER},
 
 		// Keep using current user uid an gid in the jail (so the user is
 		// recognized as the same user)
@@ -462,12 +483,31 @@ Options:
 	if err := cmd.Start(); err != nil {
 		dief("jailed process start failed: %v", err)
 	}
+
+	// Start slirp4netns to provide network connectivity to the jailed process
+	slirpCmd := exec.Command("slirp4netns",
+		"--configure",
+		"--mtu=65520",
+		"--disable-host-loopback",
+		fmt.Sprintf("%d", cmd.Process.Pid),
+		"tap0")
+	slirpCmd.Stderr = os.Stderr
+
+	if err := slirpCmd.Start(); err != nil {
+		errorf("failed to start slirp4netns: %v", err)
+		cmd.Process.Kill()
+	}
+	defer func() {
+		slirpCmd.Process.Kill()
+		slirpCmd.Wait()
+	}()
+
 	if err := cmd.Wait(); err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			if exitError.ExitCode() != 1 {
 				// If exit code is 1, child should already print an
 				// error message.
-				fmt.Fprintf(os.Stderr, "Error: jailed process failed\n")
+				errorf("jailed process failed")
 			}
 			// Propage exit code of the child
 			os.Exit(exitError.ExitCode())
