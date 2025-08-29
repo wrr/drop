@@ -17,6 +17,7 @@ import (
 	"syscall"
 
 	"github.com/wrr/dirjail/internal/config"
+	"github.com/wrr/dirjail/internal/netns"
 )
 
 type JailPaths struct {
@@ -428,6 +429,18 @@ func childProcessEntry(progWithArgs []string) {
 	cmd.Wait()
 }
 
+// stringSlice implements flag.Value interface for repeated string flags
+type stringSlice []string
+
+func (s *stringSlice) String() string {
+	return strings.Join(*s, ",")
+}
+
+func (s *stringSlice) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-child" {
 		fmt.Printf("Child started %v\n", os.Args[0])
@@ -436,17 +449,29 @@ func main() {
 	}
 	fmt.Println("Parent started")
 
+	var portForwards []string
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `dirjail limits programs abilities to read and write user's files
-Usage: dirjail [command...]
+Usage: dirjail [options] [command...]
 Options:
 `)
 		flag.PrintDefaults()
 	}
 
+	flag.Var((*stringSlice)(&portForwards), "p", "Publish port(s) to the host. Format: [hostIP:]hostPort[:containerPort]")
+
 	err := flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
 		dief("failed to parse command line: %v", err)
+	}
+
+	var parsedPortForwards []*config.PortForward
+	for _, pf := range portForwards {
+		parsed, err := config.ParsePortForward(pf)
+		if err != nil {
+			dief("invalid port forwarding specification '%s': %v", pf, err)
+		}
+		parsedPortForwards = append(parsedPortForwards, parsed)
 	}
 
 	// /proc/self/exe would be better, because it handles the case of
@@ -507,22 +532,12 @@ Options:
 	}
 
 	// Start slirp4netns to provide network connectivity to the jailed process
-	slirpCmd := exec.Command("slirp4netns",
-		"--configure",
-		"--mtu=65520",
-		"--disable-host-loopback",
-		fmt.Sprintf("%d", cmd.Process.Pid),
-		"tap0")
-	slirpCmd.Stderr = os.Stderr
-
-	if err := slirpCmd.Start(); err != nil {
-		errorf("failed to start slirp4netns: %v", err)
+	cleanup, err := netns.StartSlirp4netns(cmd.Process.Pid, parsedPortForwards)
+	if err != nil {
+		errorf("%v", err)
 		cmd.Process.Kill()
 	}
-	defer func() {
-		slirpCmd.Process.Kill()
-		slirpCmd.Wait()
-	}()
+	defer cleanup()
 
 	if err := cmd.Wait(); err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
