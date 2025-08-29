@@ -19,33 +19,23 @@ type SlirpCommand struct {
 	Arguments map[string]any `json:"arguments"`
 }
 
-// waitForSocket polls for socket availability with timeout
-func waitForSocket(sockPath string) error {
+// waitForReady waits for slirp4netns to signal readiness via readyRead file.
+func waitForReady(readyRead *os.File) error {
 	const timeout = 5 * time.Second
-	pollInterval := 100 * time.Millisecond
-
-	start := time.Now()
-	for time.Since(start) < timeout {
-		if _, err := os.Stat(sockPath); err == nil {
-			// Wait until the socket accepts connections.
-			conn, err := net.Dial("unix", sockPath)
-			if err == nil {
-				conn.Close()
-				return nil
-			}
-		}
-		time.Sleep(pollInterval)
-		pollInterval *= 2
+	readyRead.SetReadDeadline(time.Now().Add(timeout))
+	buf := make([]byte, 1)
+	n, err := readyRead.Read(buf)
+	if err != nil {
+		return fmt.Errorf("failed to read from ready-fd: %v", err)
 	}
-	return fmt.Errorf("timed out waiting for slirp4netns socket %s after %v", sockPath, timeout)
+	if n != 1 || buf[0] != '1' {
+		return fmt.Errorf("unexpected ready signal: got %d bytes, expected '1'", n)
+	}
+	return nil
 }
 
 // setupPortForwarding configures port forwarding using slirp4netns API socket
 func setupPortForwarding(sockPath string, portForwards []*config.PortForward) error {
-	if err := waitForSocket(sockPath); err != nil {
-		return err
-	}
-
 	for _, pf := range portForwards {
 		cmd := SlirpCommand{
 			Execute: "add_hostfwd",
@@ -93,10 +83,17 @@ func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward) (func()
 	var sockPath string
 	var slirpArgs []string
 
+	// Create pipe for ready notification
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pipe: %v", err)
+	}
+
 	slirpArgs = []string{
 		"--configure",
 		"--mtu=65520",
 		"--disable-host-loopback",
+		"--ready-fd=3",
 	}
 	needPortForwading := len(portForwards) > 0
 	if needPortForwading {
@@ -106,8 +103,11 @@ func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward) (func()
 	slirpArgs = append(slirpArgs, fmt.Sprintf("%d", jailedPid), "tap0")
 	slirpCmd := exec.Command("slirp4netns", slirpArgs...)
 	slirpCmd.Stderr = os.Stderr
+	slirpCmd.ExtraFiles = []*os.File{readyWrite}
 
 	if err := slirpCmd.Start(); err != nil {
+		readyRead.Close()
+		readyWrite.Close()
 		return nil, fmt.Errorf("failed to start slirp4netns: %v", err)
 	}
 
@@ -117,6 +117,15 @@ func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward) (func()
 		if sockPath != "" {
 			os.Remove(sockPath)
 		}
+	}
+
+	// Close write end in parent
+	readyWrite.Close()
+	err = waitForReady(readyRead)
+	readyRead.Close()
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("slirp4netns failed to start: %v", err)
 	}
 
 	if needPortForwading {
