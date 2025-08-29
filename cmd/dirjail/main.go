@@ -498,6 +498,8 @@ Options:
 				Size:        1,
 			},
 		},
+		// Disallow a process in the user namespace from dropping/changing
+		// group membership: https://lwn.net/Articles/626665/
 		GidMappingsEnableSetgroups: false,
 	}
 	if err := cmd.Start(); err != nil {
