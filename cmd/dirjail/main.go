@@ -351,7 +351,7 @@ func childProcessEntry(progWithArgs []string) {
 		dief("mount /dev failed: %v", err)
 	}
 
-	if err := os.Mkdir(paths.fsRoot+"/dev/shm", 700); err != nil {
+	if err := os.Mkdir(paths.fsRoot+"/dev/shm", 0700); err != nil {
 		die(err)
 	}
 	if err := syscall.Mount("", paths.fsRoot+"/dev/shm", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, "mode=1777"); err != nil {
