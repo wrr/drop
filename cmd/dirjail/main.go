@@ -4,9 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"golang.org/x/sys/unix" // Needed only for CAP_* consts
 	"io/fs"
-	"kernel.org/pub/linux/libs/security/libcap/cap"
 	"os"
 	"os/exec"
 	"os/user"
@@ -16,12 +14,16 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix" // Needed only for CAP_* consts
+	"kernel.org/pub/linux/libs/security/libcap/cap"
+
 	"github.com/wrr/dirjail/internal/config"
 	"github.com/wrr/dirjail/internal/netns"
 )
 
 type JailPaths struct {
 	cwd        string
+	config     string
 	base       string
 	fsRoot     string
 	hostHome   string
@@ -118,14 +120,33 @@ func homeDir() string {
 	return currentUser.HomeDir
 }
 
-func tmpDirName(cwd string) string {
-	dname := strings.ReplaceAll(cwd, "/", "-")
-	// Keep only a-z, A-Z, 0-9, and - characters
-	reg := regexp.MustCompile("[^a-zA-Z0-9-]")
-	return "dirjail" + reg.ReplaceAllString(dname, "") + "-"
+func tmpDirName(jailId string) string {
+	sep := ""
+	if !strings.HasPrefix(jailId, "-") {
+		sep = "-"
+	}
+	return "dirjail-" + sep + jailId + "-"
 }
 
-func initTmpSubDir(paths *JailPaths) string {
+var jailIdChars = `a-zA-Z0-9-_\.`
+
+func defaultJailId() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		dief("get current directory failed: %v", err)
+	}
+	dname := strings.ReplaceAll(cwd, "/", "-")
+	// Keep only allowed jail ID characters
+	reg := regexp.MustCompile(`[^` + jailIdChars + `]`)
+	return reg.ReplaceAllString(dname, "")
+}
+
+func isJailIdValid(jailId string) bool {
+	reg := regexp.MustCompile(`^[` + jailIdChars + `]+$`)
+	return reg.MatchString(jailId)
+}
+
+func initTmpSubDir(jailId string, paths *JailPaths) string {
 	dirNameFile := filepath.Join(paths.base, ".tmp")
 
 	// if dirNameFile exists, read its content
@@ -149,7 +170,7 @@ func initTmpSubDir(paths *JailPaths) string {
 	}
 
 	// New tmp sub directory is needed.
-	tmpSubDir, err := os.MkdirTemp("", tmpDirName(paths.cwd))
+	tmpSubDir, err := os.MkdirTemp("", tmpDirName(jailId))
 	if err != nil {
 		dief("failed to create temporary directory: %v", err)
 	}
@@ -168,20 +189,24 @@ func writeResolvConf(path string) error {
 	return os.WriteFile(path, []byte(content), 0600)
 }
 
-func initFS() JailPaths {
+func initFS(jailId string) JailPaths {
+	hostHome := homeDir()
 	cwd, err := os.Getwd()
 	if err != nil {
 		dief("get current directory failed: %v", err)
 	}
 
-	base := filepath.Join(cwd, ".dirjail")
+	dotdir := filepath.Join(hostHome, ".dirjail")
+	base := filepath.Join(dotdir, jailId)
+	config := filepath.Join(dotdir, "config")
 	fsRoot := filepath.Join(base, "root")
 	etc := filepath.Join(base, "etc")
 	paths := JailPaths{
 		cwd:        cwd,
+		config:     config,
 		base:       base,
 		fsRoot:     fsRoot,
-		hostHome:   homeDir(),
+		hostHome:   hostHome,
 		home:       filepath.Join(base, "home"),
 		etc:        etc,
 		tmpDst:     filepath.Join(fsRoot, os.TempDir()),
@@ -195,7 +220,7 @@ func initFS() JailPaths {
 	}
 
 	if err := os.MkdirAll(paths.etc, 0700); err != nil {
-		dief("failed to create directory %s: %v", paths.home, err)
+		dief("failed to create directory %s: %v", paths.etc, err)
 	}
 
 	if err := ensureDirWithNoPerms(paths.emptyDir); err != nil {
@@ -208,7 +233,7 @@ func initFS() JailPaths {
 		dief("failed to create resolv.conf file: %v", err)
 	}
 
-	paths.tmpSrc = initTmpSubDir(&paths)
+	paths.tmpSrc = initTmpSubDir(jailId, &paths)
 
 	return paths
 }
@@ -276,16 +301,17 @@ func allDigits(s string) bool {
 }
 
 func hideProcFiles(procAccessible []string, paths *JailPaths) {
-	entries, err := os.ReadDir("/proc")
+	procRoot := paths.fsRoot + "/proc"
+	entries, err := os.ReadDir(procRoot)
 	if err != nil {
-		dief("Failed to read /proc: %v", err)
+		dief("Failed to read %v: %v", procRoot, err)
 	}
 
 	procAccessible = append(procAccessible, "uptime", "loadavg", "meminfo", "stat", "sys")
 
 	for _, entry := range entries {
 		name := entry.Name()
-		fullPath := filepath.Join("/proc", name)
+		fullPath := filepath.Join(procRoot, name)
 
 		// Proc entries with all digits are connected to processes with
 		// the same id. Proc contains only processes started in the jail,
@@ -312,11 +338,10 @@ func hideProcFiles(procAccessible []string, paths *JailPaths) {
 	}
 }
 
-func childProcessEntry(progWithArgs []string) {
-	paths := initFS()
+func childProcessEntry(jailId string, progWithArgs []string) {
+	paths := initFS(jailId)
 
-	configPath := filepath.Join(paths.hostHome, ".dirjail")
-	cfg, err := config.Read(configPath)
+	cfg, err := config.Read(paths.config)
 	if err != nil {
 		die(err)
 	}
@@ -382,17 +407,14 @@ func childProcessEntry(progWithArgs []string) {
 	// Mount current working directory
 	mountDir(paths.cwd, filepath.Join(paths.fsRoot, paths.cwd), syscall.MS_BIND|syscall.MS_REC)
 
-	if err := syscall.Chroot(paths.fsRoot); err != nil {
-		dief("chroot to %s failed: %v", paths.fsRoot, err)
-	}
-
-	if err := syscall.Mount("", "/proc", "proc", 0, ""); err != nil {
+	if err := syscall.Mount("", paths.fsRoot+"/proc", "proc", 0, ""); err != nil {
 		dief("mount proc failed: %v", err)
 	}
 	hideProcFiles(cfg.ProcReadable, &paths)
 
-	// Hide dirjail root directory
-	mountDir(paths.emptyDir, paths.base, syscall.MS_BIND|syscall.MS_RDONLY)
+	if err := syscall.Chroot(paths.fsRoot); err != nil {
+		dief("chroot to %s failed: %v", paths.fsRoot, err)
+	}
 
 	// Change working directory to what it was originally
 	if err := syscall.Chdir(paths.cwd); err != nil {
@@ -444,12 +466,15 @@ func (s *stringSlice) Set(value string) error {
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-child" {
 		fmt.Printf("Child started %v\n", os.Args[0])
-		childProcessEntry(os.Args[2:])
+		jailId := os.Args[2]
+		cmdAndArgs := os.Args[3:]
+		childProcessEntry(jailId, cmdAndArgs)
 		os.Exit(0)
 	}
 	fmt.Println("Parent started")
 
 	var portForwards []string
+	var jailId string
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `dirjail limits programs abilities to read and write user's files
 Usage: dirjail [options] [command...]
@@ -459,10 +484,19 @@ Options:
 	}
 
 	flag.Var((*stringSlice)(&portForwards), "p", "Publish port(s) to the host. Format: [hostIP:]hostPort[:containerPort]")
+	flag.StringVar(&jailId, "i", "", "Jail ID")
 
 	err := flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
 		dief("failed to parse command line: %v", err)
+	}
+
+	if jailId == "" {
+		jailId = defaultJailId()
+	} else {
+		if !isJailIdValid(jailId) {
+			dief("invalid character in jail ID")
+		}
 	}
 
 	var parsedPortForwards []*config.PortForward
@@ -476,7 +510,7 @@ Options:
 
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
-	childArgs := append([]string{"-child"}, flag.Args()...)
+	childArgs := append([]string{"-child", jailId}, flag.Args()...)
 	cmd := exec.Command(os.Args[0], childArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
