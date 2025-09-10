@@ -364,7 +364,7 @@ func childProcessEntry(jailId string, progWithArgs []string) {
 	// config files as needed.
 	//
 	// Readonly overlayfs does not require upperdir= and workdir= params.
-	opts := "lowerdir=/home/j/code/dirjail/.dirjail/etc/:/etc"
+	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.etc)
 	if err := syscall.Mount("overlay", paths.fsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
 		dief("mount /etc failed: %v", err)
 	}
