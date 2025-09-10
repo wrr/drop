@@ -121,11 +121,7 @@ func homeDir() string {
 }
 
 func tmpDirName(jailId string) string {
-	sep := ""
-	if !strings.HasPrefix(jailId, "-") {
-		sep = "-"
-	}
-	return "dirjail-" + sep + jailId + "-"
+	return "dirjail-" + jailId + "-"
 }
 
 var jailIdChars = `a-zA-Z0-9-_\.`
@@ -136,14 +132,22 @@ func defaultJailId() string {
 		dief("get current directory failed: %v", err)
 	}
 	dname := strings.ReplaceAll(cwd, "/", "-")
+	// remove leading - not to start directory name with -
+	if len(dname) <= 1 {
+		return "root"
+	}
+	dname = dname[1:]
 	// Keep only allowed jail ID characters
 	reg := regexp.MustCompile(`[^` + jailIdChars + `]`)
-	return reg.ReplaceAllString(dname, "")
+	return reg.ReplaceAllString(dname, "_")
 }
 
 func isJailIdValid(jailId string) bool {
 	reg := regexp.MustCompile(`^[` + jailIdChars + `]+$`)
-	return reg.MatchString(jailId)
+	// Do not allow - at the start, because directory created for this
+	// jail will then be tricky to handle with standard shell tools
+	// (directory name interpreted as a command flag).
+	return jailId[0] != '-' && reg.MatchString(jailId)
 }
 
 func initTmpSubDir(jailId string, paths *JailPaths) string {
@@ -197,8 +201,9 @@ func initFS(jailId string) JailPaths {
 	}
 
 	dotdir := filepath.Join(hostHome, ".dirjail")
-	base := filepath.Join(dotdir, jailId)
+	base := filepath.Join(dotdir, "jails", jailId)
 	config := filepath.Join(dotdir, "config")
+	internal := filepath.Join(dotdir, "internal")
 	fsRoot := filepath.Join(base, "root")
 	etc := filepath.Join(base, "etc")
 	paths := JailPaths{
@@ -210,8 +215,8 @@ func initFS(jailId string) JailPaths {
 		home:       filepath.Join(base, "home"),
 		etc:        etc,
 		tmpDst:     filepath.Join(fsRoot, os.TempDir()),
-		emptyDir:   filepath.Join(base, "empty"),
-		emptyFile:  filepath.Join(base, "empty_file"),
+		emptyDir:   filepath.Join(internal, "emptyd"),
+		emptyFile:  filepath.Join(internal, "empty"),
 		resolvConf: filepath.Join(etc, "resolv.conf"),
 	}
 	// Create necessary directories
@@ -221,6 +226,9 @@ func initFS(jailId string) JailPaths {
 
 	if err := os.MkdirAll(paths.etc, 0700); err != nil {
 		dief("failed to create directory %s: %v", paths.etc, err)
+	}
+	if err := os.MkdirAll(internal, 0700); err != nil {
+		dief("failed to create directory %s: %v", internal, err)
 	}
 
 	if err := ensureDirWithNoPerms(paths.emptyDir); err != nil {
