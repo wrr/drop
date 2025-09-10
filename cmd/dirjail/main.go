@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -18,23 +17,9 @@ import (
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 
 	"github.com/wrr/dirjail/internal/config"
+	"github.com/wrr/dirjail/internal/jailfs"
 	"github.com/wrr/dirjail/internal/netns"
 )
-
-type JailPaths struct {
-	cwd        string
-	config     string
-	base       string
-	fsRoot     string
-	hostHome   string
-	home       string
-	etc        string
-	tmpSrc     string
-	tmpDst     string
-	emptyDir   string
-	emptyFile  string
-	resolvConf string
-}
 
 func errorf(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
@@ -69,61 +54,6 @@ func createEmptyFile(path string) error {
 	return file.Close()
 }
 
-func ensureDirWithNoPerms(path string) error {
-	if info, err := os.Stat(path); err == nil {
-		if !info.IsDir() {
-			return fmt.Errorf("%s is not a directory", path)
-		}
-		if info.Mode().Perm() == 0000 {
-			// Directory exists and has correct permissions.
-			return nil
-		}
-		// Directory doesn't have correct permissions, remove
-		// and recreate it.
-		if err := os.RemoveAll(path); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	return os.Mkdir(path, 0000)
-}
-
-func ensureEmptyFile(path string) error {
-	if info, err := os.Stat(path); err == nil {
-		// File exists.
-		if info.Mode().Perm() == 0000 && info.Size() == 0 {
-			// File already has correct permissions and is empty.
-			return nil
-		}
-		// File is not empty or doesn't have correct permissions, remove
-		// and recreate it.
-		if err := os.Remove(path); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
-	if err != nil {
-		return err
-	}
-	return file.Close()
-}
-
-func homeDir() string {
-	currentUser, err := user.Current()
-	if err != nil {
-		dief("failed to get current user: %v", err)
-	}
-	return currentUser.HomeDir
-}
-
-func tmpDirName(jailId string) string {
-	return "dirjail-" + jailId + "-"
-}
-
 var jailIdChars = `a-zA-Z0-9-_\.`
 
 func defaultJailId() string {
@@ -148,102 +78,6 @@ func isJailIdValid(jailId string) bool {
 	// jail will then be tricky to handle with standard shell tools
 	// (directory name interpreted as a command flag).
 	return jailId[0] != '-' && reg.MatchString(jailId)
-}
-
-func initTmpSubDir(jailId string, paths *JailPaths) string {
-	dirNameFile := filepath.Join(paths.base, ".tmp")
-
-	// if dirNameFile exists, read its content
-	if data, err := os.ReadFile(dirNameFile); err == nil {
-		// No error.
-		dirName := strings.TrimSpace(string(data))
-
-		if dirName != "" {
-			// Check if directory exists, is owned by current user, and has 700 permissions
-			tmpSubDir := filepath.Join(os.TempDir(), dirName)
-
-			if stat, err := os.Stat(tmpSubDir); err == nil && stat.IsDir() {
-				if sysStats, ok := stat.Sys().(*syscall.Stat_t); ok {
-					currentUID := os.Getuid()
-					if int(sysStats.Uid) == currentUID && stat.Mode().Perm() == 0700 {
-						return tmpSubDir
-					}
-				}
-			}
-		}
-	}
-
-	// New tmp sub directory is needed.
-	tmpSubDir, err := os.MkdirTemp("", tmpDirName(jailId))
-	if err != nil {
-		dief("failed to create temporary directory: %v", err)
-	}
-	dirName := filepath.Base(tmpSubDir)
-
-	// Write the directory name to the file, so the dir can be re-used by
-	// other dirjails with the same id
-	if err := os.WriteFile(dirNameFile, []byte(dirName), 0600); err != nil {
-		dief("failed to write to %v: %v", dirNameFile, err)
-	}
-	return tmpSubDir
-}
-
-func writeResolvConf(path string) error {
-	content := "nameserver 10.0.2.3"
-	return os.WriteFile(path, []byte(content), 0600)
-}
-
-func initFS(jailId string) JailPaths {
-	hostHome := homeDir()
-	cwd, err := os.Getwd()
-	if err != nil {
-		dief("get current directory failed: %v", err)
-	}
-
-	dotdir := filepath.Join(hostHome, ".dirjail")
-	base := filepath.Join(dotdir, "jails", jailId)
-	config := filepath.Join(dotdir, "config")
-	internal := filepath.Join(dotdir, "internal")
-	fsRoot := filepath.Join(base, "root")
-	etc := filepath.Join(base, "etc")
-	paths := JailPaths{
-		cwd:        cwd,
-		config:     config,
-		base:       base,
-		fsRoot:     fsRoot,
-		hostHome:   hostHome,
-		home:       filepath.Join(base, "home"),
-		etc:        etc,
-		tmpDst:     filepath.Join(fsRoot, os.TempDir()),
-		emptyDir:   filepath.Join(internal, "emptyd"),
-		emptyFile:  filepath.Join(internal, "empty"),
-		resolvConf: filepath.Join(etc, "resolv.conf"),
-	}
-	// Create necessary directories
-	if err := os.MkdirAll(paths.home, 0700); err != nil {
-		dief("failed to create directory %s: %v", paths.home, err)
-	}
-
-	if err := os.MkdirAll(paths.etc, 0700); err != nil {
-		dief("failed to create directory %s: %v", paths.etc, err)
-	}
-	if err := os.MkdirAll(internal, 0700); err != nil {
-		dief("failed to create directory %s: %v", internal, err)
-	}
-
-	if err := ensureDirWithNoPerms(paths.emptyDir); err != nil {
-		die(err)
-	}
-	if err := ensureEmptyFile(paths.emptyFile); err != nil {
-		die(err)
-	}
-	if err := writeResolvConf(paths.resolvConf); err != nil {
-		dief("failed to create resolv.conf file: %v", err)
-	}
-
-	paths.tmpSrc = initTmpSubDir(jailId, &paths)
-
-	return paths
 }
 
 func doMount(src, dst string, mountflags uintptr) {
@@ -308,8 +142,8 @@ func allDigits(s string) bool {
 	return digitsRegex.MatchString(s)
 }
 
-func hideProcFiles(procAccessible []string, paths *JailPaths) {
-	procRoot := paths.fsRoot + "/proc"
+func hideProcFiles(procAccessible []string, paths *jailfs.Paths) {
+	procRoot := paths.FsRoot + "/proc"
 	entries, err := os.ReadDir(procRoot)
 	if err != nil {
 		dief("Failed to read %v: %v", procRoot, err)
@@ -339,27 +173,30 @@ func hideProcFiles(procAccessible []string, paths *JailPaths) {
 		if info.Mode()&fs.ModeSymlink != 0 {
 			// skip symlinks such as /proc/self
 		} else if info.IsDir() {
-			mountDir(paths.emptyDir, fullPath, syscall.MS_BIND|syscall.MS_RDONLY)
+			mountDir(paths.EmptyDir, fullPath, syscall.MS_BIND|syscall.MS_RDONLY)
 		} else {
-			mountFile(paths.emptyFile, fullPath, syscall.MS_BIND|syscall.MS_RDONLY)
+			mountFile(paths.EmptyFile, fullPath, syscall.MS_BIND|syscall.MS_RDONLY)
 		}
 	}
 }
 
 func childProcessEntry(jailId string, progWithArgs []string) {
-	paths := initFS(jailId)
+	paths, err := jailfs.NewPaths(jailId)
+	if err != nil {
+		die(err)
+	}
 
-	cfg, err := config.Read(paths.config)
+	cfg, err := config.Read(paths.Config)
 	if err != nil {
 		die(err)
 	}
 
 	syscall.Chdir("/")
 
-	mountEntries(paths.hostHome, paths.home, cfg.HomeVisible, true)
-	mountEntries(paths.hostHome, paths.home, cfg.HomeWriteable, false)
+	mountEntries(paths.HostHome, paths.Home, cfg.HomeVisible, true)
+	mountEntries(paths.HostHome, paths.Home, cfg.HomeWriteable, false)
 
-	mountDir("/", paths.fsRoot, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
+	mountDir("/", paths.FsRoot, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
 
 	// For DNS to work in the container /etc/resolv.conf needs to be
 	// overwritten. We use overlayfs for this instead of bind mounting
@@ -372,23 +209,23 @@ func childProcessEntry(jailId string, progWithArgs []string) {
 	// config files as needed.
 	//
 	// Readonly overlayfs does not require upperdir= and workdir= params.
-	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.etc)
-	if err := syscall.Mount("overlay", paths.fsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
+	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
+	if err := syscall.Mount("overlay", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
 		dief("mount /etc failed: %v", err)
 	}
 
-	if err := syscall.Mount("", paths.fsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
+	if err := syscall.Mount("", paths.FsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
 		dief("mount /run failed: %v", err)
 	}
 
-	if err := syscall.Mount("", paths.fsRoot+"/dev", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID, "mode=755"); err != nil {
+	if err := syscall.Mount("", paths.FsRoot+"/dev", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID, "mode=755"); err != nil {
 		dief("mount /dev failed: %v", err)
 	}
 
-	if err := os.Mkdir(paths.fsRoot+"/dev/shm", 0700); err != nil {
+	if err := os.Mkdir(paths.FsRoot+"/dev/shm", 0700); err != nil {
 		die(err)
 	}
-	if err := syscall.Mount("", paths.fsRoot+"/dev/shm", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, "mode=1777"); err != nil {
+	if err := syscall.Mount("", paths.FsRoot+"/dev/shm", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, "mode=1777"); err != nil {
 		dief("mount /dev failed: %v", err)
 	}
 
@@ -396,37 +233,37 @@ func childProcessEntry(jailId string, progWithArgs []string) {
 	// even if unix.CAP_MKNOD is passed, so we map some host devices to
 	// the container /dev instead.
 	devices := []string{"null", "zero", "full", "random", "urandom"}
-	mountEntries("/dev", paths.fsRoot+"/dev", devices, false)
+	mountEntries("/dev", paths.FsRoot+"/dev", devices, false)
 
-	mountEntries("/dev", paths.fsRoot+"/dev/test/", devices, false)
+	mountEntries("/dev", paths.FsRoot+"/dev/test/", devices, false)
 
-	if err := os.Mkdir(paths.fsRoot+"/dev/pts", 0700); err != nil {
+	if err := os.Mkdir(paths.FsRoot+"/dev/pts", 0700); err != nil {
 		die(err)
 	}
-	if err := syscall.Mount("", paths.fsRoot+"/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
+	if err := syscall.Mount("", paths.FsRoot+"/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
 		dief("mount /dev/pts failed: %v", err)
 	}
 
-	homeDst := filepath.Join(paths.fsRoot, paths.hostHome)
-	mountDir(paths.home, homeDst, syscall.MS_BIND|syscall.MS_REC)
+	homeDst := filepath.Join(paths.FsRoot, paths.HostHome)
+	mountDir(paths.Home, homeDst, syscall.MS_BIND|syscall.MS_REC)
 
-	mountDir(paths.tmpSrc, paths.tmpDst, syscall.MS_BIND)
+	mountDir(paths.TmpSrc, paths.TmpDst, syscall.MS_BIND)
 
 	// Mount current working directory
-	mountDir(paths.cwd, filepath.Join(paths.fsRoot, paths.cwd), syscall.MS_BIND|syscall.MS_REC)
+	mountDir(paths.Cwd, filepath.Join(paths.FsRoot, paths.Cwd), syscall.MS_BIND|syscall.MS_REC)
 
-	if err := syscall.Mount("", paths.fsRoot+"/proc", "proc", 0, ""); err != nil {
+	if err := syscall.Mount("", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
 		dief("mount proc failed: %v", err)
 	}
-	hideProcFiles(cfg.ProcReadable, &paths)
+	hideProcFiles(cfg.ProcReadable, paths)
 
-	if err := syscall.Chroot(paths.fsRoot); err != nil {
-		dief("chroot to %s failed: %v", paths.fsRoot, err)
+	if err := syscall.Chroot(paths.FsRoot); err != nil {
+		dief("chroot to %s failed: %v", paths.FsRoot, err)
 	}
 
 	// Change working directory to what it was originally
-	if err := syscall.Chdir(paths.cwd); err != nil {
-		dief("chdir to %s failed: %v", paths.cwd, err)
+	if err := syscall.Chdir(paths.Cwd); err != nil {
+		dief("chdir to %s failed: %v", paths.Cwd, err)
 	}
 
 	// Drop all the capabilities in the user namespace.
