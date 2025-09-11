@@ -1,15 +1,11 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"syscall"
 
@@ -46,14 +42,6 @@ func dropAllCaps() {
 	}
 }
 
-func createEmptyFile(path string) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
-	if err != nil {
-		return fmt.Errorf("failed creating %s: %w", path, err)
-	}
-	return file.Close()
-}
-
 var jailIdChars = `a-zA-Z0-9-_\.`
 
 func defaultJailId() string {
@@ -80,106 +68,6 @@ func isJailIdValid(jailId string) bool {
 	return jailId[0] != '-' && reg.MatchString(jailId)
 }
 
-func doMount(src, dst string, mountflags uintptr) {
-	fmt.Printf("Mounting %s to %s\n", src, dst)
-	if err := syscall.Mount(src, dst, "", mountflags, ""); err != nil {
-		dief("mount %s to %s failed: %v", src, dst, err)
-	}
-	// mount and remount is needed for RDONLY to work:
-	// https://github.com/opencontainers/runc/blob/675292473b3ad4c131b900806077148a556d78c9/libcontainer/rootfs_linux.go#L581
-	if mountflags&syscall.MS_RDONLY != 0 {
-		if err := syscall.Mount(dst, dst, "", syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_BIND, ""); err != nil {
-			dief("readonly re-mount of %s failed: %v", dst, err)
-		}
-	}
-}
-
-func mountDir(src, dst string, mountflags uintptr) {
-	if err := os.MkdirAll(dst, 0700); err != nil {
-		dief("failed to create directory %s: %v", dst, err)
-	}
-	doMount(src, dst, mountflags)
-}
-
-func mountFile(src, dst string, mountflags uintptr) {
-	dstParent := filepath.Dir(dst)
-	if err := os.MkdirAll(dstParent, 0750); err != nil {
-		dief("failed to create directory %s: %v", dstParent, err)
-	}
-	// Mount destination must exist, create an empty file to be the
-	// destination mount point
-	if _, err := os.Stat(dst); os.IsNotExist(err) {
-		createEmptyFile(dst)
-	}
-	doMount(src, dst, mountflags)
-}
-
-func mountEntries(srcDir, dstDir string, entries []string, readonly bool) {
-	mountflags := uintptr(syscall.MS_BIND)
-	if readonly {
-		mountflags |= syscall.MS_RDONLY
-	}
-
-	for _, entry := range entries {
-		entryPath := filepath.Join(srcDir, entry)
-		newEntryPath := filepath.Join(dstDir, entry)
-
-		if info, err := os.Stat(entryPath); err == nil {
-			if info.IsDir() {
-				mountDir(entryPath, newEntryPath, mountflags)
-			} else {
-				mountFile(entryPath, newEntryPath, mountflags)
-			}
-		} else {
-			fmt.Printf("Not mounting %s, no such file or directory\n", entryPath)
-		}
-	}
-}
-
-var digitsRegex = regexp.MustCompile(`^\d+$`)
-
-func allDigits(s string) bool {
-	return digitsRegex.MatchString(s)
-}
-
-func hideProcFiles(procAccessible []string, paths *jailfs.Paths) {
-	procRoot := paths.FsRoot + "/proc"
-	entries, err := os.ReadDir(procRoot)
-	if err != nil {
-		dief("Failed to read %v: %v", procRoot, err)
-	}
-
-	procAccessible = append(procAccessible, "uptime", "loadavg", "meminfo", "stat", "sys")
-
-	for _, entry := range entries {
-		name := entry.Name()
-		fullPath := filepath.Join(procRoot, name)
-
-		// Proc entries with all digits are connected to processes with
-		// the same id. Proc contains only processes started in the jail,
-		// so all these entries are accessible.
-		accessible := allDigits(name) || slices.Contains(procAccessible, name)
-		if accessible {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				// Removed after ReadDir returned
-				continue
-			}
-			dief("failed to retrieve file info for %s %v", fullPath, err)
-		}
-		if info.Mode()&fs.ModeSymlink != 0 {
-			// skip symlinks such as /proc/self
-		} else if info.IsDir() {
-			mountDir(paths.EmptyDir, fullPath, syscall.MS_BIND|syscall.MS_RDONLY)
-		} else {
-			mountFile(paths.EmptyFile, fullPath, syscall.MS_BIND|syscall.MS_RDONLY)
-		}
-	}
-}
-
 func childProcessEntry(jailId string, progWithArgs []string) {
 	paths, err := jailfs.NewPaths(jailId)
 	if err != nil {
@@ -195,71 +83,13 @@ func childProcessEntry(jailId string, progWithArgs []string) {
 		die(err)
 	}
 
-	syscall.Chdir("/")
-
-	mountEntries(paths.HostHome, paths.Home, cfg.HomeVisible, true)
-	mountEntries(paths.HostHome, paths.Home, cfg.HomeWriteable, false)
-
-	mountDir("/", paths.FsRoot, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY)
-
-	// For DNS to work in the container /etc/resolv.conf needs to be
-	// overwritten. We use overlayfs for this instead of bind mounting
-	// /etc/resolv.conf. On Ubuntu /etc/resolv.conf is a symlink to
-	// ../run/systemd/resolve/stub-resolv.conf. It is not possible for a
-	// bind mount to replace a symlink, so our resolv.conf would still
-	// need to be at ../run/systemd/resolve/stub-resolv.conf. Having
-	// read-only overlayfs with our /etc/resolv.conf in a top level hides
-	// the symlink, so is more elegant and also allows to easily replace more
-	// config files as needed.
-	//
-	// Readonly overlayfs does not require upperdir= and workdir= params.
-	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
-	if err := syscall.Mount("overlay", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
-		dief("mount /etc failed: %v", err)
+	if err := syscall.Chdir("/"); err != nil {
+		dief("chdir to / failed: %v", err)
 	}
 
-	if err := syscall.Mount("", paths.FsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
-		dief("mount /run failed: %v", err)
-	}
-
-	if err := syscall.Mount("", paths.FsRoot+"/dev", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID, "mode=755"); err != nil {
-		dief("mount /dev failed: %v", err)
-	}
-
-	if err := os.Mkdir(paths.FsRoot+"/dev/shm", 0700); err != nil {
+	if err := jailfs.ArrangeFilesystem(paths, cfg); err != nil {
 		die(err)
 	}
-	if err := syscall.Mount("", paths.FsRoot+"/dev/shm", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, "mode=1777"); err != nil {
-		dief("mount /dev failed: %v", err)
-	}
-
-	// mkdev is not allowed in the container when running as a user,
-	// even if unix.CAP_MKNOD is passed, so we map some host devices to
-	// the container /dev instead.
-	devices := []string{"null", "zero", "full", "random", "urandom"}
-	mountEntries("/dev", paths.FsRoot+"/dev", devices, false)
-
-	mountEntries("/dev", paths.FsRoot+"/dev/test/", devices, false)
-
-	if err := os.Mkdir(paths.FsRoot+"/dev/pts", 0700); err != nil {
-		die(err)
-	}
-	if err := syscall.Mount("", paths.FsRoot+"/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
-		dief("mount /dev/pts failed: %v", err)
-	}
-
-	homeDst := filepath.Join(paths.FsRoot, paths.HostHome)
-	mountDir(paths.Home, homeDst, syscall.MS_BIND|syscall.MS_REC)
-
-	mountDir(paths.TmpSrc, paths.TmpDst, syscall.MS_BIND)
-
-	// Mount current working directory
-	mountDir(paths.Cwd, filepath.Join(paths.FsRoot, paths.Cwd), syscall.MS_BIND|syscall.MS_REC)
-
-	if err := syscall.Mount("", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
-		dief("mount proc failed: %v", err)
-	}
-	hideProcFiles(cfg.ProcReadable, paths)
 
 	if err := syscall.Chroot(paths.FsRoot); err != nil {
 		dief("chroot to %s failed: %v", paths.FsRoot, err)

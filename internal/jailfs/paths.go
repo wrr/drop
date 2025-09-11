@@ -34,12 +34,9 @@ type Paths struct {
 	// Etc is the directory mounted as read-only overlay over /etc in the jail
 	// (e.g. /home/alice/.dirjail/jails/project-foo/etc).
 	Etc string
-	// TmpSrc is the directory mounted as /tmp in the jail. It is placed as a
+	// Tmp is the directory mounted as /tmp in the jail. It is placed as a
 	// subdir of the host $TMPDIR to allow standard cleanup mechanisms.
-	TmpSrc string
-	// TmpDst is the destination path for the tmp directory in the jail
-	// (e.g. /home/alice/.dirjail/jails/project-foo/tmp).
-	TmpDst string
+	Tmp string
 	// EmptyDir is an empty directory used to hide directories in the jail.
 	EmptyDir string
 	// EmptyFile is an empty file used to hide files in the jail.
@@ -166,7 +163,6 @@ func NewPaths(jailId string) (*Paths, error) {
 		HostHome:  hostHome,
 		Home:      filepath.Join(base, "home"),
 		Etc:       etc,
-		TmpDst:    filepath.Join(fsRoot, os.TempDir()),
 		EmptyDir:  filepath.Join(internal, "emptyd"),
 		EmptyFile: filepath.Join(internal, "empty"),
 	}
@@ -185,10 +181,10 @@ func NewPaths(jailId string) (*Paths, error) {
 		return nil, err
 	}
 
-	tmpSrc, err := initTmpSubDir(jailId, &paths)
+	tmp, err := initTmpSubDir(jailId, &paths)
 	if err != nil {
 		return nil, err
 	}
-	paths.TmpSrc = tmpSrc
+	paths.Tmp = tmp
 	return &paths, nil
 }
