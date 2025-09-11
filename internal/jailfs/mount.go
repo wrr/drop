@@ -22,6 +22,7 @@ func createEmptyFile(path string) error {
 }
 
 func doBind(src, dst string, mountflags uintptr) error {
+	mountflags |= syscall.MS_BIND
 	if err := syscall.Mount(src, dst, "", mountflags, ""); err != nil {
 		return fmt.Errorf("mount %s to %s failed: %v", src, dst, err)
 	}
@@ -58,7 +59,7 @@ func bindFile(src, dst string, mountflags uintptr) error {
 }
 
 func bindEntries(srcDir, dstDir string, entries []string, readonly bool) error {
-	mountflags := uintptr(syscall.MS_BIND)
+	mountflags := uintptr(0)
 	if readonly {
 		mountflags |= syscall.MS_RDONLY
 	}
@@ -69,7 +70,7 @@ func bindEntries(srcDir, dstDir string, entries []string, readonly bool) error {
 
 		if info, err := os.Stat(entryPath); err == nil {
 			if info.IsDir() {
-				if err := bindDir(entryPath, newEntryPath, mountflags); err != nil {
+				if err := bindDir(entryPath, newEntryPath, mountflags | syscall.MS_REC); err != nil {
 					return err
 				}
 			} else {
@@ -121,11 +122,11 @@ func hideProcFiles(procAccessible []string, paths *Paths) error {
 		if info.Mode()&fs.ModeSymlink != 0 {
 			// skip symlinks such as /proc/self
 		} else if info.IsDir() {
-			if err := bindDir(paths.EmptyDir, fullPath, syscall.MS_BIND|syscall.MS_RDONLY); err != nil {
+			if err := bindDir(paths.EmptyDir, fullPath, syscall.MS_RDONLY); err != nil {
 				return err
 			}
 		} else {
-			if err := bindFile(paths.EmptyFile, fullPath, syscall.MS_BIND|syscall.MS_RDONLY); err != nil {
+			if err := bindFile(paths.EmptyFile, fullPath, syscall.MS_RDONLY); err != nil {
 				return err
 			}
 		}
@@ -146,7 +147,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	if err := bindDir("/", paths.FsRoot, syscall.MS_BIND|syscall.MS_REC|syscall.MS_RDONLY); err != nil {
+	if err := bindDir("/", paths.FsRoot, syscall.MS_REC|syscall.MS_RDONLY); err != nil {
 		return err
 	}
 
@@ -201,17 +202,17 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	}
 
 	homeDst := filepath.Join(paths.FsRoot, paths.HostHome)
-	if err := bindDir(paths.Home, homeDst, syscall.MS_BIND|syscall.MS_REC); err != nil {
+	if err := bindDir(paths.Home, homeDst, syscall.MS_REC); err != nil {
 		return err
 	}
 
 	tmpDst := filepath.Join(paths.FsRoot, os.TempDir())
-	if err := bindDir(paths.Tmp, tmpDst, syscall.MS_BIND); err != nil {
+	if err := bindDir(paths.Tmp, tmpDst, 0); err != nil {
 		return err
 	}
 
 	// Mount current working directory
-	if err := bindDir(paths.Cwd, filepath.Join(paths.FsRoot, paths.Cwd), syscall.MS_BIND|syscall.MS_REC); err != nil {
+	if err := bindDir(paths.Cwd, filepath.Join(paths.FsRoot, paths.Cwd), syscall.MS_REC); err != nil {
 		return err
 	}
 
