@@ -147,7 +147,6 @@ func initTmpSubDir(jailId string, paths *Paths) (string, error) {
 	return tmpSubDir, nil
 }
 
-
 // NewPaths populates Paths with the relevant paths for the current
 // jail and creates missing dir and files.
 func NewPaths(jailId string) (*Paths, error) {
@@ -181,15 +180,11 @@ func NewPaths(jailId string) (*Paths, error) {
 		ResolvConf: filepath.Join(etc, "resolv.conf"),
 	}
 
-	if err := os.MkdirAll(paths.Home, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create directory %s: %v", paths.Home, err)
-	}
-
-	if err := os.MkdirAll(paths.Etc, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create directory %s: %v", paths.Etc, err)
-	}
-	if err := os.MkdirAll(internal, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create directory %s: %v", internal, err)
+	toMkdir := []string{paths.FsRoot, paths.Home, paths.Etc, internal}
+	for _, dir := range toMkdir {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %v", dir, err)
+		}
 	}
 
 	if err := ensureDirWithNoPerms(paths.EmptyDir); err != nil {
