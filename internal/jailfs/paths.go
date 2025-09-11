@@ -9,18 +9,43 @@ import (
 	"syscall"
 )
 
+// Paths contains filesystem paths used to setup the jail.
 type Paths struct {
-	Cwd        string
-	Config     string
-	Base       string
-	FsRoot     string
-	HostHome   string
-	Home       string
-	Etc        string
-	TmpSrc     string
-	TmpDst     string
-	EmptyDir   string
-	EmptyFile  string
+	// Cwd is the directory where dirjail was started.
+	Cwd string
+	// DotDir is the top-level directory where dirjail files are stored
+	// (e.g. /home/alice/.dirjail).
+	DotDir string
+	// Config is the path to the dirjail configuration file.
+	Config string
+	// Base is the entry point for all paths specific to the current jail ID.
+	// For example, if jail-id is 'project-foo', Base is
+	// /home/alice/.dirjail/jails/project-foo.
+	Base string
+	// FsRoot is where the jail's root filesystem is assembled before chroot
+	// (e.g. /home/alice/.dirjail/jails/project-foo/root).
+	FsRoot string
+	// HostHome is the user's home directory on the host system
+	// (e.g. /home/alice).
+	HostHome string
+	// Home is the directory mounted as the home directory in the jail
+	// (e.g. /home/alice/.dirjail/jails/project-foo/home).
+	Home string
+	// Etc is the directory mounted as read-only overlay over /etc in the jail
+	// (e.g. /home/alice/.dirjail/jails/project-foo/etc).
+	Etc string
+	// TmpSrc is the directory mounted as /tmp in the jail. It is placed as a
+	// subdir of the host $TMPDIR to allow standard cleanup mechanisms.
+	TmpSrc string
+	// TmpDst is the destination path for the tmp directory in the jail
+	// (e.g. /home/alice/.dirjail/jails/project-foo/tmp).
+	TmpDst string
+	// EmptyDir is an empty directory used to hide directories in the jail.
+	EmptyDir string
+	// EmptyFile is an empty file used to hide files in the jail.
+	EmptyFile string
+	// ResolvConf is the path to the resolv.conf file used in the jail
+	// (e.g. /home/alice/.dirjail/jails/project-foo/etc/resolv.conf).
 	ResolvConf string
 }
 
@@ -122,6 +147,9 @@ func initTmpSubDir(jailId string, paths *Paths) (string, error) {
 	return tmpSubDir, nil
 }
 
+
+// NewPaths populates Paths with the relevant paths for the current
+// jail and creates missing dir and files.
 func NewPaths(jailId string) (*Paths, error) {
 	hostHome, err := homeDir()
 	if err != nil {
@@ -140,6 +168,7 @@ func NewPaths(jailId string) (*Paths, error) {
 	etc := filepath.Join(base, "etc")
 	paths := Paths{
 		Cwd:        cwd,
+		DotDir:     dotdir,
 		Config:     config,
 		Base:       base,
 		FsRoot:     fsRoot,
