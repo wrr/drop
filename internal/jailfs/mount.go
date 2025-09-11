@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"syscall"
 
 	"github.com/wrr/dirjail/internal/config"
@@ -70,7 +71,7 @@ func bindEntries(srcDir, dstDir string, entries []string, readonly bool) error {
 
 		if info, err := os.Stat(entryPath); err == nil {
 			if info.IsDir() {
-				if err := bindDir(entryPath, newEntryPath, mountflags | syscall.MS_REC); err != nil {
+				if err := bindDir(entryPath, newEntryPath, mountflags|syscall.MS_REC); err != nil {
 					return err
 				}
 			} else {
@@ -89,6 +90,21 @@ var digitsRegex = regexp.MustCompile(`^\d+$`)
 
 func allDigits(s string) bool {
 	return digitsRegex.MatchString(s)
+}
+
+// isParentOrSame return true if parent is a parent directory of child
+// or if they are the same directory.
+func isParentOrSame(parent, child string) bool {
+	sep := string(filepath.Separator)
+	parent = filepath.Clean(parent)
+	child = filepath.Clean(child)
+	if !strings.HasSuffix(parent, sep) {
+		parent += sep
+	}
+	if !strings.HasSuffix(child, sep) {
+		child += sep
+	}
+	return strings.HasPrefix(child, parent)
 }
 
 func hideProcFiles(procAccessible []string, paths *Paths) error {
@@ -211,9 +227,13 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	// Mount current working directory
-	if err := bindDir(paths.Cwd, filepath.Join(paths.FsRoot, paths.Cwd), syscall.MS_REC); err != nil {
-		return err
+	// Mount current working directory and it's subdirs as readable and
+	// writable, but only if Cwd is not the home directory or a parent of it,
+	// to avoid exposing the original home directory.
+	if !isParentOrSame(paths.Cwd, paths.Home) {
+		if err := bindDir(paths.Cwd, filepath.Join(paths.FsRoot, paths.Cwd), 0); err != nil {
+			return err
+		}
 	}
 
 	if err := syscall.Mount("", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
