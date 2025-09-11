@@ -44,9 +44,6 @@ type Paths struct {
 	EmptyDir string
 	// EmptyFile is an empty file used to hide files in the jail.
 	EmptyFile string
-	// ResolvConf is the path to the resolv.conf file used in the jail
-	// (e.g. /home/alice/.dirjail/jails/project-foo/etc/resolv.conf).
-	ResolvConf string
 }
 
 func homeDir() (string, error) {
@@ -98,11 +95,6 @@ func ensureEmptyFile(path string) error {
 		return err
 	}
 	return file.Close()
-}
-
-func writeResolvConf(path string) error {
-	content := "nameserver 10.0.2.3"
-	return os.WriteFile(path, []byte(content), 0600)
 }
 
 func tmpDirName(jailId string) string {
@@ -166,18 +158,17 @@ func NewPaths(jailId string) (*Paths, error) {
 	fsRoot := filepath.Join(base, "root")
 	etc := filepath.Join(base, "etc")
 	paths := Paths{
-		Cwd:        cwd,
-		DotDir:     dotdir,
-		Config:     config,
-		Base:       base,
-		FsRoot:     fsRoot,
-		HostHome:   hostHome,
-		Home:       filepath.Join(base, "home"),
-		Etc:        etc,
-		TmpDst:     filepath.Join(fsRoot, os.TempDir()),
-		EmptyDir:   filepath.Join(internal, "emptyd"),
-		EmptyFile:  filepath.Join(internal, "empty"),
-		ResolvConf: filepath.Join(etc, "resolv.conf"),
+		Cwd:       cwd,
+		DotDir:    dotdir,
+		Config:    config,
+		Base:      base,
+		FsRoot:    fsRoot,
+		HostHome:  hostHome,
+		Home:      filepath.Join(base, "home"),
+		Etc:       etc,
+		TmpDst:    filepath.Join(fsRoot, os.TempDir()),
+		EmptyDir:  filepath.Join(internal, "emptyd"),
+		EmptyFile: filepath.Join(internal, "empty"),
 	}
 
 	toMkdir := []string{paths.FsRoot, paths.Home, paths.Etc, internal}
@@ -192,9 +183,6 @@ func NewPaths(jailId string) (*Paths, error) {
 	}
 	if err := ensureEmptyFile(paths.EmptyFile); err != nil {
 		return nil, err
-	}
-	if err := writeResolvConf(paths.ResolvConf); err != nil {
-		return nil, fmt.Errorf("failed to create resolv.conf file: %v", err)
 	}
 
 	tmpSrc, err := initTmpSubDir(jailId, &paths)

@@ -186,6 +186,10 @@ func childProcessEntry(jailId string, progWithArgs []string) {
 		die(err)
 	}
 
+	if err := jailfs.WriteEtcFiles(paths); err != nil {
+		dief("failed to write /etc files: %v", err)
+	}
+
 	cfg, err := config.Read(paths.Config)
 	if err != nil {
 		die(err)
