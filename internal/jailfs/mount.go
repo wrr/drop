@@ -135,6 +135,20 @@ func mountDev(paths *Paths) error {
 		return fmt.Errorf("mount /dev/pts failed: %v", err)
 	}
 
+	symlinks := map[string]string{
+		"ptmx":   "pts/ptmx",
+		"stdin":  "/proc/self/fd/0",
+		"stdout": "/proc/self/fd/1",
+		"stderr": "/proc/self/fd/2",
+		"fd":     "/proc/self/fd",
+		"core":   "/proc/kcore",
+	}
+	for name, target := range symlinks {
+		if err := os.Symlink(target, paths.FsRoot+"/dev/"+name); err != nil {
+			return fmt.Errorf("failed to create %s symlink: %v", name, err)
+		}
+	}
+
 	return nil
 }
 
