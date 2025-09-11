@@ -60,9 +60,9 @@ func bindFile(src, dst string, mountflags uintptr) error {
 }
 
 func bindEntries(srcDir, dstDir string, entries []string, readonly bool) error {
-	mountflags := uintptr(0)
+	flags := uintptr(0)
 	if readonly {
-		mountflags |= syscall.MS_RDONLY
+		flags |= syscall.MS_RDONLY
 	}
 
 	for _, entry := range entries {
@@ -71,11 +71,11 @@ func bindEntries(srcDir, dstDir string, entries []string, readonly bool) error {
 
 		if info, err := os.Stat(entryPath); err == nil {
 			if info.IsDir() {
-				if err := bindDir(entryPath, newEntryPath, mountflags|syscall.MS_REC); err != nil {
+				if err := bindDir(entryPath, newEntryPath, flags|syscall.MS_REC); err != nil {
 					return err
 				}
 			} else {
-				if err := bindFile(entryPath, newEntryPath, mountflags); err != nil {
+				if err := bindFile(entryPath, newEntryPath, flags); err != nil {
 					return err
 				}
 			}
@@ -108,13 +108,14 @@ func isParentOrSame(parent, child string) bool {
 }
 
 func mountDev(paths *Paths) error {
-	if err := syscall.Mount("", paths.FsRoot+"/dev", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID, "mode=755"); err != nil {
+	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID)
+	if err := syscall.Mount("", paths.FsRoot+"/dev", "tmpfs", flags, "mode=700"); err != nil {
 		return fmt.Errorf("mount /dev failed: %v", err)
 	}
 	if err := os.Mkdir(paths.FsRoot+"/dev/shm", 0700); err != nil {
 		return err
 	}
-	if err := syscall.Mount("", paths.FsRoot+"/dev/shm", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, "mode=1777"); err != nil {
+	if err := syscall.Mount("", paths.FsRoot+"/dev/shm", "tmpfs", flags|syscall.MS_NODEV, "mode=1700"); err != nil {
 		return fmt.Errorf("mount /dev/shm failed: %v", err)
 	}
 
@@ -126,14 +127,11 @@ func mountDev(paths *Paths) error {
 		return err
 	}
 
-	if err := bindEntries("/dev", paths.FsRoot+"/dev/test/", devices, false); err != nil {
-		return err
-	}
-
 	if err := os.Mkdir(paths.FsRoot+"/dev/pts", 0700); err != nil {
 		return err
 	}
-	if err := syscall.Mount("", paths.FsRoot+"/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
+	opts := "mode=600,newinstance,ptmxmode=600"
+	if err := syscall.Mount("", paths.FsRoot+"/dev/pts", "devpts", flags, opts); err != nil {
 		return fmt.Errorf("mount /dev/pts failed: %v", err)
 	}
 
