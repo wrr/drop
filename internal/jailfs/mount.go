@@ -107,6 +107,39 @@ func isParentOrSame(parent, child string) bool {
 	return strings.HasPrefix(child, parent)
 }
 
+func mountDev(paths *Paths) error {
+	if err := syscall.Mount("", paths.FsRoot+"/dev", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID, "mode=755"); err != nil {
+		return fmt.Errorf("mount /dev failed: %v", err)
+	}
+	if err := os.Mkdir(paths.FsRoot+"/dev/shm", 0700); err != nil {
+		return err
+	}
+	if err := syscall.Mount("", paths.FsRoot+"/dev/shm", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, "mode=1777"); err != nil {
+		return fmt.Errorf("mount /dev/shm failed: %v", err)
+	}
+
+	// mkdev is not allowed in the container when running as a user,
+	// even if unix.CAP_MKNOD is passed, so we map some host devices to
+	// the container /dev instead.
+	devices := []string{"null", "zero", "full", "random", "urandom"}
+	if err := bindEntries("/dev", paths.FsRoot+"/dev", devices, false); err != nil {
+		return err
+	}
+
+	if err := bindEntries("/dev", paths.FsRoot+"/dev/test/", devices, false); err != nil {
+		return err
+	}
+
+	if err := os.Mkdir(paths.FsRoot+"/dev/pts", 0700); err != nil {
+		return err
+	}
+	if err := syscall.Mount("", paths.FsRoot+"/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
+		return fmt.Errorf("mount /dev/pts failed: %v", err)
+	}
+
+	return nil
+}
+
 func hideProcFiles(procAccessible []string, paths *Paths) error {
 	procRoot := paths.FsRoot + "/proc"
 	entries, err := os.ReadDir(procRoot)
@@ -187,34 +220,8 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return fmt.Errorf("mount /run failed: %v", err)
 	}
 
-	if err := syscall.Mount("", paths.FsRoot+"/dev", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID, "mode=755"); err != nil {
-		return fmt.Errorf("mount /dev failed: %v", err)
-	}
-
-	if err := os.Mkdir(paths.FsRoot+"/dev/shm", 0700); err != nil {
+	if err := mountDev(paths); err != nil {
 		return err
-	}
-	if err := syscall.Mount("", paths.FsRoot+"/dev/shm", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, "mode=1777"); err != nil {
-		return fmt.Errorf("mount /dev/shm failed: %v", err)
-	}
-
-	// mkdev is not allowed in the container when running as a user,
-	// even if unix.CAP_MKNOD is passed, so we map some host devices to
-	// the container /dev instead.
-	devices := []string{"null", "zero", "full", "random", "urandom"}
-	if err := bindEntries("/dev", paths.FsRoot+"/dev", devices, false); err != nil {
-		return err
-	}
-
-	if err := bindEntries("/dev", paths.FsRoot+"/dev/test/", devices, false); err != nil {
-		return err
-	}
-
-	if err := os.Mkdir(paths.FsRoot+"/dev/pts", 0700); err != nil {
-		return err
-	}
-	if err := syscall.Mount("", paths.FsRoot+"/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID, ""); err != nil {
-		return fmt.Errorf("mount /dev/pts failed: %v", err)
 	}
 
 	homeDst := filepath.Join(paths.FsRoot, paths.HostHome)
