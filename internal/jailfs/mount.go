@@ -14,6 +14,21 @@ import (
 	"github.com/wrr/dirjail/internal/config"
 )
 
+// isParentOrSame return true if parent is a parent directory of child
+// or if they are the same directory.
+func isParentOrSame(parent, child string) bool {
+	sep := string(filepath.Separator)
+	parent = filepath.Clean(parent)
+	child = filepath.Clean(child)
+	if !strings.HasSuffix(parent, sep) {
+		parent += sep
+	}
+	if !strings.HasSuffix(child, sep) {
+		child += sep
+	}
+	return strings.HasPrefix(child, parent)
+}
+
 func createEmptyFile(path string) error {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
 	if err != nil {
@@ -90,21 +105,6 @@ var digitsRegex = regexp.MustCompile(`^\d+$`)
 
 func allDigits(s string) bool {
 	return digitsRegex.MatchString(s)
-}
-
-// isParentOrSame return true if parent is a parent directory of child
-// or if they are the same directory.
-func isParentOrSame(parent, child string) bool {
-	sep := string(filepath.Separator)
-	parent = filepath.Clean(parent)
-	child = filepath.Clean(child)
-	if !strings.HasSuffix(parent, sep) {
-		parent += sep
-	}
-	if !strings.HasSuffix(child, sep) {
-		child += sep
-	}
-	return strings.HasPrefix(child, parent)
 }
 
 func mountDev(paths *Paths) error {
@@ -208,7 +208,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	if err := bindDir("/", paths.FsRoot, syscall.MS_REC|syscall.MS_RDONLY); err != nil {
+	if err := bindDir("/", paths.FsRoot, syscall.MS_NOSUID|syscall.MS_REC|syscall.MS_RDONLY); err != nil {
 		return err
 	}
 
