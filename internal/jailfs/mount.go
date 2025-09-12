@@ -14,187 +14,6 @@ import (
 	"github.com/wrr/dirjail/internal/config"
 )
 
-// isParentOrSame return true if parent is a parent directory of child
-// or if they are the same directory.
-func isParentOrSame(parent, child string) bool {
-	sep := string(filepath.Separator)
-	parent = filepath.Clean(parent)
-	child = filepath.Clean(child)
-	if !strings.HasSuffix(parent, sep) {
-		parent += sep
-	}
-	if !strings.HasSuffix(child, sep) {
-		child += sep
-	}
-	return strings.HasPrefix(child, parent)
-}
-
-func createEmptyFile(path string) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
-	if err != nil {
-		return fmt.Errorf("failed to create %s: %w", path, err)
-	}
-	return file.Close()
-}
-
-func doBind(src, dst string, mountflags uintptr) error {
-	mountflags |= syscall.MS_BIND
-	if err := syscall.Mount(src, dst, "", mountflags, ""); err != nil {
-		return fmt.Errorf("mount %s to %s failed: %v", src, dst, err)
-	}
-	// mount and remount is needed for RDONLY to work:
-	// https://github.com/opencontainers/runc/blob/675292473b3ad4c131b900806077148a556d78c9/libcontainer/rootfs_linux.go#L581
-	if mountflags&syscall.MS_RDONLY != 0 {
-		if err := syscall.Mount(dst, dst, "", syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_BIND, ""); err != nil {
-			return fmt.Errorf("readonly re-mount of %s failed: %v", dst, err)
-		}
-	}
-	return nil
-}
-
-func bindDir(src, dst string, mountflags uintptr) error {
-	if err := os.MkdirAll(dst, 0700); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", dst, err)
-	}
-	return doBind(src, dst, mountflags)
-}
-
-func bindFile(src, dst string, mountflags uintptr) error {
-	dstParent := filepath.Dir(dst)
-	if err := os.MkdirAll(dstParent, 0700); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", dstParent, err)
-	}
-	// Mount destination must exist, create an empty file to be the
-	// destination mount point
-	if _, err := os.Stat(dst); os.IsNotExist(err) {
-		if err := createEmptyFile(dst); err != nil {
-			return err
-		}
-	}
-	return doBind(src, dst, mountflags)
-}
-
-func bindEntries(srcDir, dstDir string, entries []string, readonly bool) error {
-	flags := uintptr(0)
-	if readonly {
-		flags |= syscall.MS_RDONLY
-	}
-
-	for _, entry := range entries {
-		entryPath := filepath.Join(srcDir, entry)
-		newEntryPath := filepath.Join(dstDir, entry)
-
-		if info, err := os.Stat(entryPath); err == nil {
-			if info.IsDir() {
-				if err := bindDir(entryPath, newEntryPath, flags|syscall.MS_REC); err != nil {
-					return err
-				}
-			} else {
-				if err := bindFile(entryPath, newEntryPath, flags); err != nil {
-					return err
-				}
-			}
-		} else {
-			fmt.Printf("Not mounting %s, no such file or directory\n", entryPath)
-		}
-	}
-	return nil
-}
-
-var digitsRegex = regexp.MustCompile(`^\d+$`)
-
-func allDigits(s string) bool {
-	return digitsRegex.MatchString(s)
-}
-
-func mountDev(paths *Paths) error {
-	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID)
-	if err := syscall.Mount("", paths.FsRoot+"/dev", "tmpfs", flags, "mode=700"); err != nil {
-		return fmt.Errorf("mount /dev failed: %v", err)
-	}
-	if err := os.Mkdir(paths.FsRoot+"/dev/shm", 0700); err != nil {
-		return err
-	}
-	if err := syscall.Mount("", paths.FsRoot+"/dev/shm", "tmpfs", flags|syscall.MS_NODEV, "mode=1700"); err != nil {
-		return fmt.Errorf("mount /dev/shm failed: %v", err)
-	}
-
-	// mkdev is not allowed in the container when running as a user,
-	// even if unix.CAP_MKNOD is passed, so we map some host devices to
-	// the container /dev instead.
-	devices := []string{"null", "zero", "full", "random", "urandom"}
-	if err := bindEntries("/dev", paths.FsRoot+"/dev", devices, false); err != nil {
-		return err
-	}
-
-	if err := os.Mkdir(paths.FsRoot+"/dev/pts", 0700); err != nil {
-		return err
-	}
-	opts := "mode=600,newinstance,ptmxmode=600"
-	if err := syscall.Mount("", paths.FsRoot+"/dev/pts", "devpts", flags, opts); err != nil {
-		return fmt.Errorf("mount /dev/pts failed: %v", err)
-	}
-
-	symlinks := map[string]string{
-		"ptmx":   "pts/ptmx",
-		"stdin":  "/proc/self/fd/0",
-		"stdout": "/proc/self/fd/1",
-		"stderr": "/proc/self/fd/2",
-		"fd":     "/proc/self/fd",
-		"core":   "/proc/kcore",
-	}
-	for name, target := range symlinks {
-		if err := os.Symlink(target, paths.FsRoot+"/dev/"+name); err != nil {
-			return fmt.Errorf("failed to create %s symlink: %v", name, err)
-		}
-	}
-
-	return nil
-}
-
-func hideProcFiles(procAccessible []string, paths *Paths) error {
-	procRoot := paths.FsRoot + "/proc"
-	entries, err := os.ReadDir(procRoot)
-	if err != nil {
-		return fmt.Errorf("failed to read %v: %v", procRoot, err)
-	}
-
-	procAccessible = append(procAccessible, "uptime", "loadavg", "meminfo", "stat", "sys")
-
-	for _, entry := range entries {
-		name := entry.Name()
-		fullPath := filepath.Join(procRoot, name)
-
-		// Proc entries with all digits are connected to processes with
-		// the same id. Proc contains only processes started in the jail,
-		// so all these entries are accessible.
-		accessible := allDigits(name) || slices.Contains(procAccessible, name)
-		if accessible {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				// Removed after ReadDir returned
-				continue
-			}
-			return fmt.Errorf("failed to retrieve file info for %s %v", fullPath, err)
-		}
-		if info.Mode()&fs.ModeSymlink != 0 {
-			// skip symlinks such as /proc/self
-		} else if info.IsDir() {
-			if err := bindDir(paths.EmptyDir, fullPath, syscall.MS_RDONLY); err != nil {
-				return err
-			}
-		} else {
-			if err := bindFile(paths.EmptyFile, fullPath, syscall.MS_RDONLY); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // ArrangeFilesystem sets up the jail filesystem chierarchy.  It mounts
 // root as read only, mounts a dedicated home directory with only some
 // entries from the host home dir exposed. Creates overlay for /etc,
@@ -263,4 +82,185 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	}
 
 	return nil
+}
+
+func bindEntries(srcDir, dstDir string, entries []string, readonly bool) error {
+	flags := uintptr(0)
+	if readonly {
+		flags |= syscall.MS_RDONLY
+	}
+
+	for _, entry := range entries {
+		entryPath := filepath.Join(srcDir, entry)
+		newEntryPath := filepath.Join(dstDir, entry)
+
+		if info, err := os.Stat(entryPath); err == nil {
+			if info.IsDir() {
+				if err := bindDir(entryPath, newEntryPath, flags|syscall.MS_REC); err != nil {
+					return err
+				}
+			} else {
+				if err := bindFile(entryPath, newEntryPath, flags); err != nil {
+					return err
+				}
+			}
+		} else {
+			fmt.Printf("Not mounting %s, no such file or directory\n", entryPath)
+		}
+	}
+	return nil
+}
+
+func bindFile(src, dst string, mountflags uintptr) error {
+	dstParent := filepath.Dir(dst)
+	if err := os.MkdirAll(dstParent, 0700); err != nil {
+		return fmt.Errorf("failed to create directory %s: %v", dstParent, err)
+	}
+	// Mount destination must exist, create an empty file to be the
+	// destination mount point
+	if _, err := os.Stat(dst); os.IsNotExist(err) {
+		if err := createEmptyFile(dst); err != nil {
+			return err
+		}
+	}
+	return doBind(src, dst, mountflags)
+}
+
+func bindDir(src, dst string, mountflags uintptr) error {
+	if err := os.MkdirAll(dst, 0700); err != nil {
+		return fmt.Errorf("failed to create directory %s: %v", dst, err)
+	}
+	return doBind(src, dst, mountflags)
+}
+
+func doBind(src, dst string, mountflags uintptr) error {
+	mountflags |= syscall.MS_BIND
+	if err := syscall.Mount(src, dst, "", mountflags, ""); err != nil {
+		return fmt.Errorf("mount %s to %s failed: %v", src, dst, err)
+	}
+	// mount and remount is needed for RDONLY to work:
+	// https://github.com/opencontainers/runc/blob/675292473b3ad4c131b900806077148a556d78c9/libcontainer/rootfs_linux.go#L581
+	if mountflags&syscall.MS_RDONLY != 0 {
+		if err := syscall.Mount(dst, dst, "", syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_BIND, ""); err != nil {
+			return fmt.Errorf("readonly re-mount of %s failed: %v", dst, err)
+		}
+	}
+	return nil
+}
+
+func createEmptyFile(path string) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
+	if err != nil {
+		return fmt.Errorf("failed to create %s: %w", path, err)
+	}
+	return file.Close()
+}
+
+func mountDev(paths *Paths) error {
+	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID)
+	if err := syscall.Mount("", paths.FsRoot+"/dev", "tmpfs", flags, "mode=700"); err != nil {
+		return fmt.Errorf("mount /dev failed: %v", err)
+	}
+	if err := os.Mkdir(paths.FsRoot+"/dev/shm", 0700); err != nil {
+		return err
+	}
+	if err := syscall.Mount("", paths.FsRoot+"/dev/shm", "tmpfs", flags|syscall.MS_NODEV, "mode=1700"); err != nil {
+		return fmt.Errorf("mount /dev/shm failed: %v", err)
+	}
+
+	// mkdev is not allowed in the container when running as a user,
+	// even if unix.CAP_MKNOD is passed, so we map some host devices to
+	// the container /dev instead.
+	devices := []string{"null", "zero", "full", "random", "urandom"}
+	if err := bindEntries("/dev", paths.FsRoot+"/dev", devices, false); err != nil {
+		return err
+	}
+
+	if err := os.Mkdir(paths.FsRoot+"/dev/pts", 0700); err != nil {
+		return err
+	}
+	opts := "mode=600,newinstance,ptmxmode=600"
+	if err := syscall.Mount("", paths.FsRoot+"/dev/pts", "devpts", flags, opts); err != nil {
+		return fmt.Errorf("mount /dev/pts failed: %v", err)
+	}
+
+	symlinks := map[string]string{
+		"ptmx":   "pts/ptmx",
+		"stdin":  "/proc/self/fd/0",
+		"stdout": "/proc/self/fd/1",
+		"stderr": "/proc/self/fd/2",
+		"fd":     "/proc/self/fd",
+		"core":   "/proc/kcore",
+	}
+	for name, target := range symlinks {
+		if err := os.Symlink(target, paths.FsRoot+"/dev/"+name); err != nil {
+			return fmt.Errorf("failed to create %s symlink: %v", name, err)
+		}
+	}
+
+	return nil
+}
+
+// isParentOrSame return true if parent is a parent directory of child
+// or if they are the same directory.
+func isParentOrSame(parent, child string) bool {
+	sep := string(filepath.Separator)
+	parent = filepath.Clean(parent)
+	child = filepath.Clean(child)
+	if !strings.HasSuffix(parent, sep) {
+		parent += sep
+	}
+	if !strings.HasSuffix(child, sep) {
+		child += sep
+	}
+	return strings.HasPrefix(child, parent)
+}
+
+func hideProcFiles(procAccessible []string, paths *Paths) error {
+	procRoot := paths.FsRoot + "/proc"
+	entries, err := os.ReadDir(procRoot)
+	if err != nil {
+		return fmt.Errorf("failed to read %v: %v", procRoot, err)
+	}
+
+	procAccessible = append(procAccessible, "uptime", "loadavg", "meminfo", "stat", "sys")
+
+	for _, entry := range entries {
+		name := entry.Name()
+		fullPath := filepath.Join(procRoot, name)
+
+		// Proc entries with all digits are connected to processes with
+		// the same id. Proc contains only processes started in the jail,
+		// so all these entries are accessible.
+		accessible := allDigits(name) || slices.Contains(procAccessible, name)
+		if accessible {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// Removed after ReadDir returned
+				continue
+			}
+			return fmt.Errorf("failed to retrieve file info for %s %v", fullPath, err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			// skip symlinks such as /proc/self
+		} else if info.IsDir() {
+			if err := bindDir(paths.EmptyDir, fullPath, syscall.MS_RDONLY); err != nil {
+				return err
+			}
+		} else {
+			if err := bindFile(paths.EmptyFile, fullPath, syscall.MS_RDONLY); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+var digitsRegex = regexp.MustCompile(`^\d+$`)
+
+func allDigits(s string) bool {
+	return digitsRegex.MatchString(s)
 }

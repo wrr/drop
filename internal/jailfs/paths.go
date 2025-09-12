@@ -43,99 +43,6 @@ type Paths struct {
 	EmptyFile string
 }
 
-func homeDir() (string, error) {
-	currentUser, err := user.Current()
-	if err != nil {
-		return "", fmt.Errorf("failed to get current user: %v", err)
-	}
-	return currentUser.HomeDir, nil
-}
-
-func ensureDirWithNoPerms(path string) error {
-	if info, err := os.Stat(path); err == nil {
-		if !info.IsDir() {
-			return fmt.Errorf("%s is not a directory", path)
-		}
-		if info.Mode().Perm() == 0000 {
-			// Directory exists and has correct permissions.
-			return nil
-		}
-		// Directory doesn't have correct permissions, remove
-		// and recreate it.
-		if err := os.RemoveAll(path); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	return os.Mkdir(path, 0000)
-}
-
-func ensureEmptyFile(path string) error {
-	if info, err := os.Stat(path); err == nil {
-		// File exists.
-		if info.Mode().Perm() == 0000 && info.Size() == 0 {
-			// File already has correct permissions and is empty.
-			return nil
-		}
-		// File is not empty or doesn't have correct permissions, remove
-		// and recreate it.
-		if err := os.Remove(path); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
-	if err != nil {
-		return err
-	}
-	return file.Close()
-}
-
-func tmpDirName(jailId string) string {
-	return "dirjail-" + jailId + "-"
-}
-
-func initTmpSubDir(jailId string, paths *Paths) (string, error) {
-	dirNameFile := filepath.Join(paths.Base, ".tmp")
-
-	// if dirNameFile exists, read its content
-	if data, err := os.ReadFile(dirNameFile); err == nil {
-		// No error.
-		dirName := strings.TrimSpace(string(data))
-
-		if dirName != "" {
-			// Check if directory exists, is owned by current user, and has 700 permissions
-			tmpSubDir := filepath.Join(os.TempDir(), dirName)
-
-			if stat, err := os.Stat(tmpSubDir); err == nil && stat.IsDir() {
-				if sysStats, ok := stat.Sys().(*syscall.Stat_t); ok {
-					currentUID := os.Getuid()
-					if int(sysStats.Uid) == currentUID && stat.Mode().Perm() == 0700 {
-						return tmpSubDir, nil
-					}
-				}
-			}
-		}
-	}
-
-	// New tmp sub directory is needed.
-	tmpSubDir, err := os.MkdirTemp("", tmpDirName(jailId))
-	if err != nil {
-		return "", fmt.Errorf("failed to create temporary directory: %v", err)
-	}
-	dirName := filepath.Base(tmpSubDir)
-
-	// Write the directory name to the file, so the dir can be re-used by
-	// other dirjails with the same id
-	if err := os.WriteFile(dirNameFile, []byte(dirName), 0600); err != nil {
-		return "", fmt.Errorf("failed to write to %v: %v", dirNameFile, err)
-	}
-	return tmpSubDir, nil
-}
-
 // NewPaths populates Paths with the relevant paths for the current
 // jail and creates missing dir and files.
 func NewPaths(jailId string) (*Paths, error) {
@@ -187,4 +94,97 @@ func NewPaths(jailId string) (*Paths, error) {
 	}
 	paths.Tmp = tmp
 	return &paths, nil
+}
+
+func homeDir() (string, error) {
+	currentUser, err := user.Current()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current user: %v", err)
+	}
+	return currentUser.HomeDir, nil
+}
+
+func ensureDirWithNoPerms(path string) error {
+	if info, err := os.Stat(path); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("%s is not a directory", path)
+		}
+		if info.Mode().Perm() == 0000 {
+			// Directory exists and has correct permissions.
+			return nil
+		}
+		// Directory doesn't have correct permissions, remove
+		// and recreate it.
+		if err := os.RemoveAll(path); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return os.Mkdir(path, 0000)
+}
+
+func ensureEmptyFile(path string) error {
+	if info, err := os.Stat(path); err == nil {
+		// File exists.
+		if info.Mode().Perm() == 0000 && info.Size() == 0 {
+			// File already has correct permissions and is empty.
+			return nil
+		}
+		// File is not empty or doesn't have correct permissions, remove
+		// and recreate it.
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
+	if err != nil {
+		return err
+	}
+	return file.Close()
+}
+
+func initTmpSubDir(jailId string, paths *Paths) (string, error) {
+	dirNameFile := filepath.Join(paths.Base, ".tmp")
+
+	// if dirNameFile exists, read its content
+	if data, err := os.ReadFile(dirNameFile); err == nil {
+		// No error.
+		dirName := strings.TrimSpace(string(data))
+
+		if dirName != "" {
+			// Check if directory exists, is owned by current user, and has 700 permissions
+			tmpSubDir := filepath.Join(os.TempDir(), dirName)
+
+			if stat, err := os.Stat(tmpSubDir); err == nil && stat.IsDir() {
+				if sysStats, ok := stat.Sys().(*syscall.Stat_t); ok {
+					currentUID := os.Getuid()
+					if int(sysStats.Uid) == currentUID && stat.Mode().Perm() == 0700 {
+						return tmpSubDir, nil
+					}
+				}
+			}
+		}
+	}
+
+	// New tmp sub directory is needed.
+	tmpSubDir, err := os.MkdirTemp("", tmpDirName(jailId))
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary directory: %v", err)
+	}
+	dirName := filepath.Base(tmpSubDir)
+
+	// Write the directory name to the file, so the dir can be re-used by
+	// other dirjails with the same id
+	if err := os.WriteFile(dirNameFile, []byte(dirName), 0600); err != nil {
+		return "", fmt.Errorf("failed to write to %v: %v", dirNameFile, err)
+	}
+	return tmpSubDir, nil
+}
+
+func tmpDirName(jailId string) string {
+	return "dirjail-" + jailId + "-"
 }

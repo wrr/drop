@@ -31,108 +31,6 @@ func die(err error) {
 	dief("%v", err)
 }
 
-func dropAllCaps() {
-	old := cap.GetProc()
-	empty := cap.NewSet()
-	if err := empty.SetProc(); err != nil {
-		dief("failed to drop privilege: %q -> %q: %v", old, empty, err)
-	}
-	now := cap.GetProc()
-	if cf, _ := now.Cf(empty); cf != 0 {
-		dief("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
-	}
-}
-
-var jailIdChars = `a-zA-Z0-9-_\.`
-
-func defaultJailId() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		dief("get current directory failed: %v", err)
-	}
-	dname := strings.ReplaceAll(cwd, "/", "-")
-	// remove leading - not to start directory name with -
-	if len(dname) <= 1 {
-		return "root"
-	}
-	dname = dname[1:]
-	// Keep only allowed jail ID characters
-	reg := regexp.MustCompile(`[^` + jailIdChars + `]`)
-	return reg.ReplaceAllString(dname, "_")
-}
-
-func isJailIdValid(jailId string) bool {
-	reg := regexp.MustCompile(`^[` + jailIdChars + `]+$`)
-	// Do not allow - at the start, because directory created for this
-	// jail will then be tricky to handle with standard shell tools
-	// (directory name interpreted as a command flag).
-	return jailId[0] != '-' && reg.MatchString(jailId)
-}
-
-func childProcessEntry(jailId string, progWithArgs []string) {
-	paths, err := jailfs.NewPaths(jailId)
-	if err != nil {
-		die(err)
-	}
-
-	if err := jailfs.WriteEtcFiles(paths); err != nil {
-		dief("failed to write /etc files: %v", err)
-	}
-
-	cfg, err := config.Read(paths.Config)
-	if err != nil {
-		die(err)
-	}
-
-	if err := syscall.Chdir("/"); err != nil {
-		dief("chdir to / failed: %v", err)
-	}
-
-	if err := jailfs.ArrangeFilesystem(paths, cfg); err != nil {
-		die(err)
-	}
-
-	if err := syscall.Chroot(paths.FsRoot); err != nil {
-		dief("chroot to %s failed: %v", paths.FsRoot, err)
-	}
-
-	// Change working directory to what it was originally
-	if err := syscall.Chdir(paths.Cwd); err != nil {
-		dief("chdir to %s failed: %v", paths.Cwd, err)
-	}
-
-	// Drop all the capabilities in the user namespace.
-	//
-	// CAP_SYS_ADMIN would allow the user to umount dirjail mounts and
-	// access the original directories (home dir, proc etc.)
-	dropAllCaps()
-
-	var cmd *exec.Cmd
-
-	if len(progWithArgs) == 0 {
-		// TODO: use SHELL env variable
-		progWithArgs = []string{"bash"}
-	}
-
-	pname := progWithArgs[0]
-	cmd = exec.Command(pname, progWithArgs[1:]...)
-
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	// Filter environment variables and always include debian_chroot
-	filteredEnv := env.Filter(os.Environ(), cfg.EnvExpose)
-	cmd.Env = append([]string{"debian_chroot=dirjail"}, filteredEnv...)
-
-	if err := cmd.Start(); err != nil {
-		dief("%s failed: %v", progWithArgs[0], err)
-	}
-	// Ignore errors (bash exits with an error if last executed command
-	// exited with an error)
-	cmd.Wait()
-}
-
 // stringSlice implements flag.Value interface for repeated string flags
 type stringSlice []string
 
@@ -266,5 +164,107 @@ Options:
 			os.Exit(exitError.ExitCode())
 		}
 		dief("jailed process failed to run: %v", err)
+	}
+}
+
+var jailIdChars = `a-zA-Z0-9-_\.`
+
+func defaultJailId() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		dief("get current directory failed: %v", err)
+	}
+	dname := strings.ReplaceAll(cwd, "/", "-")
+	// remove leading - not to start directory name with -
+	if len(dname) <= 1 {
+		return "root"
+	}
+	dname = dname[1:]
+	// Keep only allowed jail ID characters
+	reg := regexp.MustCompile(`[^` + jailIdChars + `]`)
+	return reg.ReplaceAllString(dname, "_")
+}
+
+func isJailIdValid(jailId string) bool {
+	reg := regexp.MustCompile(`^[` + jailIdChars + `]+$`)
+	// Do not allow - at the start, because directory created for this
+	// jail will then be tricky to handle with standard shell tools
+	// (directory name interpreted as a command flag).
+	return jailId[0] != '-' && reg.MatchString(jailId)
+}
+
+func childProcessEntry(jailId string, progWithArgs []string) {
+	paths, err := jailfs.NewPaths(jailId)
+	if err != nil {
+		die(err)
+	}
+
+	if err := jailfs.WriteEtcFiles(paths); err != nil {
+		dief("failed to write /etc files: %v", err)
+	}
+
+	cfg, err := config.Read(paths.Config)
+	if err != nil {
+		die(err)
+	}
+
+	if err := syscall.Chdir("/"); err != nil {
+		dief("chdir to / failed: %v", err)
+	}
+
+	if err := jailfs.ArrangeFilesystem(paths, cfg); err != nil {
+		die(err)
+	}
+
+	if err := syscall.Chroot(paths.FsRoot); err != nil {
+		dief("chroot to %s failed: %v", paths.FsRoot, err)
+	}
+
+	// Change working directory to what it was originally
+	if err := syscall.Chdir(paths.Cwd); err != nil {
+		dief("chdir to %s failed: %v", paths.Cwd, err)
+	}
+
+	// Drop all the capabilities in the user namespace.
+	//
+	// CAP_SYS_ADMIN would allow the user to umount dirjail mounts and
+	// access the original directories (home dir, proc etc.)
+	dropAllCaps()
+
+	var cmd *exec.Cmd
+
+	if len(progWithArgs) == 0 {
+		// TODO: use SHELL env variable
+		progWithArgs = []string{"bash"}
+	}
+
+	pname := progWithArgs[0]
+	cmd = exec.Command(pname, progWithArgs[1:]...)
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Filter environment variables and always include debian_chroot
+	filteredEnv := env.Filter(os.Environ(), cfg.EnvExpose)
+	cmd.Env = append([]string{"debian_chroot=dirjail"}, filteredEnv...)
+
+	if err := cmd.Start(); err != nil {
+		dief("%s failed: %v", progWithArgs[0], err)
+	}
+	// Ignore errors (bash exits with an error if last executed command
+	// exited with an error)
+	cmd.Wait()
+}
+
+func dropAllCaps() {
+	old := cap.GetProc()
+	empty := cap.NewSet()
+	if err := empty.SetProc(); err != nil {
+		dief("failed to drop privilege: %q -> %q: %v", old, empty, err)
+	}
+	now := cap.GetProc()
+	if cf, _ := now.Cf(empty); cf != 0 {
+		dief("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
 	}
 }

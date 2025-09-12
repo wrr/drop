@@ -18,12 +18,10 @@ type Config struct {
 	EnvExpose     []string `toml:"env_expose"`
 }
 
-func Parse(configStr string) (*Config, error) {
-	var config Config
-	if _, err := toml.Decode(configStr, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %v", err)
-	}
-	return &config, nil
+type PortForward struct {
+	HostIP    string
+	HostPort  int
+	GuestPort int
 }
 
 func Read(path string) (*Config, error) {
@@ -34,21 +32,12 @@ func Read(path string) (*Config, error) {
 	return Parse(string(content))
 }
 
-type PortForward struct {
-	HostIP    string
-	HostPort  int
-	GuestPort int
-}
-
-func toPort(s string) (int, error) {
-	port, err := strconv.Atoi(s)
-	if err != nil {
-		return -1, fmt.Errorf("invalid port number '%s': %v", s, err)
+func Parse(configStr string) (*Config, error) {
+	var config Config
+	if _, err := toml.Decode(configStr, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %v", err)
 	}
-	if port < 1 || port > 65535 {
-		return -1, fmt.Errorf("port number out of range: %d", port)
-	}
-	return port, nil
+	return &config, nil
 }
 
 // parsePortForward parses Docker-like port forwarding syntax
@@ -83,4 +72,15 @@ func ParsePortForward(portSpec string) (*PortForward, error) {
 		guestPort = hostPort
 	}
 	return &PortForward{HostIP: hostIP, HostPort: hostPort, GuestPort: guestPort}, nil
+}
+
+func toPort(s string) (int, error) {
+	port, err := strconv.Atoi(s)
+	if err != nil {
+		return -1, fmt.Errorf("invalid port number '%s': %v", s, err)
+	}
+	if port < 1 || port > 65535 {
+		return -1, fmt.Errorf("port number out of range: %d", port)
+	}
+	return port, nil
 }
