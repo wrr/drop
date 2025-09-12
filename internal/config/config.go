@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -37,6 +38,11 @@ func Parse(configStr string) (*Config, error) {
 	if _, err := toml.Decode(configStr, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %v", err)
 	}
+
+	if err := validateEnvExpose(config.EnvExpose); err != nil {
+		return nil, err
+	}
+
 	return &config, nil
 }
 
@@ -83,4 +89,14 @@ func toPort(s string) (int, error) {
 		return -1, fmt.Errorf("port number out of range: %d", port)
 	}
 	return port, nil
+}
+
+// validateEnvExpose check if all patterns in the env_expose list are valid glob patterns.
+func validateEnvExpose(patterns []string) error {
+	for _, pattern := range patterns {
+		if _, err := filepath.Match(pattern, "test"); err != nil {
+			return fmt.Errorf("invalid env_expose pattern '%s': %v", pattern, err)
+		}
+	}
+	return nil
 }

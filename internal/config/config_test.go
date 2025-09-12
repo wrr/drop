@@ -161,3 +161,83 @@ func TestParsePortForward(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateEnvExpose(t *testing.T) {
+	tests := []struct {
+		name     string
+		patterns []string
+		error    string
+	}{
+		{
+			name:     "valid patterns",
+			patterns: []string{"HOME", "LC_*", "VAR_?", "PATH"},
+			error:    "",
+		},
+		{
+			name:     "empty patterns list",
+			patterns: []string{},
+			error:    "",
+		},
+		{
+			name:     "nil patterns list",
+			patterns: nil,
+			error:    "",
+		},
+		{
+			name:     "invalid pattern - unclosed bracket",
+			patterns: []string{"HOME", "LC_["},
+			error:    "invalid env_expose pattern 'LC_['",
+		},
+		{
+			name:     "invalid pattern - unclosed bracket at end",
+			patterns: []string{"HOME", "PATH["},
+			error:    "invalid env_expose pattern 'PATH['",
+		},
+		{
+			name:     "multiple invalid patterns",
+			patterns: []string{"HOME", "LC_[", "VALID_*", "BAD["},
+			error:    "invalid env_expose pattern 'LC_['",
+		},
+		{
+			name:     "valid character class pattern",
+			patterns: []string{"VAR_[0-9]", "LC_[A-Z]*", "HOME"},
+			error:    "",
+		},
+		{
+			name:     "valid complex glob patterns",
+			patterns: []string{"*_VAR", "PREFIX_*_SUFFIX", "VAR??", "LC_*"},
+			error:    "",
+		},
+		{
+			name:     "single invalid pattern",
+			patterns: []string{"INVALID["},
+			error:    "invalid env_expose pattern 'INVALID['",
+		},
+		{
+			name:     "valid edge case patterns",
+			patterns: []string{"*", "?", "[a-z]", "[0-9]*", "VAR_[!0-9]"},
+			error:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateEnvExpose(tt.patterns)
+
+			if tt.error != "" {
+				if err == nil {
+					t.Errorf("expected error '%s' but got none", tt.error)
+					return
+				}
+				if !strings.Contains(err.Error(), tt.error) {
+					t.Errorf("expected error '%s', got '%s'", tt.error, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
