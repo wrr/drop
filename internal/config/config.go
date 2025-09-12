@@ -15,6 +15,7 @@ type Config struct {
 	HomeWriteable []string `toml:"home_writeable"`
 	ProcReadable  []string `toml:"proc_readable"`
 	Hide          []string `toml:"hide"`
+	EnvExpose     []string `toml:"env_expose"`
 }
 
 func Parse(configStr string) (*Config, error) {

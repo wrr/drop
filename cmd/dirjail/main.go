@@ -13,6 +13,7 @@ import (
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 
 	"github.com/wrr/dirjail/internal/config"
+	"github.com/wrr/dirjail/internal/env"
 	"github.com/wrr/dirjail/internal/jailfs"
 	"github.com/wrr/dirjail/internal/netns"
 )
@@ -106,8 +107,6 @@ func childProcessEntry(jailId string, progWithArgs []string) {
 	// access the original directories (home dir, proc etc.)
 	dropAllCaps()
 
-	os.Setenv("debian_chroot", "dirjail")
-
 	var cmd *exec.Cmd
 
 	if len(progWithArgs) == 0 {
@@ -121,6 +120,10 @@ func childProcessEntry(jailId string, progWithArgs []string) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	// Filter environment variables and always include debian_chroot
+	filteredEnv := env.Filter(os.Environ(), cfg.EnvExpose)
+	cmd.Env = append([]string{"debian_chroot=dirjail"}, filteredEnv...)
 
 	if err := cmd.Start(); err != nil {
 		dief("%s failed: %v", progWithArgs[0], err)
