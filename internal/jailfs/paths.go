@@ -22,8 +22,7 @@ type Paths struct {
 	// For example, if jail-id is 'project-foo', Base is
 	// /home/alice/.dirjail/jails/project-foo.
 	Base string
-	// FsRoot is where the jail's root filesystem is assembled before chroot
-	// (e.g. /home/alice/.dirjail/jails/project-foo/root).
+	// FsRoot is where the jail's root filesystem is assembled before chroot.
 	FsRoot string
 	// HostHome is the user's home directory on the host system
 	// (e.g. /home/alice).
@@ -37,6 +36,10 @@ type Paths struct {
 	// Tmp is the directory mounted as /tmp in the jail. It is placed as a
 	// subdir of the host $TMPDIR to allow standard cleanup mechanisms.
 	Tmp string
+	// Run holds temporary files and dirs for the current jail instance
+	// (for example home dir overlayfs lower and work dirs). It can be
+	// safely remove once the jailed process terminates.
+	Run string
 	// EmptyDir is an empty directory used to hide directories in the jail.
 	EmptyDir string
 	// EmptyFile is an empty file used to hide files in the jail.
@@ -62,22 +65,26 @@ func NewPaths(jailId string, configPath string) (*Paths, error) {
 		configPath = filepath.Join(dotdir, "config")
 	}
 	internal := filepath.Join(dotdir, "internal")
-	fsRoot := filepath.Join(base, "root")
-	etc := filepath.Join(base, "etc")
+	run, err := initRunDir(internal, jailId)
+	if err != nil {
+		return nil, err
+	}
+
 	paths := Paths{
 		Cwd:       cwd,
 		DotDir:    dotdir,
 		Config:    configPath,
 		Base:      base,
-		FsRoot:    fsRoot,
+		FsRoot:    filepath.Join(run, "root"),
 		HostHome:  hostHome,
 		Home:      filepath.Join(base, "home"),
-		Etc:       etc,
+		Etc:       filepath.Join(base, "etc"),
+		Run:       run,
 		EmptyDir:  filepath.Join(internal, "emptyd"),
 		EmptyFile: filepath.Join(internal, "empty"),
 	}
 
-	toMkdir := []string{paths.FsRoot, paths.Home, paths.Etc, internal}
+	toMkdir := []string{paths.FsRoot, paths.Home, paths.Etc}
 	for _, dir := range toMkdir {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return nil, fmt.Errorf("failed to create directory %s: %v", dir, err)
@@ -105,6 +112,18 @@ func homeDir() (string, error) {
 		return "", fmt.Errorf("failed to get current user: %v", err)
 	}
 	return currentUser.HomeDir, nil
+}
+
+func initRunDir(jailId string, internalDir string) (string, error) {
+	runParent := filepath.Join(internalDir, "run")
+	if err := os.MkdirAll(runParent, 0700); err != nil {
+		return "", fmt.Errorf("failed to create directory %s: %v", runParent, err)
+	}
+	path, err := os.MkdirTemp(runParent, fmt.Sprintf("%s-", jailId))
+	if err != nil {
+		return "", fmt.Errorf("failed to create run sub-directory: %v", err)
+	}
+	return path, nil
 }
 
 func ensureDirWithNoPerms(path string) error {
