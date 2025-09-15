@@ -45,6 +45,9 @@ func (s *stringSlice) Set(value string) error {
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-child" {
+		if len(os.Args) < 4 {
+			dief("Incorrect number of arguments; -child is an internal argument and should not be passed directly")
+		}
 		fmt.Printf("Child started %v\n", os.Args[0])
 		jailId := os.Args[2]
 		configPath := os.Args[3]
