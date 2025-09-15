@@ -149,7 +149,7 @@ func doBind(src, dst string, mountflags uintptr) error {
 }
 
 func createEmptyFile(path string) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create %s: %w", path, err)
 	}
