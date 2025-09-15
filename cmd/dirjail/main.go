@@ -47,14 +47,16 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-child" {
 		fmt.Printf("Child started %v\n", os.Args[0])
 		jailId := os.Args[2]
-		cmdAndArgs := os.Args[3:]
-		childProcessEntry(jailId, cmdAndArgs)
+		configPath := os.Args[3]
+		cmdAndArgs := os.Args[4:]
+		childProcessEntry(jailId, configPath, cmdAndArgs)
 		os.Exit(0)
 	}
 	fmt.Println("Parent started")
 
 	var portForwards []string
 	var jailId string
+	var configPath string
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `dirjail limits programs abilities to read and write user's files
 Usage: dirjail [options] [command...]
@@ -65,6 +67,7 @@ Options:
 
 	flag.Var((*stringSlice)(&portForwards), "p", "Publish port(s) to the host. Format: [hostIP:]hostPort[:containerPort]")
 	flag.StringVar(&jailId, "i", "", "Jail ID")
+	flag.StringVar(&configPath, "c", "", "Path to config file")
 
 	err := flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
@@ -90,7 +93,10 @@ Options:
 
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
-	childArgs := append([]string{"-child", jailId}, flag.Args()...)
+	//
+	// This passes all the arguments correctly also when one of them
+	// (configPath) is an empty string
+	childArgs := append([]string{"-child", jailId, configPath}, flag.Args()...)
 	cmd := exec.Command(os.Args[0], childArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -193,19 +199,19 @@ func isJailIdValid(jailId string) bool {
 	return jailId[0] != '-' && reg.MatchString(jailId)
 }
 
-func childProcessEntry(jailId string, progWithArgs []string) {
-	paths, err := jailfs.NewPaths(jailId)
+func childProcessEntry(jailId string, configPath string, progWithArgs []string) {
+	paths, err := jailfs.NewPaths(jailId, configPath)
+	if err != nil {
+		die(err)
+	}
+
+	cfg, err := config.Read(paths.Config)
 	if err != nil {
 		die(err)
 	}
 
 	if err := jailfs.WriteEtcFiles(paths); err != nil {
 		dief("failed to write /etc files: %v", err)
-	}
-
-	cfg, err := config.Read(paths.Config)
-	if err != nil {
-		die(err)
 	}
 
 	if err := syscall.Chdir("/"); err != nil {

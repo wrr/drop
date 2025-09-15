@@ -45,7 +45,7 @@ type Paths struct {
 
 // NewPaths populates Paths with the relevant paths for the current
 // jail and creates missing dir and files.
-func NewPaths(jailId string) (*Paths, error) {
+func NewPaths(jailId string, configPath string) (*Paths, error) {
 	hostHome, err := homeDir()
 	if err != nil {
 		return nil, err
@@ -57,14 +57,17 @@ func NewPaths(jailId string) (*Paths, error) {
 
 	dotdir := filepath.Join(hostHome, ".dirjail")
 	base := filepath.Join(dotdir, "jails", jailId)
-	config := filepath.Join(dotdir, "config")
+
+	if configPath == "" {
+		configPath = filepath.Join(dotdir, "config")
+	}
 	internal := filepath.Join(dotdir, "internal")
 	fsRoot := filepath.Join(base, "root")
 	etc := filepath.Join(base, "etc")
 	paths := Paths{
 		Cwd:       cwd,
 		DotDir:    dotdir,
-		Config:    config,
+		Config:    configPath,
 		Base:      base,
 		FsRoot:    fsRoot,
 		HostHome:  hostHome,
