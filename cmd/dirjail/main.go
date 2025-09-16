@@ -18,19 +18,6 @@ import (
 	"github.com/wrr/dirjail/internal/netns"
 )
 
-func errorf(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
-}
-
-func dief(format string, args ...interface{}) {
-	errorf(format, args...)
-	os.Exit(1)
-}
-
-func die(err error) {
-	dief("%v", err)
-}
-
 // stringSlice implements flag.Value interface for repeated string flags
 type stringSlice []string
 
@@ -44,19 +31,20 @@ func (s *stringSlice) Set(value string) error {
 }
 
 func main() {
+	var exitCode int
+	var err error
 	if len(os.Args) > 1 && os.Args[1] == "-child" {
-		if len(os.Args) < 4 {
-			dief("Incorrect number of arguments; -child is an internal argument and should not be passed directly")
-		}
-		fmt.Printf("Child started %v\n", os.Args[0])
-		jailId := os.Args[2]
-		configPath := os.Args[3]
-		cmdAndArgs := os.Args[4:]
-		childProcessEntry(jailId, configPath, cmdAndArgs)
-		os.Exit(0)
+		exitCode, err = childProcessEntry()
+	} else {
+		exitCode, err = parentProcessEntry()
 	}
-	fmt.Println("Parent started")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	}
+	os.Exit(exitCode)
+}
 
+func parentProcessEntry() (int, error) {
 	var portForwards []string
 	var jailId string
 	var configPath string
@@ -74,14 +62,17 @@ Options:
 
 	err := flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
-		dief("failed to parse command line: %v", err)
+		return 1, fmt.Errorf("failed to parse command line: %v", err)
 	}
 
 	if jailId == "" {
-		jailId = defaultJailId()
+		jailId, err = defaultJailId()
+		if err != nil {
+			return 1, err
+		}
 	} else {
 		if !isJailIdValid(jailId) {
-			dief("invalid character in jail ID")
+			return 1, fmt.Errorf("invalid character in jail ID")
 		}
 	}
 
@@ -89,7 +80,7 @@ Options:
 	for _, pf := range portForwards {
 		parsed, err := config.ParsePortForward(pf)
 		if err != nil {
-			dief("invalid port forwarding specification '%s': %v", pf, err)
+			return 1, fmt.Errorf("invalid port forwarding specification '%s': %v", pf, err)
 		}
 		parsedPortForwards = append(parsedPortForwards, parsed)
 	}
@@ -151,94 +142,83 @@ Options:
 		GidMappingsEnableSetgroups: false,
 	}
 	if err := cmd.Start(); err != nil {
-		dief("jailed process start failed: %v", err)
+		return 1, fmt.Errorf("jailed process start failed: %v", err)
 	}
 
 	// Start slirp4netns to provide network connectivity to the jailed process
 	cleanup, err := netns.StartSlirp4netns(cmd.Process.Pid, parsedPortForwards)
 	if err != nil {
-		errorf("%v", err)
 		cmd.Process.Kill()
+		cmd.Wait()
+		return 1, err
 	}
 	defer cleanup()
 
 	if err := cmd.Wait(); err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
-			if exitError.ExitCode() != 1 {
+			exitCode := exitError.ExitCode()
+			var err error
+			if exitCode != 1 {
 				// If exit code is 1, child should already print an
 				// error message.
-				errorf("jailed process failed")
+				err = fmt.Errorf("jailed process failed")
 			}
 			// Propage exit code of the child
-			os.Exit(exitError.ExitCode())
+			return exitCode, err
 		}
-		dief("jailed process failed to run: %v", err)
+		return 1, fmt.Errorf("jailed process failed to run: %v", err)
 	}
+	return 0, nil
 }
 
-var jailIdChars = `a-zA-Z0-9-_\.`
-
-func defaultJailId() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		dief("get current directory failed: %v", err)
+func childProcessEntry() (int, error) {
+	if len(os.Args) < 4 {
+		return 1, fmt.Errorf("incorrect number of arguments; -child is an internal argument and should not be passed directly")
 	}
-	dname := strings.ReplaceAll(cwd, "/", "-")
-	// remove leading - not to start directory name with -
-	if len(dname) <= 1 {
-		return "root"
-	}
-	dname = dname[1:]
-	// Keep only allowed jail ID characters
-	reg := regexp.MustCompile(`[^` + jailIdChars + `]`)
-	return reg.ReplaceAllString(dname, "_")
-}
+	fmt.Printf("Child started %v\n", os.Args[0])
+	jailId := os.Args[2]
+	configPath := os.Args[3]
+	progWithArgs := os.Args[4:]
 
-func isJailIdValid(jailId string) bool {
-	reg := regexp.MustCompile(`^[` + jailIdChars + `]+$`)
-	// Do not allow - at the start, because directory created for this
-	// jail will then be tricky to handle with standard shell tools
-	// (directory name interpreted as a command flag).
-	return jailId[0] != '-' && reg.MatchString(jailId)
-}
-
-func childProcessEntry(jailId string, configPath string, progWithArgs []string) {
 	paths, err := jailfs.NewPaths(jailId, configPath)
 	if err != nil {
-		die(err)
+		return 1, err
 	}
+	defer paths.Clear()
 
 	cfg, err := config.Read(paths.Config)
 	if err != nil {
-		die(err)
+		return 1, err
 	}
 
 	if err := jailfs.WriteEtcFiles(paths); err != nil {
-		dief("failed to write /etc files: %v", err)
+		return 1, fmt.Errorf("failed to write /etc files: %v", err)
 	}
 
 	if err := syscall.Chdir("/"); err != nil {
-		dief("chdir to / failed: %v", err)
+		return 1, fmt.Errorf("chdir to / failed: %v", err)
 	}
 
 	if err := jailfs.ArrangeFilesystem(paths, cfg); err != nil {
-		die(err)
+		return 1, err
 	}
 
 	if err := syscall.Chroot(paths.FsRoot); err != nil {
-		dief("chroot to %s failed: %v", paths.FsRoot, err)
+		return 1, fmt.Errorf("chroot to %s failed: %v", paths.FsRoot, err)
 	}
 
 	// Change working directory to what it was originally
 	if err := syscall.Chdir(paths.Cwd); err != nil {
-		dief("chdir to %s failed: %v", paths.Cwd, err)
+		return 1, fmt.Errorf("chdir to %s failed: %v", paths.Cwd, err)
 	}
 
 	// Drop all the capabilities in the user namespace.
 	//
 	// CAP_SYS_ADMIN would allow the user to umount dirjail mounts and
 	// access the original directories (home dir, proc etc.)
-	dropAllCaps()
+	if err := dropAllCaps(); err != nil {
+		return 1, err
+	}
 
 	var cmd *exec.Cmd
 
@@ -259,21 +239,49 @@ func childProcessEntry(jailId string, configPath string, progWithArgs []string) 
 	cmd.Env = append([]string{"debian_chroot=dirjail"}, filteredEnv...)
 
 	if err := cmd.Start(); err != nil {
-		dief("%s failed: %v", progWithArgs[0], err)
+		return 1, fmt.Errorf("%s failed: %v", progWithArgs[0], err)
 	}
 	// Ignore errors (bash exits with an error if last executed command
 	// exited with an error)
 	cmd.Wait()
+	return 0, nil
 }
 
-func dropAllCaps() {
+var jailIdChars = `a-zA-Z0-9-_\.`
+
+func defaultJailId() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get current directory failed: %v", err)
+	}
+	dname := strings.ReplaceAll(cwd, "/", "-")
+	// remove leading - not to start directory name with -
+	if len(dname) <= 1 {
+		return "root", nil
+	}
+	dname = dname[1:]
+	// Keep only allowed jail ID characters
+	reg := regexp.MustCompile(`[^` + jailIdChars + `]`)
+	return reg.ReplaceAllString(dname, "_"), nil
+}
+
+func isJailIdValid(jailId string) bool {
+	reg := regexp.MustCompile(`^[` + jailIdChars + `]+$`)
+	// Do not allow - at the start, because directory created for this
+	// jail will then be tricky to handle with standard shell tools
+	// (directory name interpreted as a command flag).
+	return jailId[0] != '-' && reg.MatchString(jailId)
+}
+
+func dropAllCaps() error {
 	old := cap.GetProc()
 	empty := cap.NewSet()
 	if err := empty.SetProc(); err != nil {
-		dief("failed to drop privilege: %q -> %q: %v", old, empty, err)
+		return fmt.Errorf("failed to drop privilege: %q -> %q: %v", old, empty, err)
 	}
 	now := cap.GetProc()
 	if cf, _ := now.Cf(empty); cf != 0 {
-		dief("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
+		return fmt.Errorf("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
 	}
+	return nil
 }
