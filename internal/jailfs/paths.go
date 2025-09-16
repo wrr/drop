@@ -48,7 +48,7 @@ type Paths struct {
 
 // NewPaths populates Paths with the relevant paths for the current
 // jail and creates missing dir and files.
-func NewPaths(jailId string, configPath string) (*Paths, error) {
+func NewPaths(jailId string, configPath string, runDir string) (*Paths, error) {
 	hostHome, err := homeDir()
 	if err != nil {
 		return nil, err
@@ -58,28 +58,24 @@ func NewPaths(jailId string, configPath string) (*Paths, error) {
 		return nil, err
 	}
 
-	dotdir := filepath.Join(hostHome, ".dirjail")
-	base := filepath.Join(dotdir, "jails", jailId)
+	dotDir := filepath.Join(hostHome, ".dirjail")
+	base := filepath.Join(dotDir, "jails", jailId)
 
 	if configPath == "" {
-		configPath = filepath.Join(dotdir, "config")
+		configPath = filepath.Join(dotDir, "config")
 	}
-	internal := filepath.Join(dotdir, "internal")
-	run, err := initRunDir(internal, jailId)
-	if err != nil {
-		return nil, err
-	}
+	internal := filepath.Join(dotDir, "internal")
 
 	paths := Paths{
 		Cwd:       cwd,
-		DotDir:    dotdir,
+		DotDir:    dotDir,
 		Config:    configPath,
 		Base:      base,
-		FsRoot:    filepath.Join(run, "root"),
+		FsRoot:    filepath.Join(runDir, "root"),
 		HostHome:  hostHome,
 		Home:      filepath.Join(base, "home"),
 		Etc:       filepath.Join(base, "etc"),
-		Run:       run,
+		Run:       runDir,
 		EmptyDir:  filepath.Join(internal, "emptyd"),
 		EmptyFile: filepath.Join(internal, "empty"),
 	}
@@ -106,24 +102,39 @@ func NewPaths(jailId string, configPath string) (*Paths, error) {
 	return &paths, nil
 }
 
+// NewRunDir creates a directory to store this jail instance runtime
+// files and dirs (for example, the main root file system mount
+// point). The directory can be removed when this jail instance
+// terminates.
+func NewRunDir(jailId string) (string, error) {
+	hostHome, err := homeDir()
+	if err != nil {
+		return "", err
+	}
+	parent := filepath.Join(hostHome, ".dirjail", "internal", "run")
+
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		return "", fmt.Errorf("failed to create directory %s: %v", parent, err)
+	}
+	path, err := os.MkdirTemp(parent, fmt.Sprintf("%s-", jailId))
+	if err != nil {
+		return "", fmt.Errorf("failed to create run sub-directory: %v", err)
+	}
+	return path, nil
+}
+
+// ClearRunDir removes the jail instance specific runtime files, no longer
+// needed when jail is exited.
+func CleanRunDir(path string) error {
+	return os.RemoveAll(path)
+}
+
 func homeDir() (string, error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return "", fmt.Errorf("failed to get current user: %v", err)
 	}
 	return currentUser.HomeDir, nil
-}
-
-func initRunDir(jailId string, internalDir string) (string, error) {
-	runParent := filepath.Join(internalDir, "run")
-	if err := os.MkdirAll(runParent, 0700); err != nil {
-		return "", fmt.Errorf("failed to create directory %s: %v", runParent, err)
-	}
-	path, err := os.MkdirTemp(runParent, fmt.Sprintf("%s-", jailId))
-	if err != nil {
-		return "", fmt.Errorf("failed to create run sub-directory: %v", err)
-	}
-	return path, nil
 }
 
 func ensureDirWithNoPerms(path string) error {

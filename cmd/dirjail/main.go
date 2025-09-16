@@ -85,12 +85,18 @@ Options:
 		parsedPortForwards = append(parsedPortForwards, parsed)
 	}
 
+	runDir, err := jailfs.NewRunDir(jailId)
+	if err != nil {
+		return 1, fmt.Errorf("failed to create run dir: %v", err)
+	}
+	defer jailfs.CleanRunDir(runDir)
+
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
 	//
 	// This passes all the arguments correctly also when one of them
 	// (configPath) is an empty string
-	childArgs := append([]string{"-child", jailId, configPath}, flag.Args()...)
+	childArgs := append([]string{"-child", jailId, configPath, runDir}, flag.Args()...)
 	cmd := exec.Command(os.Args[0], childArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -172,19 +178,18 @@ Options:
 }
 
 func childProcessEntry() (int, error) {
-	if len(os.Args) < 4 {
+	if len(os.Args) < 5 {
 		return 1, fmt.Errorf("incorrect number of arguments; -child is an internal argument and should not be passed directly")
 	}
-	fmt.Printf("Child started %v\n", os.Args[0])
 	jailId := os.Args[2]
 	configPath := os.Args[3]
-	progWithArgs := os.Args[4:]
+	runDir := os.Args[4]
+	progWithArgs := os.Args[5:]
 
-	paths, err := jailfs.NewPaths(jailId, configPath)
+	paths, err := jailfs.NewPaths(jailId, configPath, runDir)
 	if err != nil {
 		return 1, err
 	}
-	defer paths.Clear()
 
 	cfg, err := config.Read(paths.Config)
 	if err != nil {
