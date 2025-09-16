@@ -1,8 +1,6 @@
 package netns
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -23,7 +21,7 @@ type SlirpCommand struct {
 // within a network namespace and configures port forwarding.
 //
 // Returns a cleanup function that should be called when program exits.
-func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward) (func(), error) {
+func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward, runDir string) (func(), error) {
 	var sockPath string
 	var slirpArgs []string
 
@@ -41,7 +39,7 @@ func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward) (func()
 	}
 	needPortForwading := len(portForwards) > 0
 	if needPortForwading {
-		sockPath = filepath.Join(os.TempDir(), fmt.Sprintf("dirjail-%d-%s", jailedPid, randomString(20)))
+		sockPath = filepath.Join(runDir, "slirp4netns.sock")
 		slirpArgs = append(slirpArgs, "--api-socket", sockPath)
 	}
 	slirpArgs = append(slirpArgs, fmt.Sprintf("%d", jailedPid), "tap0")
@@ -80,12 +78,6 @@ func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward) (func()
 	}
 
 	return cleanup, nil
-}
-
-func randomString(length int) string {
-	bytes := make([]byte, length/2)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
 }
 
 // waitForReady waits for slirp4netns to signal readiness via readyRead file.

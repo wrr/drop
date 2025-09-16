@@ -152,7 +152,7 @@ Options:
 	}
 
 	// Start slirp4netns to provide network connectivity to the jailed process
-	cleanup, err := netns.StartSlirp4netns(cmd.Process.Pid, parsedPortForwards)
+	cleanup, err := netns.StartSlirp4netns(cmd.Process.Pid, parsedPortForwards, runDir)
 	if err != nil {
 		cmd.Process.Kill()
 		cmd.Wait()
