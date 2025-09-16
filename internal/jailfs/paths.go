@@ -82,8 +82,8 @@ func NewPaths(jailId string, configPath string, runDir string) (*Paths, error) {
 
 	toMkdir := []string{paths.FsRoot, paths.Home, paths.Etc}
 	for _, dir := range toMkdir {
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			return nil, fmt.Errorf("failed to create directory %s: %v", dir, err)
+		if err := MkdirAll(dir); err != nil {
+			return nil, err
 		}
 	}
 
@@ -113,8 +113,8 @@ func NewRunDir(jailId string) (string, error) {
 	}
 	parent := filepath.Join(hostHome, ".dirjail", "internal", "run")
 
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		return "", fmt.Errorf("failed to create directory %s: %v", parent, err)
+	if err := MkdirAll(parent); err != nil {
+		return "", err
 	}
 	path, err := os.MkdirTemp(parent, fmt.Sprintf("%s-", jailId))
 	if err != nil {
@@ -129,6 +129,15 @@ func CleanRunDir(path string) error {
 	return os.RemoveAll(path)
 }
 
+// MkdirAll is a simple wrapper over os.MkdirAll. It always uses
+// permissions 0700 and returns verbose error which can be propagated
+// up without adding an aditional context.
+func MkdirAll(path string) error {
+	if err := os.MkdirAll(path, 0700); err != nil {
+		return fmt.Errorf("failed to create directory %s: %v", path, err)
+	}
+	return nil
+}
 func homeDir() (string, error) {
 	currentUser, err := user.Current()
 	if err != nil {
