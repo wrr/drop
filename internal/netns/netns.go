@@ -2,6 +2,7 @@ package netns
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -75,6 +76,13 @@ func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward, runDir 
 	if err := slirpCmd.Start(); err != nil {
 		readyRead.Close()
 		readyWrite.Close()
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, fmt.Errorf("slirp4netns binary for isolated networking not found.\n" +
+				"Please install slirp4netns package, for example, on Debian/Ubuntu: \n\n" +
+				"   $ sudo apt-get install slirp4netns\n\n" +
+				"The package is available on most Linux distributions, see:\n" +
+				"https://github.com/rootless-containers/slirp4netns?tab=readme-ov-file#quick-start")
+		}
 		return nil, fmt.Errorf("failed to start slirp4netns: %v", err)
 	}
 
