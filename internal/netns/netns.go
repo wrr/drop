@@ -17,6 +17,31 @@ type SlirpCommand struct {
 	Arguments map[string]any `json:"arguments"`
 }
 
+// SetupFirewall restrict traffic to the host loopback which could be
+// exposed on machines where DNS IP address on the host is a loopback.
+//
+// Generic loopback traffic restriction is provided by the
+// --disable-host-loopback option to slirp4netns, iptables rules are
+// only needed to cover the one missing case.
+//
+// For details, see:
+// https://github.com/rootless-containers/slirp4netns/blob/v0.4.3/slirp4netns.1.md#filtering-connections
+func SetupFirewall() error {
+	// Accept UDP port 53 to 10.0.2.3
+	accept := exec.Command("iptables", "-A", "OUTPUT", "-d", "10.0.2.3", "-p", "udp", "--dport", "53", "-j", "ACCEPT")
+	if err := accept.Run(); err != nil {
+		return fmt.Errorf("failed to run 'iptables' to accept traffic to DNS port: %w", err)
+	}
+
+	// Drop all other traffic to 10.0.2.3
+	drop := exec.Command("iptables", "-A", "OUTPUT", "-d", "10.0.2.3", "-j", "DROP")
+	if err := drop.Run(); err != nil {
+		return fmt.Errorf("failed to run 'iptables' to drop traffic to DNS IP: %w", err)
+	}
+
+	return nil
+}
+
 // StartSlirp4netns starts slirp4netns to provide network connectivity
 // within a network namespace and configures port forwarding.
 //
