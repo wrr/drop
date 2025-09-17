@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/sys/unix" // Needed only for CAP_* consts
+	"golang.org/x/sys/unix"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 
 	"github.com/wrr/dirjail/internal/config"
@@ -184,6 +184,7 @@ Options:
 	if err := cmd.Start(); err != nil {
 		return 1, fmt.Errorf("jailed process start failed: %v", err)
 	}
+	defer discardChildTermInjection()
 	childEnd.Close()
 
 	// Start slirp4netns to provide network connectivity to the jailed process
@@ -336,6 +337,56 @@ func isJailIdValid(jailId string) bool {
 	// jail will then be tricky to handle with standard shell tools
 	// (directory name interpreted as a command flag).
 	return jailId[0] != '-' && reg.MatchString(jailId)
+}
+
+func FD_SET(fd int, p *syscall.FdSet) {
+	p.Bits[fd/64] |= 1 << (uint(fd) % 64)
+}
+
+// discardChildTermInjection checks if any input is pending on
+// the unjailed parent standard input and discards it.
+//
+// This is to prevent the terminating jailed process from injecting
+// terminal input to the unjailed parent, thus executing code outside
+// of the jail.
+//
+// https://www.errno.fr/TTYPushback.html
+// https://www.openwall.com/lists/oss-security/2023/03/14/2
+//
+// Note that since kernel 6.2 'sysctl dev.tty.legacy_tiocsti=0'
+// (default on Ubuntu 24) disables the ioctl TIOCSTI call, which fixes
+// the issue addressed by discardChildTermInjection
+func discardChildTermInjection() {
+	for {
+		// If the child (process 1 in the pid namespace) terminates, all
+		// other process in the namespace are killed and the namespace is
+		// removed (see man pid_namespaces). Based on this, we assume that
+		// when wait() syscall returns, there can be no background
+		// processes left running in the namespace that could write to
+		// parent input terminal with some delay. We just discard whatever
+		// is available after wait() returns.
+
+		var readfds syscall.FdSet
+		const stdin int = 0
+		FD_SET(stdin, &readfds)
+
+		n, err := syscall.Select(stdin+1, &readfds, nil, nil, &syscall.Timeval{Sec: 0, Usec: 0})
+		if err != nil {
+			fmt.Printf("Failed to discard jailed process stdin leftowers: %v", err)
+			return
+		}
+		if n == 0 {
+			// Nothing available
+			return
+		}
+		buf := make([]byte, 128)
+		_, err = syscall.Read(stdin, buf)
+		if err != nil {
+			fmt.Printf("Failed to discard jailed process stdin leftowers: %v", err)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "Discarding %s\n", string(buf))
+	}
 }
 
 func dropAllCaps() error {
