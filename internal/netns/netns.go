@@ -22,22 +22,63 @@ type SlirpCommand struct {
 // exposed on machines where DNS IP address on the host is a loopback.
 //
 // Generic loopback traffic restriction is provided by the
-// --disable-host-loopback option to slirp4netns, iptables rules are
+// --disable-host-loopback option to slirp4netns, firewall rules are
 // only needed to cover the one missing case.
+//
+// Prefers nftables if available, falls back to iptables.
 //
 // For details, see:
 // https://github.com/rootless-containers/slirp4netns/blob/v0.4.3/slirp4netns.1.md#filtering-connections
 func SetupFirewall() error {
-	// Accept UDP port 53 to 10.0.2.3
-	accept := exec.Command("iptables", "-A", "OUTPUT", "-d", "10.0.2.3", "-p", "udp", "--dport", "53", "-j", "ACCEPT")
-	if err := accept.Run(); err != nil {
-		return fmt.Errorf("failed to run 'iptables' to accept traffic to DNS port: %w", err)
+	if isNftAvailable() {
+		return setupFirewallNft()
+	}
+	return setupFirewallIptables()
+}
+
+// isNftAvailable checks if the nft command is available on the system
+func isNftAvailable() bool {
+	_, err := exec.LookPath("nft")
+	return err == nil
+}
+
+// setupFirewallNft sets up firewall rules using nftables
+func setupFirewallNft() error {
+	err := exec.Command("nft", "add", "table", "inet", "filter").Run()
+	if err != nil {
+		return fmt.Errorf("failed to add nftables inet table: %v", err)
+	}
+	err = exec.Command("nft", "add", "chain", "inet", "filter", "output", "{", "type", "filter", "hook", "output", "priority", "0", ";", "}").Run()
+	if err != nil {
+		return fmt.Errorf("failed to add nftables chain: %v", err)
+	}
+
+	// Accept UDP to 10.0.2.3:53
+	err = exec.Command("nft", "add", "rule", "inet", "filter", "output", "ip", "daddr", "10.0.2.3", "udp", "dport", "53", "accept").Run()
+	if err != nil {
+		return fmt.Errorf("failed to add nftables rule to accept DNS traffic: %v", err)
 	}
 
 	// Drop all other traffic to 10.0.2.3
-	drop := exec.Command("iptables", "-A", "OUTPUT", "-d", "10.0.2.3", "-j", "DROP")
-	if err := drop.Run(); err != nil {
-		return fmt.Errorf("failed to run 'iptables' to drop traffic to DNS IP: %w", err)
+	err = exec.Command("nft", "add", "rule", "inet", "filter", "output", "ip", "daddr", "10.0.2.3", "drop").Run()
+	if err != nil {
+		return fmt.Errorf("failed to add nftables rule to drop other traffic: %v", err)
+	}
+	return nil
+}
+
+// setupFirewallIptables sets up firewall rules using iptables (fallback)
+func setupFirewallIptables() error {
+	// Accept UDP to 10.0.2.3:53
+	err := exec.Command("iptables", "-A", "OUTPUT", "-d", "10.0.2.3", "-p", "udp", "--dport", "53", "-j", "ACCEPT").Run()
+	if err != nil {
+		return fmt.Errorf("failed to run 'iptables' to accept traffic to DNS port: %v", err)
+	}
+
+	// Drop all other traffic to 10.0.2.3
+	err = exec.Command("iptables", "-A", "OUTPUT", "-d", "10.0.2.3", "-j", "DROP").Run()
+	if err != nil {
+		return fmt.Errorf("failed to run 'iptables' to drop traffic to DNS IP: %v", err)
 	}
 
 	return nil
