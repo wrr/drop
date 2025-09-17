@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"strings"
 	"syscall"
 )
 
@@ -189,40 +188,43 @@ func ensureEmptyFile(path string) error {
 	return file.Close()
 }
 
+// initTmpSubDir checks if a tmp sub directory for the current jail
+// already exists and has correct owner and permissions. If this
+// is not the case, it it creates a new sub directory in tmp.
+//
+// In order to keep track of already existing tmp sub directory, a
+// link in this jail base directory is created that points to it.
+//
+// The function returns a path to the tmp subdirectory
 func initTmpSubDir(jailId string, paths *Paths) (string, error) {
-	dirNameFile := filepath.Join(paths.Base, ".tmp")
+	tmpSymlink := filepath.Join(paths.Base, "tmp")
 
-	// if dirNameFile exists, read its content
-	if data, err := os.ReadFile(dirNameFile); err == nil {
-		// No error.
-		dirName := strings.TrimSpace(string(data))
+	if target, err := os.Readlink(tmpSymlink); err == nil {
+		// No error - symlink exists
+		tmpSubDir := target
 
-		if dirName != "" {
+		if stat, err := os.Stat(tmpSubDir); err == nil && stat.IsDir() {
 			// Check if directory exists, is owned by current user, and has 700 permissions
-			tmpSubDir := filepath.Join(os.TempDir(), dirName)
-
-			if stat, err := os.Stat(tmpSubDir); err == nil && stat.IsDir() {
-				if sysStats, ok := stat.Sys().(*syscall.Stat_t); ok {
-					currentUID := os.Getuid()
-					if int(sysStats.Uid) == currentUID && stat.Mode().Perm() == 0700 {
-						return tmpSubDir, nil
-					}
+			if sysStats, ok := stat.Sys().(*syscall.Stat_t); ok {
+				currentUID := os.Getuid()
+				if int(sysStats.Uid) == currentUID && stat.Mode().Perm() == 0700 {
+					return tmpSubDir, nil
 				}
 			}
 		}
+		// Target directory is missing or invalid, remove the symlink, and
+		// create a new tmp sub dir.
+		os.Remove(tmpSymlink)
 	}
 
-	// New tmp sub directory is needed.
 	tmpSubDir, err := os.MkdirTemp("", tmpDirName(jailId))
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary directory: %v", err)
 	}
-	dirName := filepath.Base(tmpSubDir)
 
-	// Write the directory name to the file, so the dir can be re-used by
-	// other dirjails with the same id
-	if err := os.WriteFile(dirNameFile, []byte(dirName), 0600); err != nil {
-		return "", fmt.Errorf("failed to write to %v: %v", dirNameFile, err)
+	// Create symbolic link to the tmp directory
+	if err := os.Symlink(tmpSubDir, tmpSymlink); err != nil {
+		return "", fmt.Errorf("failed to create symlink: %v", err)
 	}
 	return tmpSubDir, nil
 }
