@@ -21,6 +21,25 @@ import (
 // stringSlice implements flag.Value interface for repeated string flags
 type stringSlice []string
 
+// signalParentReady writes to the pipe to signal that parent setup has finished
+func signalParentReady(parentEnd *os.File) error {
+	defer parentEnd.Close()
+	if _, err := parentEnd.Write([]byte{1}); err != nil {
+		return fmt.Errorf("failed to write to network ready pipe: %v", err)
+	}
+	return nil
+}
+
+// waitParentReady blocks until the parent signals the setup has finished
+func waitParentReady(childEnd *os.File) error {
+	defer childEnd.Close()
+	buf := make([]byte, 1)
+	if _, err := childEnd.Read(buf); err != nil {
+		return fmt.Errorf("failed to read from pipe: %v", err)
+	}
+	return nil
+}
+
 func (s *stringSlice) String() string {
 	return strings.Join(*s, ",")
 }
@@ -91,6 +110,12 @@ Options:
 	}
 	defer jailfs.CleanRunDir(runDir)
 
+	// Pipe for synchronizing setup with the child process.
+	childEnd, parentEnd, err := os.Pipe()
+	if err != nil {
+		return 1, fmt.Errorf("failed to create pipe: %v", err)
+	}
+
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
 	//
@@ -101,6 +126,7 @@ Options:
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.ExtraFiles = []*os.File{childEnd}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: (syscall.CLONE_NEWNS |
 			syscall.CLONE_NEWIPC |
@@ -124,7 +150,15 @@ Options:
 		// in the user namespace see: man 7 user_namespaces
 		//
 		// CAP_DAC_OVERRIDE and CAP_FOWNER are needed to mount overlayfs
-		AmbientCaps: []uintptr{unix.CAP_SYS_ADMIN, unix.CAP_SYS_CHROOT, unix.CAP_DAC_OVERRIDE, unix.CAP_FOWNER},
+		//
+		// CAP_NET_ADMIN is needed to setup firewall with iptables
+		AmbientCaps: []uintptr{
+			unix.CAP_SYS_ADMIN,
+			unix.CAP_SYS_CHROOT,
+			unix.CAP_DAC_OVERRIDE,
+			unix.CAP_FOWNER,
+			unix.CAP_NET_ADMIN,
+		},
 
 		// Keep using current user uid an gid in the jail (so the user is
 		// recognized as the same user)
@@ -150,6 +184,7 @@ Options:
 	if err := cmd.Start(); err != nil {
 		return 1, fmt.Errorf("jailed process start failed: %v", err)
 	}
+	childEnd.Close()
 
 	// Start slirp4netns to provide network connectivity to the jailed process
 	cleanup, err := netns.StartSlirp4netns(cmd.Process.Pid, parsedPortForwards, runDir)
@@ -159,6 +194,15 @@ Options:
 		return 1, err
 	}
 	defer cleanup()
+
+	// Signal child process that setup is finished. This needs to be
+	// done when slirp4netns is running, because only then the child
+	// can run netns.SetupFirewall
+	if err := signalParentReady(parentEnd); err != nil {
+		cmd.Process.Kill()
+		cmd.Wait()
+		return 1, err
+	}
 
 	if err := cmd.Wait(); err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
@@ -185,6 +229,22 @@ func childProcessEntry() (int, error) {
 	configPath := os.Args[3]
 	runDir := os.Args[4]
 	progWithArgs := os.Args[5:]
+
+	// Wait for parent to signal that it has finished setup.
+	// The read end of the pipe is inherited as file descriptor 3
+	readEnd := os.NewFile(3, "parent-ready-pipe")
+	if readEnd == nil {
+		return 1, fmt.Errorf("failed to get pipe to parent")
+	}
+	if err := waitParentReady(readEnd); err != nil {
+		return 1, err
+	}
+
+	// Can be done only after parent setup is done (slirp4netns is
+	// started).
+	if err := netns.SetupFirewall(); err != nil {
+		return 1, err
+	}
 
 	paths, err := jailfs.NewPaths(jailId, configPath, runDir)
 	if err != nil {
