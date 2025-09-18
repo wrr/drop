@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -180,18 +181,33 @@ Options:
 		// Disallow a process in the user namespace from dropping/changing
 		// group membership: https://lwn.net/Articles/626665/
 		GidMappingsEnableSetgroups: false,
+		// Kill child process, when this process is killed.
+		Pdeathsig: syscall.SIGKILL,
 	}
+
+	// Needed to ensure this goroutine is not migrated to a different
+	// thread, which is required for correct operation of Pdeathsig.
+	// https://github.com/golang/go/issues/27505
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	if err := cmd.Start(); err != nil {
 		return 1, fmt.Errorf("jailed process start failed: %v", err)
 	}
 	defer discardChildTermInjection()
+	defer func() {
+		if cmd != nil {
+			cmd.Process.Kill()
+			cmd.Wait()
+			cmd = nil
+		}
+	}()
+
 	childEnd.Close()
 
 	// Start slirp4netns to provide network connectivity to the jailed process
 	cleanup, err := netns.StartSlirp4netns(cmd.Process.Pid, parsedPortForwards, runDir)
 	if err != nil {
-		cmd.Process.Kill()
-		cmd.Wait()
 		return 1, err
 	}
 	defer cleanup()
@@ -200,12 +216,12 @@ Options:
 	// done when slirp4netns is running, because only then the child
 	// can run netns.SetupFirewall
 	if err := signalParentReady(parentEnd); err != nil {
-		cmd.Process.Kill()
-		cmd.Wait()
 		return 1, err
 	}
 
-	if err := cmd.Wait(); err != nil {
+	err = cmd.Wait()
+	cmd = nil
+	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			exitCode := exitError.ExitCode()
 			var err error
