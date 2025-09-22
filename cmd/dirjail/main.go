@@ -224,14 +224,8 @@ Options:
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			exitCode := exitError.ExitCode()
-			var err error
-			if exitCode != 1 {
-				// If exit code is 1, child should already print an
-				// error message.
-				err = fmt.Errorf("jailed process failed")
-			}
 			// Propage exit code of the child
-			return exitCode, err
+			return exitCode, nil
 		}
 		return 1, fmt.Errorf("jailed process failed to run: %v", err)
 	}
@@ -325,7 +319,15 @@ func childProcessEntry() (int, error) {
 	}
 	// Ignore errors (bash exits with an error if last executed command
 	// exited with an error)
-	cmd.Wait()
+	err = cmd.Wait()
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			exitCode := exitError.ExitCode()
+			return exitCode, nil
+		}
+		return 1, fmt.Errorf("jailed process failed to run: %v", err)
+	}
+
 	return 0, nil
 }
 

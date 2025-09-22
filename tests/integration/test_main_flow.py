@@ -68,6 +68,12 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual('', result.stderr)
         self.assertEqual(0, result.returncode)
 
+    def test_exit_code_passed(self):
+        cmd = 'bash -c "exit 77"'
+        result = self.sandbox_run(cmd)
+        self.assertEqual('', result.stderr)
+        self.assertEqual(77, result.returncode)
+
     def test_process_isolation(self):
         cmd = 'ps aux --noheaders'
         result = self.sandbox_run(cmd)
@@ -83,7 +89,7 @@ class TestMainFlow(unittest.TestCase):
         self.assertTrue(re.match(init_process, ps_lines[0]),
                         f'Unexpected ps output: {ps_lines[0]}')
 
-        # the second process should be 'ps aux ...'
+        # the second should be 'ps aux ...'
         ps_process = rf'^{user}\s+\d+\s+.*{re.escape(cmd)}.*'
         self.assertTrue(re.match(ps_process, ps_lines[1]),
                         f'Unexpected ps output: {ps_lines[1]}')
@@ -106,6 +112,7 @@ class TestMainFlow(unittest.TestCase):
         with open(jail_file, 'r') as f:
             content = f.read()
         self.assertEqual('Hello world\n', content)
+
 
 
 def remove_test_jail_dir():
