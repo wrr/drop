@@ -21,18 +21,29 @@ test: vet
 test-race:
 	go test -race ./...
 
-test-integration:
-	python3 -m unittest discover tests/integration/
-
 # go install honnef.co/go/tools/cmd/staticcheck@latest
 lint: build
 	staticcheck ./...
 
-cover: build
-	go test -v -cover -coverprofile=c.out ./...
+test-integration:
+	python3 -m unittest discover tests/integration/
 
-cover-inspect: cover
-	go tool cover -html=c.out -o=coverage.html
+# Gather coverage information for unit tests, integration tests and
+# all tests combined.
+cover:
+	go build -cover ./cmd/dirjail
+	rm -rf cover
+	mkdir -p cover/unit cover/int cover/all
+	go test -v -cover ./... -args -test.gocoverdir="$(PWD)/cover/unit"
+	GOCOVERDIR="./cover/int/" python3 -m unittest discover tests/integration/
+	go tool covdata merge -i=cover/unit,cover/int -o=cover/all
+	go tool covdata textfmt -i=./cover/unit -o=cover/unit/unit.cov
+	go tool covdata textfmt -i=./cover/int -o=cover/int/int.cov
+	go tool covdata textfmt -i=./cover/all -o=cover/all/all.cov
+	go tool cover -html=cover/int/int.cov -o=cover/integration.html
+	go tool cover -html=cover/unit/unit.cov -o=cover/unit.html
+	go tool cover -html=cover/all/all.cov -o=cover/all.html
+	rm dirjail
 
 clean:
 	go clean

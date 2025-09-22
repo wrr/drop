@@ -29,19 +29,19 @@ class TestMainFlow(unittest.TestCase):
             shutil.rmtree(self.temp_dir)
 
     def sandbox_run(self, command):
-        """Execute a command in sandbox and return its result."""
+        """Execute a command in the sandbox and return its result."""
         config_file = os.path.join(self.temp_dir, 'config.toml')
         with open(config_file, 'w') as f:
             f.write(CONFIG)
         return subprocess.run(
-            f'dirjail -c {config_file} -i {JAIL_ID} {command}',
+            f'./dirjail -c {config_file} -i {JAIL_ID} {command}',
             shell=True, capture_output=True, text=True)
 
     def test_process_list(self):
         cmd = 'ps aux --noheaders'
         result = self.sandbox_run(cmd)
-        self.assertEqual(0, result.returncode)
         self.assertEqual('', result.stderr)
+        self.assertEqual(0, result.returncode)
         ps_lines = result.stdout.strip().split('\n')
         self.assertEqual(2, len(ps_lines))
 
