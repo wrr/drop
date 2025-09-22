@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List
 
@@ -13,10 +14,20 @@ JAIL_ID = 'drop-tests'
 HOME_DIR = Path.home()
 JAIL_DIR = HOME_DIR / '.dirjail' / 'jails' / JAIL_ID
 
+@contextmanager
+def scoped_dir(path):
+    """Create directory and clean up afterwards."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        yield path
+    finally:
+        if path.exists():
+            shutil.rmtree(path)
+
 class Config:
     def __init__(self, *,
                  home_visible: List[str] = None,
-                 home_writeable: List[str] = None, 
+                 home_writeable: List[str] = None,
                  proc_readable: List[str] = None,
                  hide: List[str] = None,
                  env_expose: List[str] = None):
@@ -37,12 +48,14 @@ class Config:
         ]
         return '\n'.join(toml_lines)
 
+def write(content, path: str) -> None:
+    """Write content to a file"""
+    with open(path, 'w') as f:
+        f.write(content)
 
 def write_config(config: Config, path: str) -> None:
-    """Write a Config object to a file as TOML."""
-    with open(path, 'w') as f:
-        f.write(config.toml())
-
+    """Write a Config object to a file as TOML"""
+    write(config.toml(), path)
 
 class TestMainFlow(unittest.TestCase):
     def setUp(self):
@@ -113,7 +126,24 @@ class TestMainFlow(unittest.TestCase):
             content = f.read()
         self.assertEqual('Hello world\n', content)
 
+    def test_home_visible(self):
+        exposed_dname = 'drop-test-data'
+        home_sub_path = HOME_DIR / exposed_dname
+        hello_path = home_sub_path / 'hello.txt'
+        with scoped_dir(home_sub_path):
+            write("hello", hello_path)
+            config = Config(home_visible=[exposed_dname])
+            # Reading from home_visible file is allowed
+            cmd = f'cat {hello_path}'
+            result = self.sandbox_run(cmd, config=config)
+            self.assertSuccess(result)
+            self.assertEqual("hello", result.stdout)
 
+            # Writing to home_visible file is not allowed
+            cmd = f'bash -c "cat foo > {hello_path}"'
+            result = self.sandbox_run(cmd, config=config)
+            self.assertEqual(1, result.returncode)
+            self.assertIn('Read-only file system', result.stderr)
 
 def remove_test_jail_dir():
     if os.path.exists(JAIL_DIR):
