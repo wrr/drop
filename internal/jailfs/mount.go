@@ -39,7 +39,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	//
 	// Readonly overlayfs does not require upperdir= and workdir= params.
 	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
-	if err := syscall.Mount("overlay", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
+	if err := syscall.Mount("", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
 		return fmt.Errorf("mount /etc failed: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func mountHome(paths *Paths, cfg *config.Config) error {
 	// able to read and write files.
 	homeDst := filepath.Join(paths.FsRoot, paths.HostHome)
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", homeLower, paths.Home, homeWork)
-	if err := syscall.Mount("overlay", homeDst, "overlay", syscall.MS_NOSUID, opts); err != nil {
+	if err := syscall.Mount("", homeDst, "overlay", syscall.MS_NOSUID, opts); err != nil {
 		return fmt.Errorf("mount %s failed: %v", homeDst, err)
 	}
 
