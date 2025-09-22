@@ -219,7 +219,7 @@ func bindAll(srcDir, dstDir string, entries []string, readonly bool) error {
 				}
 			}
 		} else {
-			fmt.Printf("Not mounting %s, no such file or directory\n", src)
+			fmt.Fprintf(os.Stderr, "Not mounting %s, no such file or directory\n", src)
 		}
 	}
 	return nil
