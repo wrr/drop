@@ -21,6 +21,9 @@ test: vet
 test-race:
 	go test -race ./...
 
+test-integration:
+	python3 -m unittest discover tests/integration/
+
 # go install honnef.co/go/tools/cmd/staticcheck@latest
 lint: build
 	staticcheck ./...
