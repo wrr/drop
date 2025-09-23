@@ -13,17 +13,12 @@ from typing import List
 
 JAIL_ID = 'drop-tests'
 HOME_DIR = Path.home()
-JAIL_DIR = HOME_DIR / '.dirjail' / 'jails' / JAIL_ID
 
-@contextmanager
-def scoped_dir(path):
-    """Create directory and clean up afterwards."""
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-        yield path
-    finally:
-        if path.exists():
-            shutil.rmtree(path)
+def jail_dir(jail_id: str) -> Path:
+    return HOME_DIR / '.dirjail' / 'jails' / jail_id
+
+JAIL_DIR = jail_dir(JAIL_ID)
+
 
 class Config:
     def __init__(self, *,
@@ -49,44 +44,34 @@ class Config:
         ]
         return '\n'.join(toml_lines)
 
-def write(content, path: str) -> None:
-    """Write content to a file"""
-    with open(path, 'w') as f:
-        f.write(content)
-
-def write_config(config: Config, path: str) -> None:
-    """Write a Config object to a file as TOML"""
-    write(config.toml(), path)
-
-def read(path: str) -> str:
-    with open(path, 'r') as f:
-        return f.read()
 
 class TestMainFlow(unittest.TestCase):
     def setUp(self):
-        remove_test_jail_dir()
+        rmdir(JAIL_DIR)
         self.temp_dir = tempfile.mkdtemp(prefix='drop-tests')
 
     def tearDown(self):
-        remove_test_jail_dir()
+        rmdir(JAIL_DIR)
         if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
     def sandbox_run(self, command, config: Config = None,
-                    jail_id: str = JAIL_ID):
+                    jail_id: str = JAIL_ID, cwd=None):
         """Execute a command in the sandbox and return its result."""
         if config is None:
             config = Config()
         config_file = os.path.join(self.temp_dir, 'config.toml')
         write_config(config, config_file)
-        cmd_args = (
-            ['./dirjail', '-c', config_file, '-i', jail_id]
-            + shlex.split(command)
-        )
-        return subprocess.run(cmd_args, capture_output=True, text=True)
+        cmd_args = [f'{os.getcwd()}/dirjail', '-c', config_file]
+        if jail_id:
+            cmd_args += ['-i', jail_id]
+        cmd_args += shlex.split(command)
+        return subprocess.run(cmd_args, capture_output=True, text=True,
+                              cwd=cwd)
 
     def assertSuccess(self, result):
-        self.assertEqual('', result.stderr)
+        self.assertTrue(result.stderr == '',
+                        f'Unexpected error {result.stderr}')
         self.assertEqual(0, result.returncode)
 
     def test_exit_code_passed(self):
@@ -96,6 +81,29 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual(77, result.returncode)
         self.assertTrue(os.path.exists(JAIL_DIR),
                         f'Jail directory was not created: {JAIL_DIR}')
+
+    def test_jail_id_from_cwd(self):
+        # If jail id is not passed, it should be constructed from
+        # current working dir.
+        cwd = self.temp_dir
+        jail_id = str(cwd).replace('/', '-').strip('-')
+        jail_dir_from_cwd = jail_dir(jail_id)
+        rmdir(jail_dir_from_cwd)
+        try:
+            # Expose the directory where test coverage data is stored,
+            # otherwise the test fails in coverage gathering mode.
+            cover_path = Path(os.getcwd()) /  'cover'
+            cover_path = cover_path.relative_to(Path.home())
+            config = Config(home_writeable=[str(cover_path)])
+            result = self.sandbox_run('ls', config=config, jail_id=None,
+                                      cwd=cwd)
+            self.assertSuccess(result)
+            self.assertFalse(os.path.exists(JAIL_DIR))
+            self.assertTrue(os.path.exists(jail_dir_from_cwd), 
+                            f'jail dir is missing {jail_dir_from_cwd}')
+        finally:
+            pass
+            rmdir(jail_dir_from_cwd)
 
     def test_process_isolation(self):
         cmd = 'ps aux --noheaders'
@@ -195,6 +203,29 @@ class TestMainFlow(unittest.TestCase):
         finally:
             del os.environ['FOO']
 
-def remove_test_jail_dir():
-    if os.path.exists(JAIL_DIR):
-        shutil.rmtree(JAIL_DIR)
+@contextmanager
+def scoped_dir(path):
+    """Create directory and clean up afterwards."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        yield path
+    finally:
+        if path.exists():
+            shutil.rmtree(path)
+
+def rmdir(path):
+    if os.path.exists(path):
+        shutil.rmtree(path)
+
+def write(content, path: str) -> None:
+    """Write content to a file"""
+    with open(path, 'w') as f:
+        f.write(content)
+
+def write_config(config: Config, path: str) -> None:
+    """Write a Config object to a file as TOML"""
+    write(config.toml(), path)
+
+def read(path: str) -> str:
+    with open(path, 'r') as f:
+        return f.read()

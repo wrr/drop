@@ -35,7 +35,7 @@ cover:
 	rm -rf cover
 	mkdir -p cover/unit cover/int cover/all
 	go test -v -cover ./... -args -test.gocoverdir="$(PWD)/cover/unit"
-	GOCOVERDIR="./cover/int/" python3 -m unittest discover tests/integration/
+	GOCOVERDIR="$(PWD)/cover/int/" python3 -m unittest discover tests/integration/
 	go tool covdata merge -i=cover/unit,cover/int -o=cover/all
 	go tool covdata textfmt -i=./cover/unit -o=cover/unit/unit.cov
 	go tool covdata textfmt -i=./cover/int -o=cover/int/int.cov
