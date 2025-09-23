@@ -40,11 +40,11 @@ class Config:
     def toml(self) -> str:
         """Return configuration as TOML string"""
         toml_lines = [
-            f"home_visible = {str(self.home_visible)}",
-            f"home_writeable = {str(self.home_writeable)}",
-            f"proc_readable = {str(self.proc_readable)}",
-            f"hide = {str(self.hide)}",
-            f"env_expose = {str(self.env_expose)}"
+            f'home_visible = {str(self.home_visible)}',
+            f'home_writeable = {str(self.home_writeable)}',
+            f'proc_readable = {str(self.proc_readable)}',
+            f'hide = {str(self.hide)}',
+            f'env_expose = {str(self.env_expose)}'
         ]
         return '\n'.join(toml_lines)
 
@@ -56,6 +56,10 @@ def write(content, path: str) -> None:
 def write_config(config: Config, path: str) -> None:
     """Write a Config object to a file as TOML"""
     write(config.toml(), path)
+
+def read(path: str) -> str:
+    with open(path, 'r') as f:
+        return f.read()
 
 class TestMainFlow(unittest.TestCase):
     def setUp(self):
@@ -123,28 +127,52 @@ class TestMainFlow(unittest.TestCase):
         jail_file = JAIL_DIR / 'home' / fname
         self.assertTrue(os.path.exists(jail_file))
 
-        with open(jail_file, 'r') as f:
-            content = f.read()
-        self.assertEqual('Hello world\n', content)
+        self.assertEqual('Hello world\n', read(jail_file))
 
     def test_home_visible(self):
         exposed_dname = 'dirjail-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
-            write("hello", hello_path)
+            write('hello', hello_path)
             config = Config(home_visible=[exposed_dname])
-            # Reading from home_visible file is allowed
+            # Reading from files in home_visible dir is allowed
             cmd = f'cat {hello_path}'
             result = self.sandbox_run(cmd, config=config)
             self.assertSuccess(result)
-            self.assertEqual("hello", result.stdout)
+            self.assertEqual('hello', result.stdout)
 
-            # Writing to home_visible file is not allowed
+            # Writing to files in home_visible dir is not allowed
             cmd = f'bash -c "cat foo > {hello_path}"'
             result = self.sandbox_run(cmd, config=config)
             self.assertEqual(1, result.returncode)
             self.assertIn('Read-only file system', result.stderr)
+
+    def test_home_writeable(self):
+        exposed_dname = 'dirjail-test-data'
+        home_sub_path = HOME_DIR / exposed_dname
+        hello_path = home_sub_path / 'hello.txt'
+        with scoped_dir(home_sub_path):
+            write('hello', hello_path)
+            config = Config(home_writeable=[exposed_dname])
+            # Reading from files in home_writeable dir is allowed
+            cmd = f'cat {hello_path}'
+            result = self.sandbox_run(cmd, config=config)
+            self.assertSuccess(result)
+            self.assertEqual('hello', result.stdout)
+
+            # Writing to files in home_writeable dir is allowed,
+            # Creating new files and dirs is also allowed.
+            cmd = (f'bash -c "echo world > {hello_path}; ' +
+                   f'mkdir {home_sub_path}/foo; ' +
+                   f'touch {home_sub_path}/bar; '+
+                   f'cat {hello_path};"')
+            result = self.sandbox_run(cmd, config=config)
+            self.assertSuccess(result)
+            self.assertEqual('world\n', result.stdout)
+            self.assertEqual('world\n', read(hello_path))
+            self.assertTrue(os.path.isdir(home_sub_path / 'foo'))
+            self.assertTrue(os.path.isfile(home_sub_path / 'bar'))
 
 def remove_test_jail_dir():
     if os.path.exists(JAIL_DIR):
