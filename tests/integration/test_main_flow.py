@@ -67,14 +67,15 @@ class TestMainFlow(unittest.TestCase):
         if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
-    def sandbox_run(self, command, config: Config = None):
+    def sandbox_run(self, command, config: Config = None,
+                    jail_id: string = JAIL_ID):
         """Execute a command in the sandbox and return its result."""
         if config is None:
             config = Config()
         config_file = os.path.join(self.temp_dir, 'config.toml')
         write_config(config, config_file)
         return subprocess.run(
-            f'./dirjail -c {config_file} -i {JAIL_ID} {command}',
+            f'./dirjail -c {config_file} -i {jail_id} {command}',
             shell=True, capture_output=True, text=True)
 
     def assertSuccess(self, result):
@@ -127,7 +128,7 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual('Hello world\n', content)
 
     def test_home_visible(self):
-        exposed_dname = 'drop-test-data'
+        exposed_dname = 'dirjail-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
