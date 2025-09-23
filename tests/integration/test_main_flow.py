@@ -91,6 +91,8 @@ class TestMainFlow(unittest.TestCase):
         result = self.sandbox_run(cmd)
         self.assertEqual('', result.stderr)
         self.assertEqual(77, result.returncode)
+        self.assertTrue(os.path.exists(JAIL_DIR),
+                        f'Jail directory was not created: {JAIL_DIR}')
 
     def test_process_isolation(self):
         cmd = 'ps aux --noheaders'
@@ -111,9 +113,6 @@ class TestMainFlow(unittest.TestCase):
         ps_process = rf'^{user}\s+\d+\s+.*{re.escape(cmd)}.*'
         self.assertTrue(re.match(ps_process, ps_lines[1]),
                         f'Unexpected ps output: {ps_lines[1]}')
-
-        self.assertTrue(os.path.exists(JAIL_DIR),
-                        f'Jail directory was not created: {JAIL_DIR}')
 
     def test_home_dir_isolation(self):
         fname = 'test_file_foo_bar'
