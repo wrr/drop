@@ -89,9 +89,15 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 // removed when the jail terminates. The actual files created in the
 // jailed home are written to the overlayfs upper layer.
 func mountHome(paths *Paths, cfg *config.Config) error {
-	// Create empty files and dirs to be mount point in the overlayfs
-	// lower dir.
 	homeLower := filepath.Join(paths.Run, "home-lower")
+	if err := MkdirAll(homeLower); err != nil {
+		return err
+	}
+	homeWork := filepath.Join(paths.Run, "home-work")
+	if err := MkdirAll(homeWork); err != nil {
+		return err
+	}
+
 	mountPoints := append(cfg.HomeVisible, cfg.HomeWriteable...)
 	if isSubDir(paths.HostHome, paths.Cwd) {
 		// If CWD is a subdir of home, a mountpoint for it is also needed,
@@ -103,11 +109,9 @@ func mountHome(paths *Paths, cfg *config.Config) error {
 		mountPoints = append(mountPoints, cwdRelPath)
 	}
 
+	// Create empty files and dirs to be mount point in the overlayfs
+	// lower dir.
 	if err := createMountPoints(paths.HostHome, homeLower, mountPoints); err != nil {
-		return err
-	}
-	homeWork := filepath.Join(paths.Run, "home-work")
-	if err := MkdirAll(homeWork); err != nil {
 		return err
 	}
 
@@ -117,7 +121,7 @@ func mountHome(paths *Paths, cfg *config.Config) error {
 	homeDst := filepath.Join(paths.FsRoot, paths.HostHome)
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", homeLower, paths.Home, homeWork)
 	if err := syscall.Mount("", homeDst, "overlay", syscall.MS_NOSUID, opts); err != nil {
-		return fmt.Errorf("mount %s failed: %v", homeDst, err)
+		return fmt.Errorf("mount home to %s failed: %v", homeDst, err)
 	}
 
 	if err := bindAll(paths.HostHome, homeDst, cfg.HomeVisible, true); err != nil {
