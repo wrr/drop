@@ -25,7 +25,7 @@ test-race:
 lint: build
 	staticcheck ./...
 
-test-integration:
+test-integration: build
 	python3 -m unittest discover tests/integration/
 
 # Gather coverage information for unit tests, integration tests and

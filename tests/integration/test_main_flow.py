@@ -1,6 +1,7 @@
 import getpass
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -78,9 +79,11 @@ class TestMainFlow(unittest.TestCase):
             config = Config()
         config_file = os.path.join(self.temp_dir, 'config.toml')
         write_config(config, config_file)
-        return subprocess.run(
-            f'./dirjail -c {config_file} -i {jail_id} {command}',
-            shell=True, capture_output=True, text=True)
+        cmd_args = (
+            ['./dirjail', '-c', config_file, '-i', jail_id]
+            + shlex.split(command)
+        )
+        return subprocess.run(cmd_args, capture_output=True, text=True)
 
     def assertSuccess(self, result):
         self.assertEqual('', result.stderr)
@@ -162,9 +165,10 @@ class TestMainFlow(unittest.TestCase):
 
             # Writing to files in home_writeable dir is allowed,
             # Creating new files and dirs is also allowed.
-            cmd = (f'bash -c "echo world > {hello_path}; ' +
-                   f'mkdir {home_sub_path}/foo; ' +
-                   f'touch {home_sub_path}/bar; '+
+            cmd = (f'bash -c "'
+                   f'echo world > {hello_path}; '
+                   f'mkdir {home_sub_path}/foo; '
+                   f'touch {home_sub_path}/bar; '
                    f'cat {hello_path};"')
             result = self.sandbox_run(cmd, config=config)
             self.assertSuccess(result)
@@ -172,6 +176,24 @@ class TestMainFlow(unittest.TestCase):
             self.assertEqual('world\n', read(hello_path))
             self.assertTrue(os.path.isdir(home_sub_path / 'foo'))
             self.assertTrue(os.path.isfile(home_sub_path / 'bar'))
+
+    def test_env_expose(self):
+        os.environ['FOO'] = 'bar'
+
+        try:
+            # Env variables should not be automatically exposed.
+            cmd = 'bash -c "echo $FOO"'
+            result = self.sandbox_run(cmd)
+            self.assertSuccess(result)
+            self.assertEqual('', result.stdout.strip())
+
+            config = Config(env_expose=['FOO'])
+            result = self.sandbox_run(cmd, config=config)
+            self.assertSuccess(result)
+            self.assertEqual('bar', result.stdout.strip())
+
+        finally:
+            del os.environ['FOO']
 
 def remove_test_jail_dir():
     if os.path.exists(JAIL_DIR):

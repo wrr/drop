@@ -75,7 +75,7 @@ Options:
 		flag.PrintDefaults()
 	}
 
-	flag.Var((*stringSlice)(&portForwards), "p", "Publish port(s) to the host. Format: [hostIP:]hostPort[:containerPort]")
+	flag.Var((*stringSlice)(&portForwards), "p", "Publish tcp port(s) to the host. Format: [hostIP:]hostPort[:containerPort]")
 	flag.StringVar(&jailId, "i", "", "Jail ID")
 	flag.StringVar(&configPath, "c", "", "Path to config file")
 
@@ -312,7 +312,6 @@ func childProcessEntry() (int, error) {
 	// Filter environment variables and always include debian_chroot
 	filteredEnv := env.Filter(os.Environ(), cfg.EnvExpose)
 	cmd.Env = append([]string{"debian_chroot=dirjail"}, filteredEnv...)
-
 	if err := cmd.Start(); err != nil {
 		return 1, fmt.Errorf("%s failed: %v", progWithArgs[0], err)
 	}

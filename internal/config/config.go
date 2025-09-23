@@ -94,7 +94,7 @@ func toPort(s string) (int, error) {
 // validateEnvExpose check if all patterns in the env_expose list are valid glob patterns.
 func validateEnvExpose(patterns []string) error {
 	for _, pattern := range patterns {
-		if _, err := filepath.Match(pattern, "test"); err != nil {
+		if _, err := filepath.Match(pattern, "anything"); err != nil {
 			return fmt.Errorf("invalid env_expose pattern '%s': %v", pattern, err)
 		}
 	}
