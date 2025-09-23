@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -86,12 +85,12 @@ Options:
 	}
 
 	if jailId == "" {
-		jailId, err = defaultJailId()
+		jailId, err = jailfs.CwdToJailId()
 		if err != nil {
 			return 1, err
 		}
 	} else {
-		if !isJailIdValid(jailId) {
+		if !jailfs.IsJailIdValid(jailId) {
 			return 1, fmt.Errorf("invalid character in jail ID")
 		}
 	}
@@ -329,32 +328,6 @@ func childProcessEntry() (int, error) {
 	}
 
 	return 0, nil
-}
-
-var jailIdChars = `a-zA-Z0-9-_\.`
-
-func defaultJailId() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("get current directory failed: %v", err)
-	}
-	dname := strings.ReplaceAll(cwd, "/", "-")
-	// remove leading - not to start directory name with -
-	if len(dname) <= 1 {
-		return "root", nil
-	}
-	dname = dname[1:]
-	// Keep only allowed jail ID characters
-	reg := regexp.MustCompile(`[^` + jailIdChars + `]`)
-	return reg.ReplaceAllString(dname, "_"), nil
-}
-
-func isJailIdValid(jailId string) bool {
-	reg := regexp.MustCompile(`^[` + jailIdChars + `]+$`)
-	// Do not allow - at the start, because directory created for this
-	// jail will then be tricky to handle with standard shell tools
-	// (directory name interpreted as a command flag).
-	return jailId[0] != '-' && reg.MatchString(jailId)
 }
 
 func FD_SET(fd int, p *syscall.FdSet) {

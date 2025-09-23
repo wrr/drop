@@ -68,7 +68,7 @@ class TestMainFlow(unittest.TestCase):
             shutil.rmtree(self.temp_dir)
 
     def sandbox_run(self, command, config: Config = None,
-                    jail_id: string = JAIL_ID):
+                    jail_id: str = JAIL_ID):
         """Execute a command in the sandbox and return its result."""
         if config is None:
             config = Config()

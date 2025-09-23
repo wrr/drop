@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"syscall"
 )
 
@@ -137,6 +139,39 @@ func MkdirAll(path string) error {
 	}
 	return nil
 }
+
+var jailIdChars = `a-zA-Z0-9-_\.`
+
+func IsJailIdValid(jailId string) bool {
+	reg := regexp.MustCompile(`^[` + jailIdChars + `]+$`)
+	// Do not allow '-' and '.' at the start, because directory created
+	// for this jail will then be tricky to handle with standard shell
+	// tools (directory name interpreted as a command flag or a hidden dir).
+	return len(jailId) > 0 && jailId[0] != '-' && jailId[0] != '.' && reg.MatchString(jailId)
+}
+
+func CwdToJailId() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get current directory failed: %v", err)
+	}
+	return pathToJailId(cwd), nil
+}
+
+func pathToJailId(path string) string {
+	dname := strings.ReplaceAll(path, "/", "-")
+	// remove all leading '-' and '.'
+	dname = strings.TrimLeft(dname, ".-")
+	// remove all trailing '-'
+	dname = strings.TrimRight(dname, "-")
+	if len(dname) == 0 {
+		return "root"
+	}
+	// Keep only allowed jail ID characters
+	reg := regexp.MustCompile(`[^` + jailIdChars + `]`)
+	return reg.ReplaceAllString(dname, "_")
+}
+
 func homeDir() (string, error) {
 	currentUser, err := user.Current()
 	if err != nil {
