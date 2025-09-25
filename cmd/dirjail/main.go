@@ -67,6 +67,7 @@ func parentProcessEntry() (int, error) {
 	var portForwards []string
 	var jailId string
 	var configPath string
+	var networkMode string
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `dirjail limits programs abilities to read and write user's files
 Usage: dirjail [options] [command...]
@@ -78,10 +79,15 @@ Options:
 	flag.Var((*stringSlice)(&portForwards), "p", "Publish tcp port(s) to the host. Format: [hostIP:]hostPort[:containerPort]")
 	flag.StringVar(&jailId, "i", "", "Jail ID")
 	flag.StringVar(&configPath, "c", "", "Path to config file")
+	flag.StringVar(&networkMode, "n", "isolated", "Network mode: off, isolated, or unjailed")
 
 	err := flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
 		return 1, fmt.Errorf("failed to parse command line: %v", err)
+	}
+
+	if networkMode != "off" && networkMode != "isolated" && networkMode != "unjailed" {
+		return 1, fmt.Errorf("invalid network mode '%s': must be 'off', 'isolated', or 'unjailed'", networkMode)
 	}
 
 	if jailId == "" {
@@ -104,6 +110,10 @@ Options:
 		parsedPortForwards = append(parsedPortForwards, parsed)
 	}
 
+	if len(parsedPortForwards) > 0 && networkMode != "isolated" {
+		return 1, fmt.Errorf("port forwarding (-p) is only supported with isolated network mode (-n isolated)")
+	}
+
 	runDir, err := jailfs.NewRunDir(jailId)
 	if err != nil {
 		return 1, fmt.Errorf("failed to create run dir: %v", err)
@@ -121,18 +131,23 @@ Options:
 	//
 	// This passes all the arguments correctly also when one of them
 	// (configPath) is an empty string
-	childArgs := append([]string{"-child", jailId, configPath, runDir}, flag.Args()...)
+	childArgs := append([]string{"-child", jailId, configPath, runDir, networkMode}, flag.Args()...)
 	cmd := exec.Command(os.Args[0], childArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.ExtraFiles = []*os.File{childEnd}
+
+	cloneFlags := uintptr(syscall.CLONE_NEWNS |
+		syscall.CLONE_NEWIPC |
+		syscall.CLONE_NEWPID |
+		syscall.CLONE_NEWUSER)
+	if networkMode != "unjailed" {
+		cloneFlags |= syscall.CLONE_NEWNET
+	}
+
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: (syscall.CLONE_NEWNS |
-			syscall.CLONE_NEWIPC |
-			syscall.CLONE_NEWPID |
-			syscall.CLONE_NEWUSER |
-			syscall.CLONE_NEWNET),
+		Cloneflags: cloneFlags,
 		// Code running in a user namespace just after clone() and before
 		// execve() system calls has all capabilities in this namespace.
 		// This allows such code to setup the namespace with mount()
@@ -205,11 +220,14 @@ Options:
 	childEnd.Close()
 
 	// Start slirp4netns to provide network connectivity to the jailed process
-	cleanup, err := netns.StartSlirp4netns(cmd.Process.Pid, parsedPortForwards, runDir)
-	if err != nil {
-		return 1, err
+	// in isolated network mode
+	if networkMode == "isolated" {
+		cleanup, err := netns.StartSlirp4netns(cmd.Process.Pid, parsedPortForwards, runDir)
+		if err != nil {
+			return 1, err
+		}
+		defer cleanup()
 	}
-	defer cleanup()
 
 	// Signal child process that setup is finished. This needs to be
 	// done when slirp4netns is running, because only then the child
@@ -232,13 +250,14 @@ Options:
 }
 
 func childProcessEntry() (int, error) {
-	if len(os.Args) < 5 {
+	if len(os.Args) < 6 {
 		return 1, fmt.Errorf("incorrect number of arguments; -child is an internal argument and should not be passed directly")
 	}
 	jailId := os.Args[2]
 	configPath := os.Args[3]
 	runDir := os.Args[4]
-	progWithArgs := os.Args[5:]
+	networkMode := os.Args[5]
+	progWithArgs := os.Args[6:]
 
 	// Wait for parent to signal that it has finished setup.
 	// The read end of the pipe is inherited as file descriptor 3
@@ -250,10 +269,12 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	// Can be done only after parent setup is done (slirp4netns is
-	// started).
-	if err := netns.SetupFirewall(); err != nil {
-		return 1, err
+	if networkMode == "isolated" {
+		// Can be done only after parent setup is done (slirp4netns is
+		// started).
+		if err := netns.SetupFirewall(); err != nil {
+			return 1, err
+		}
 	}
 
 	paths, err := jailfs.NewPaths(jailId, configPath, runDir)
