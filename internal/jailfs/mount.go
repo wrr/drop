@@ -39,11 +39,11 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	//
 	// Readonly overlayfs does not require upperdir= and workdir= params.
 	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
-	if err := syscall.Mount("", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
+	if err := syscall.Mount("etc", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
 		return fmt.Errorf("mount /etc failed: %v", err)
 	}
 
-	if err := syscall.Mount("", paths.FsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
+	if err := syscall.Mount("run", paths.FsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
 		return fmt.Errorf("mount /run failed: %v", err)
 	}
 
@@ -65,7 +65,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		}
 	}
 
-	if err := syscall.Mount("", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
+	if err := syscall.Mount("proc", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
 		return fmt.Errorf("mount proc failed: %v", err)
 	}
 	if err := hideProcFiles(cfg.ProcReadable, paths); err != nil {
@@ -120,7 +120,7 @@ func mountHome(paths *Paths, cfg *config.Config) error {
 	// able to read and write files.
 	homeDst := filepath.Join(paths.FsRoot, paths.HostHome)
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", homeLower, paths.Home, homeWork)
-	if err := syscall.Mount("", homeDst, "overlay", syscall.MS_NOSUID, opts); err != nil {
+	if err := syscall.Mount("home", homeDst, "overlay", syscall.MS_NOSUID, opts); err != nil {
 		return fmt.Errorf("mount home to %s failed: %v", homeDst, err)
 	}
 
@@ -159,13 +159,13 @@ func createMountPoints(srcDir, dstDir string, entries []string) error {
 
 func mountDev(paths *Paths) error {
 	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID)
-	if err := syscall.Mount("", paths.FsRoot+"/dev", "tmpfs", flags, "mode=700"); err != nil {
+	if err := syscall.Mount("dev", paths.FsRoot+"/dev", "tmpfs", flags, "mode=700"); err != nil {
 		return fmt.Errorf("mount /dev failed: %v", err)
 	}
 	if err := os.Mkdir(paths.FsRoot+"/dev/shm", 0700); err != nil {
 		return err
 	}
-	if err := syscall.Mount("", paths.FsRoot+"/dev/shm", "tmpfs", flags|syscall.MS_NODEV, "mode=1700"); err != nil {
+	if err := syscall.Mount("dev-shm", paths.FsRoot+"/dev/shm", "tmpfs", flags|syscall.MS_NODEV, "mode=1700"); err != nil {
 		return fmt.Errorf("mount /dev/shm failed: %v", err)
 	}
 
@@ -181,7 +181,7 @@ func mountDev(paths *Paths) error {
 		return err
 	}
 	opts := "mode=600,newinstance,ptmxmode=600"
-	if err := syscall.Mount("", paths.FsRoot+"/dev/pts", "devpts", flags, opts); err != nil {
+	if err := syscall.Mount("dev-pts", paths.FsRoot+"/dev/pts", "devpts", flags, opts); err != nil {
 		return fmt.Errorf("mount /dev/pts failed: %v", err)
 	}
 
