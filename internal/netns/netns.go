@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/wrr/dirjail/internal/config"
@@ -113,6 +114,10 @@ func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward, runDir 
 	slirpCmd := exec.Command("slirp4netns", slirpArgs...)
 	// slirpCmd.Stderr = os.Stderr
 	slirpCmd.ExtraFiles = []*os.File{readyWrite}
+	slirpCmd.SysProcAttr = &syscall.SysProcAttr{
+		// Kill slirp4netns when dirjail is killed.
+		Pdeathsig: syscall.SIGKILL,
+	}
 
 	if err := slirpCmd.Start(); err != nil {
 		readyRead.Close()
