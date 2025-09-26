@@ -26,6 +26,7 @@ lint: build
 	staticcheck ./...
 
 test-integration: build
+	mkdir -p cover
 	python3 -m unittest discover tests/integration/
 
 test-all: test test-integration 
