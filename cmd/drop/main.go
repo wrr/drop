@@ -316,38 +316,27 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	var cmd *exec.Cmd
-
 	if len(progWithArgs) == 0 {
 		// TODO: use SHELL env variable
 		progWithArgs = []string{"bash"}
 	}
 
-	pname := progWithArgs[0]
-	cmd = exec.Command(pname, progWithArgs[1:]...)
-
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
 	// Filter environment variables and always include debian_chroot
 	filteredEnv := env.Filter(os.Environ(), cfg.EnvExpose)
-	cmd.Env = append([]string{"debian_chroot=drop"}, filteredEnv...)
-	if err := cmd.Start(); err != nil {
-		return 1, fmt.Errorf("%s failed: %v", progWithArgs[0], err)
-	}
-	// Ignore errors (bash exits with an error if last executed command
-	// exited with an error)
-	err = cmd.Wait()
+	envVars := append([]string{"debian_chroot=drop"}, filteredEnv...)
+
+	prog, err := exec.LookPath(progWithArgs[0]) // Searches PATH
 	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			exitCode := exitError.ExitCode()
-			return exitCode, nil
-		}
-		return 1, fmt.Errorf("jailed process failed to run: %v", err)
+		return 1, fmt.Errorf("command not found: %v", err)
 	}
 
-	return 0, nil
+	// Replace the current process
+	if err := syscall.Exec(prog, progWithArgs, envVars); err != nil {
+		return 1, fmt.Errorf("exec %s failed: %v", progWithArgs[0], err)
+	}
+
+	// Should never be reached
+	return 3, fmt.Errorf("exec failed")
 }
 
 func FD_SET(fd int, p *syscall.FdSet) {

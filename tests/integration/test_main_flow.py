@@ -106,24 +106,30 @@ class TestMainFlow(unittest.TestCase):
             rmdir(env_dir_from_cwd)
 
     def test_process_isolation(self):
-        cmd = 'ps aux --noheaders'
+        cmd = 'bash -c "sleep 10 & ps aux --noheaders"'
         result = self.sandbox_run(cmd)
         self.assertSuccess(result)
 
-        # expect two processes in the sandbox
+        # expect three processes in the sandbox
         ps_lines = result.stdout.strip().split('\n')
-        self.assertEqual(2, len(ps_lines))
+        self.assertEqual(3, len(ps_lines))
 
-        # the first process should be init (pid 1)
+        # the first process should be bash - the init process with
+        # pid 1.
         user = getpass.getuser()
-        init_process = rf'^{user}\s+1\s+.*drop.*'
+        init_process = rf'^{user}\s+1\s+.*bash.*'
         self.assertTrue(re.match(init_process, ps_lines[0]),
                         f'Unexpected ps output: {ps_lines[0]}')
 
-        # the second should be 'ps aux ...'
-        ps_process = rf'^{user}\s+\d+\s+.*{re.escape(cmd)}.*'
+        # the second should be 'sleep'
+        ps_process = rf'^{user}\s+\d+\s+.*sleep.*'
         self.assertTrue(re.match(ps_process, ps_lines[1]),
                         f'Unexpected ps output: {ps_lines[1]}')
+
+        # the third should be 'ps aux ...'
+        ps_process = rf'^{user}\s+\d+\s+.*ps aux --noheaders.*'
+        self.assertTrue(re.match(ps_process, ps_lines[2]),
+                        f'Unexpected ps output: {ps_lines[2]}')
 
     def test_home_dir_isolation(self):
         fname = 'test_file_foo_bar'
