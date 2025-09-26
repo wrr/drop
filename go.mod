@@ -1,4 +1,4 @@
-module github.com/wrr/dirjail
+module github.com/wrr/drop
 
 go 1.23.0
 

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/wrr/dirjail/internal/config"
+	"github.com/wrr/drop/internal/config"
 )
 
 // ArrangeFilesystem sets up the jail filesystem chierarchy.  It mounts

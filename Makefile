@@ -9,11 +9,11 @@ vet: fmt
 	go vet ./...
 
 build: vet
-	go build ./cmd/dirjail
+	go build ./cmd/drop
 
 # Build a devel binary with race detection
 build-race:
-	go build -race ./cmd/dirjail
+	go build -race ./cmd/drop
 
 test: vet
 	go test ./...
@@ -31,7 +31,7 @@ test-integration: build
 # Gather coverage information for unit tests, integration tests and
 # all tests combined.
 cover:
-	go build -cover ./cmd/dirjail
+	go build -cover ./cmd/drop
 	rm -rf cover
 	mkdir -p cover/unit cover/int cover/all
 	go test -v -cover ./... -args -test.gocoverdir="$(PWD)/cover/unit"
@@ -43,7 +43,7 @@ cover:
 	go tool cover -html=cover/int/int.cov -o=cover/integration.html
 	go tool cover -html=cover/unit/unit.cov -o=cover/unit.html
 	go tool cover -html=cover/all/all.cov -o=cover/all.html
-	rm dirjail
+	rm drop
 
 clean:
 	go clean

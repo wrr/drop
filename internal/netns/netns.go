@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/wrr/dirjail/internal/config"
+	"github.com/wrr/drop/internal/config"
 )
 
 type SlirpCommand struct {
@@ -115,7 +115,7 @@ func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward, runDir 
 	// slirpCmd.Stderr = os.Stderr
 	slirpCmd.ExtraFiles = []*os.File{readyWrite}
 	slirpCmd.SysProcAttr = &syscall.SysProcAttr{
-		// Kill slirp4netns when dirjail is killed.
+		// Kill slirp4netns when drop is killed.
 		Pdeathsig: syscall.SIGKILL,
 	}
 

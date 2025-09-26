@@ -12,10 +12,10 @@ import (
 	"golang.org/x/sys/unix"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 
-	"github.com/wrr/dirjail/internal/config"
-	"github.com/wrr/dirjail/internal/env"
-	"github.com/wrr/dirjail/internal/jailfs"
-	"github.com/wrr/dirjail/internal/netns"
+	"github.com/wrr/drop/internal/config"
+	"github.com/wrr/drop/internal/env"
+	"github.com/wrr/drop/internal/jailfs"
+	"github.com/wrr/drop/internal/netns"
 )
 
 // stringSlice implements flag.Value interface for repeated string flags
@@ -69,8 +69,8 @@ func parentProcessEntry() (int, error) {
 	var configPath string
 	var networkMode string
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `dirjail limits programs abilities to read and write user's files
-Usage: dirjail [options] [command...]
+		fmt.Fprintf(os.Stderr, `drop limits programs abilities to read and write user's files
+Usage: drop [options] [command...]
 Options:
 `)
 		flag.PrintDefaults()
@@ -310,7 +310,7 @@ func childProcessEntry() (int, error) {
 
 	// Drop all the capabilities in the user namespace.
 	//
-	// CAP_SYS_ADMIN would allow the user to umount dirjail mounts and
+	// CAP_SYS_ADMIN would allow the user to umount drop mounts and
 	// access the original directories (home dir, proc etc.)
 	if err := dropAllCaps(); err != nil {
 		return 1, err
@@ -332,7 +332,7 @@ func childProcessEntry() (int, error) {
 
 	// Filter environment variables and always include debian_chroot
 	filteredEnv := env.Filter(os.Environ(), cfg.EnvExpose)
-	cmd.Env = append([]string{"debian_chroot=dirjail"}, filteredEnv...)
+	cmd.Env = append([]string{"debian_chroot=drop"}, filteredEnv...)
 	if err := cmd.Start(); err != nil {
 		return 1, fmt.Errorf("%s failed: %v", progWithArgs[0], err)
 	}

@@ -12,16 +12,16 @@ import (
 
 // Paths contains filesystem paths used to setup the jail.
 type Paths struct {
-	// Cwd is the directory where dirjail was started.
+	// Cwd is the directory where drop was started.
 	Cwd string
-	// DotDir is the top-level directory where dirjail files are stored
-	// (e.g. /home/alice/.dirjail).
+	// DotDir is the top-level directory where drop files are stored
+	// (e.g. /home/alice/.drop).
 	DotDir string
-	// Config is the path to the dirjail configuration file.
+	// Config is the path to the drop configuration file.
 	Config string
 	// Base is the entry point for all paths specific to the current jail ID.
 	// For example, if jail-id is 'project-foo', Base is
-	// /home/alice/.dirjail/jails/project-foo.
+	// /home/alice/.drop/jails/project-foo.
 	Base string
 	// FsRoot is where the jail's root filesystem is assembled before chroot.
 	FsRoot string
@@ -29,10 +29,10 @@ type Paths struct {
 	// (e.g. /home/alice).
 	HostHome string
 	// Home is the directory mounted as the home directory in the jail
-	// (e.g. /home/alice/.dirjail/jails/project-foo/home).
+	// (e.g. /home/alice/.drop/jails/project-foo/home).
 	Home string
 	// Etc is the directory mounted as read-only overlay over /etc in the jail
-	// (e.g. /home/alice/.dirjail/jails/project-foo/etc).
+	// (e.g. /home/alice/.drop/jails/project-foo/etc).
 	Etc string
 	// Tmp is the directory mounted as /tmp in the jail. It is placed as a
 	// subdir of the host $TMPDIR to allow standard cleanup mechanisms.
@@ -59,7 +59,7 @@ func NewPaths(jailId string, configPath string, runDir string) (*Paths, error) {
 		return nil, err
 	}
 
-	dotDir := filepath.Join(hostHome, ".dirjail")
+	dotDir := filepath.Join(hostHome, ".drop")
 	base := filepath.Join(dotDir, "jails", jailId)
 
 	if configPath == "" {
@@ -112,7 +112,7 @@ func NewRunDir(jailId string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	parent := filepath.Join(hostHome, ".dirjail", "internal", "run")
+	parent := filepath.Join(hostHome, ".drop", "internal", "run")
 
 	if err := MkdirAll(parent); err != nil {
 		return "", err
@@ -265,5 +265,5 @@ func initTmpSubDir(jailId string, paths *Paths) (string, error) {
 }
 
 func tmpDirName(jailId string) string {
-	return "dirjail-" + jailId + "-"
+	return "drop-" + jailId + "-"
 }

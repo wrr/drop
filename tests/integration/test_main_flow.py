@@ -15,7 +15,7 @@ JAIL_ID = 'drop-tests'
 HOME_DIR = Path.home()
 
 def jail_dir(jail_id: str) -> Path:
-    return HOME_DIR / '.dirjail' / 'jails' / jail_id
+    return HOME_DIR / '.drop' / 'jails' / jail_id
 
 JAIL_DIR = jail_dir(JAIL_ID)
 
@@ -62,7 +62,7 @@ class TestMainFlow(unittest.TestCase):
             config = Config()
         config_file = os.path.join(self.temp_dir, 'config.toml')
         write_config(config, config_file)
-        cmd_args = [f'{os.getcwd()}/dirjail', '-c', config_file]
+        cmd_args = [f'{os.getcwd()}/drop', '-c', config_file]
         if jail_id:
             cmd_args += ['-i', jail_id]
         cmd_args += shlex.split(command)
@@ -116,7 +116,7 @@ class TestMainFlow(unittest.TestCase):
 
         # the first process should be init (pid 1)
         user = getpass.getuser()
-        init_process = rf'^{user}\s+1\s+.*dirjail.*'
+        init_process = rf'^{user}\s+1\s+.*drop.*'
         self.assertTrue(re.match(init_process, ps_lines[0]),
                         f'Unexpected ps output: {ps_lines[0]}')
 
@@ -140,7 +140,7 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual('Hello world\n', read(jail_file))
 
     def test_home_visible(self):
-        exposed_dname = 'dirjail-test-data'
+        exposed_dname = 'drop-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
@@ -159,7 +159,7 @@ class TestMainFlow(unittest.TestCase):
             self.assertIn('Read-only file system', result.stderr)
 
     def test_home_writeable(self):
-        exposed_dname = 'dirjail-test-data'
+        exposed_dname = 'drop-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
