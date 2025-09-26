@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := build
 
-.PHONY: fmt vet build build-race test test-race lint cover cover-inspect clean imports vulncheck all
+.PHONY: fmt vet build build-race test test-integration test-race test-all lint cover cover-inspect clean imports vulncheck all
 
 fmt:
 	go fmt ./...
@@ -27,6 +27,8 @@ lint: build
 
 test-integration: build
 	python3 -m unittest discover tests/integration/
+
+test-all: test test-integration 
 
 # Gather coverage information for unit tests, integration tests and
 # all tests combined.
@@ -56,5 +58,5 @@ imports: build
 vulncheck: build
 	govulncheck ./...
 
-all: cover-inspect test-race vulncheck imports lint build
+all: cover-inspect test-race test-integration vulncheck imports lint build
 
