@@ -77,8 +77,8 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 
 // mountHome mounts the user's home directory in the jail filesystem.
 //
-// Jails hide the real user's home dir from the host. Home dirs in the
-// jail are shared by jails with the same id.
+// Jail hides the real user's home dir from the host. Home dirs are
+// shared by jails with the same environment id.
 //
 // Home dirs have HomeVisible and HomeWriteable entries exposed from
 // the host home directory. To expose these entries we need to create
@@ -115,9 +115,8 @@ func mountHome(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	// Mount home dir as overlayfs, lowerdir holds mount points,
-	// upperdir is the actual jailed home dir, where jailed process is
-	// able to read and write files.
+	// Mount home dir as overlayfs, lowerdir holds only mount points,
+	// upperdir is where the actual files are stored.
 	homeDst := filepath.Join(paths.FsRoot, paths.HostHome)
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", homeLower, paths.Home, homeWork)
 	if err := syscall.Mount("home", homeDst, "overlay", syscall.MS_NOSUID, opts); err != nil {
