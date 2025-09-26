@@ -19,20 +19,20 @@ type Paths struct {
 	DotDir string
 	// Config is the path to the drop configuration file.
 	Config string
-	// Base is the entry point for all paths specific to the current jail ID.
-	// For example, if jail-id is 'project-foo', Base is
-	// /home/alice/.drop/jails/project-foo.
-	Base string
-	// FsRoot is where the jail's root filesystem is assembled before chroot.
+	// Env is the entry point for all paths specific to the current
+	// environment. For example, if envId is 'project-foo', Env is
+	// /home/alice/.drop/envs/project-foo.
+	Env string
+	// FsRoot is where the root filesystem is assembled before chroot.
 	FsRoot string
 	// HostHome is the user's home directory on the host system
 	// (e.g. /home/alice).
 	HostHome string
 	// Home is the directory mounted as the home directory in the jail
-	// (e.g. /home/alice/.drop/jails/project-foo/home).
+	// (e.g. /home/alice/.drop/envs/project-foo/home).
 	Home string
 	// Etc is the directory mounted as read-only overlay over /etc in the jail
-	// (e.g. /home/alice/.drop/jails/project-foo/etc).
+	// (e.g. /home/alice/.drop/envs/project-foo/etc).
 	Etc string
 	// Tmp is the directory mounted as /tmp in the jail. It is placed as a
 	// subdir of the host $TMPDIR to allow standard cleanup mechanisms.
@@ -47,9 +47,9 @@ type Paths struct {
 	EmptyFile string
 }
 
-// NewPaths populates Paths with the relevant paths for the current
-// jail and creates missing dir and files.
-func NewPaths(jailId string, configPath string, runDir string) (*Paths, error) {
+// NewPaths creates Paths object with the relevant paths for the
+// current environment and creates missing dir and files.
+func NewPaths(envId string, configPath string, runDir string) (*Paths, error) {
 	hostHome, err := homeDir()
 	if err != nil {
 		return nil, err
@@ -60,7 +60,7 @@ func NewPaths(jailId string, configPath string, runDir string) (*Paths, error) {
 	}
 
 	dotDir := filepath.Join(hostHome, ".drop")
-	base := filepath.Join(dotDir, "jails", jailId)
+	env := filepath.Join(dotDir, "envs", envId)
 
 	if configPath == "" {
 		configPath = filepath.Join(dotDir, "config")
@@ -71,11 +71,11 @@ func NewPaths(jailId string, configPath string, runDir string) (*Paths, error) {
 		Cwd:       cwd,
 		DotDir:    dotDir,
 		Config:    configPath,
-		Base:      base,
+		Env:       env,
 		FsRoot:    filepath.Join(runDir, "root"),
 		HostHome:  hostHome,
-		Home:      filepath.Join(base, "home"),
-		Etc:       filepath.Join(base, "etc"),
+		Home:      filepath.Join(env, "home"),
+		Etc:       filepath.Join(env, "etc"),
 		Run:       runDir,
 		EmptyDir:  filepath.Join(internal, "emptyd"),
 		EmptyFile: filepath.Join(internal, "empty"),
@@ -95,7 +95,7 @@ func NewPaths(jailId string, configPath string, runDir string) (*Paths, error) {
 		return nil, err
 	}
 
-	tmp, err := initTmpSubDir(jailId, &paths)
+	tmp, err := initTmpSubDir(envId, &paths)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func NewPaths(jailId string, configPath string, runDir string) (*Paths, error) {
 // files and dirs (for example, the main root file system mount
 // point). The directory can be removed when this jail instance
 // terminates.
-func NewRunDir(jailId string) (string, error) {
+func NewRunDir(envId string) (string, error) {
 	hostHome, err := homeDir()
 	if err != nil {
 		return "", err
@@ -117,7 +117,7 @@ func NewRunDir(jailId string) (string, error) {
 	if err := MkdirAll(parent); err != nil {
 		return "", err
 	}
-	path, err := os.MkdirTemp(parent, fmt.Sprintf("%s-", jailId))
+	path, err := os.MkdirTemp(parent, fmt.Sprintf("%s-", envId))
 	if err != nil {
 		return "", fmt.Errorf("failed to create run sub-directory: %v", err)
 	}
@@ -140,25 +140,26 @@ func MkdirAll(path string) error {
 	return nil
 }
 
-var jailIdChars = `a-zA-Z0-9-_\.`
+var envIdChars = `a-zA-Z0-9-_\.`
 
-func IsJailIdValid(jailId string) bool {
-	reg := regexp.MustCompile(`^[` + jailIdChars + `]+$`)
+func IsEnvIdValid(envId string) bool {
+	reg := regexp.MustCompile(`^[` + envIdChars + `]+$`)
 	// Do not allow '-' and '.' at the start, because directory created
-	// for this jail will then be tricky to handle with standard shell
-	// tools (directory name interpreted as a command flag or a hidden dir).
-	return len(jailId) > 0 && jailId[0] != '-' && jailId[0] != '.' && reg.MatchString(jailId)
+	// for this environment will then be tricky to handle with standard
+	// shell tools (directory name interpreted as a command flag or a
+	// hidden dir).
+	return len(envId) > 0 && envId[0] != '-' && envId[0] != '.' && reg.MatchString(envId)
 }
 
-func CwdToJailId() (string, error) {
+func CwdToEnvId() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("get current directory failed: %v", err)
 	}
-	return pathToJailId(cwd), nil
+	return pathToEnvId(cwd), nil
 }
 
-func pathToJailId(path string) string {
+func pathToEnvId(path string) string {
 	dname := strings.ReplaceAll(path, "/", "-")
 	// remove all leading '-' and '.'
 	dname = strings.TrimLeft(dname, ".-")
@@ -167,8 +168,8 @@ func pathToJailId(path string) string {
 	if len(dname) == 0 {
 		return "root"
 	}
-	// Keep only allowed jail ID characters
-	reg := regexp.MustCompile(`[^` + jailIdChars + `]`)
+	// Keep only allowed env ID characters
+	reg := regexp.MustCompile(`[^` + envIdChars + `]`)
 	return reg.ReplaceAllString(dname, "_")
 }
 
@@ -223,16 +224,17 @@ func ensureEmptyFile(path string) error {
 	return file.Close()
 }
 
-// initTmpSubDir checks if a tmp sub directory for the current jail
-// already exists and has correct owner and permissions. If this
-// is not the case, it it creates a new sub directory in tmp.
+// initTmpSubDir checks if a tmp sub directory for the current
+// environment already exists and has correct owner and
+// permissions. If this is not the case, it it creates a new sub
+// directory in tmp.
 //
 // In order to keep track of already existing tmp sub directory, a
-// link in this jail base directory is created that points to it.
+// link in the Env directory is created that points to it.
 //
 // The function returns a path to the tmp subdirectory
-func initTmpSubDir(jailId string, paths *Paths) (string, error) {
-	tmpSymlink := filepath.Join(paths.Base, "tmp")
+func initTmpSubDir(envId string, paths *Paths) (string, error) {
+	tmpSymlink := filepath.Join(paths.Env, "tmp")
 
 	if target, err := os.Readlink(tmpSymlink); err == nil {
 		// No error - symlink exists
@@ -252,7 +254,7 @@ func initTmpSubDir(jailId string, paths *Paths) (string, error) {
 		os.Remove(tmpSymlink)
 	}
 
-	tmpSubDir, err := os.MkdirTemp("", tmpDirName(jailId))
+	tmpSubDir, err := os.MkdirTemp("", tmpDirName(envId))
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary directory: %v", err)
 	}
@@ -264,6 +266,6 @@ func initTmpSubDir(jailId string, paths *Paths) (string, error) {
 	return tmpSubDir, nil
 }
 
-func tmpDirName(jailId string) string {
-	return "drop-" + jailId + "-"
+func tmpDirName(envId string) string {
+	return "drop-" + envId + "-"
 }

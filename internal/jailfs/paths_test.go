@@ -2,85 +2,85 @@ package jailfs
 
 import "testing"
 
-func TestIsJailIdValid(t *testing.T) {
+func TestIsEnvIdValid(t *testing.T) {
 	tests := []struct {
-		name   string
-		jailId string
-		want   bool
+		name  string
+		envId string
+		want  bool
 	}{
 		{
-			name:   "simple alphanumeric",
-			jailId: "project123",
-			want:   true,
+			name:  "simple alphanumeric",
+			envId: "project123",
+			want:  true,
 		},
 		{
-			name:   "with dash",
-			jailId: "project-foo",
-			want:   true,
+			name:  "with dash",
+			envId: "project-foo",
+			want:  true,
 		},
 		{
-			name:   "with underscore",
-			jailId: "project_foo",
-			want:   true,
+			name:  "with underscore",
+			envId: "project_foo",
+			want:  true,
 		},
 		{
-			name:   "with dot",
-			jailId: "project.foo",
-			want:   true,
+			name:  "with dot",
+			envId: "project.foo",
+			want:  true,
 		},
 		{
-			name:   "mixed valid characters",
-			jailId: "Project_123-test.v2",
-			want:   true,
+			name:  "mixed valid characters",
+			envId: "Project_123-test.v2",
+			want:  true,
 		},
 		{
-			name:   "single character",
-			jailId: "a",
-			want:   true,
+			name:  "single character",
+			envId: "a",
+			want:  true,
 		},
 		{
-			name:   "starts with dash",
-			jailId: "-project",
-			want:   false,
+			name:  "starts with dash",
+			envId: "-project",
+			want:  false,
 		},
 		{
-			name:   "starts with dot",
-			jailId: ".project",
-			want:   false,
+			name:  "starts with dot",
+			envId: ".project",
+			want:  false,
 		},
 		{
-			name:   "with slash",
-			jailId: "project/foo",
-			want:   false,
+			name:  "with slash",
+			envId: "project/foo",
+			want:  false,
 		},
 		{
-			name:   "with space",
-			jailId: "project foo",
-			want:   false,
+			name:  "with space",
+			envId: "project foo",
+			want:  false,
 		},
 		{
-			name:   "with special char",
-			jailId: "project@foo",
-			want:   false,
+			name:  "with special char",
+			envId: "project@foo",
+			want:  false,
 		},
 		{
-			name:   "empty",
-			jailId: "",
-			want:   false,
+			name:  "empty",
+			envId: "",
+			want:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsJailIdValid(tt.jailId)
+			got := IsEnvIdValid(tt.envId)
 			if got != tt.want {
-				t.Errorf("IsJailIdValid(%q) = %v, want %v", tt.jailId, got, tt.want)
+				t.Errorf("IsEnvIdValid(%q) = %v, want %v", tt.envId, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestPathToJailId(t *testing.T) {
+func TestPathToEnvId(t *testing.T) {
 	tests := []struct {
 		name string
 		path string
@@ -172,9 +172,9 @@ func TestPathToJailId(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := pathToJailId(tt.path)
+			got := pathToEnvId(tt.path)
 			if got != tt.want {
-				t.Errorf("pathToJailId(%q) = %q, want %q", tt.path, got, tt.want)
+				t.Errorf("pathToEnvId(%q) = %q, want %q", tt.path, got, tt.want)
 			}
 		})
 	}

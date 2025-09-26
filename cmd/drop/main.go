@@ -65,7 +65,7 @@ func main() {
 
 func parentProcessEntry() (int, error) {
 	var portForwards []string
-	var jailId string
+	var envId string
 	var configPath string
 	var networkMode string
 	flag.Usage = func() {
@@ -77,7 +77,7 @@ Options:
 	}
 
 	flag.Var((*stringSlice)(&portForwards), "p", "Publish tcp port(s) to the host. Format: [hostIP:]hostPort[:containerPort]")
-	flag.StringVar(&jailId, "i", "", "Jail ID")
+	flag.StringVar(&envId, "e", "", "Environment ID")
 	flag.StringVar(&configPath, "c", "", "Path to config file")
 	flag.StringVar(&networkMode, "n", "isolated", "Network mode: off, isolated, or unjailed")
 
@@ -90,14 +90,14 @@ Options:
 		return 1, fmt.Errorf("invalid network mode '%s': must be 'off', 'isolated', or 'unjailed'", networkMode)
 	}
 
-	if jailId == "" {
-		jailId, err = jailfs.CwdToJailId()
+	if envId == "" {
+		envId, err = jailfs.CwdToEnvId()
 		if err != nil {
 			return 1, err
 		}
 	} else {
-		if !jailfs.IsJailIdValid(jailId) {
-			return 1, fmt.Errorf("invalid character in jail ID")
+		if !jailfs.IsEnvIdValid(envId) {
+			return 1, fmt.Errorf("invalid character in env ID")
 		}
 	}
 
@@ -114,7 +114,7 @@ Options:
 		return 1, fmt.Errorf("port forwarding (-p) is only supported with isolated network mode (-n isolated)")
 	}
 
-	runDir, err := jailfs.NewRunDir(jailId)
+	runDir, err := jailfs.NewRunDir(envId)
 	if err != nil {
 		return 1, fmt.Errorf("failed to create run dir: %v", err)
 	}
@@ -131,7 +131,7 @@ Options:
 	//
 	// This passes all the arguments correctly also when one of them
 	// (configPath) is an empty string
-	childArgs := append([]string{"-child", jailId, configPath, runDir, networkMode}, flag.Args()...)
+	childArgs := append([]string{"-child", envId, configPath, runDir, networkMode}, flag.Args()...)
 	cmd := exec.Command(os.Args[0], childArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -253,7 +253,7 @@ func childProcessEntry() (int, error) {
 	if len(os.Args) < 6 {
 		return 1, fmt.Errorf("incorrect number of arguments; -child is an internal argument and should not be passed directly")
 	}
-	jailId := os.Args[2]
+	envId := os.Args[2]
 	configPath := os.Args[3]
 	runDir := os.Args[4]
 	networkMode := os.Args[5]
@@ -277,7 +277,7 @@ func childProcessEntry() (int, error) {
 		}
 	}
 
-	paths, err := jailfs.NewPaths(jailId, configPath, runDir)
+	paths, err := jailfs.NewPaths(envId, configPath, runDir)
 	if err != nil {
 		return 1, err
 	}

@@ -11,13 +11,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import List
 
-JAIL_ID = 'drop-tests'
+ENV_ID = 'drop-tests'
 HOME_DIR = Path.home()
 
-def jail_dir(jail_id: str) -> Path:
-    return HOME_DIR / '.drop' / 'jails' / jail_id
+def env_dir(env_id: str) -> Path:
+    return HOME_DIR / '.drop' / 'envs' / env_id
 
-JAIL_DIR = jail_dir(JAIL_ID)
+ENV_DIR = env_dir(ENV_ID)
 
 
 class Config:
@@ -47,24 +47,24 @@ class Config:
 
 class TestMainFlow(unittest.TestCase):
     def setUp(self):
-        rmdir(JAIL_DIR)
+        rmdir(ENV_DIR)
         self.temp_dir = tempfile.mkdtemp(prefix='drop-tests')
 
     def tearDown(self):
-        rmdir(JAIL_DIR)
+        rmdir(ENV_DIR)
         if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
     def sandbox_run(self, command, config: Config = None,
-                    jail_id: str = JAIL_ID, cwd=None):
+                    env_id: str = ENV_ID, cwd=None):
         """Execute a command in the sandbox and return its result."""
         if config is None:
             config = Config()
         config_file = os.path.join(self.temp_dir, 'config.toml')
         write_config(config, config_file)
         cmd_args = [f'{os.getcwd()}/drop', '-c', config_file]
-        if jail_id:
-            cmd_args += ['-i', jail_id]
+        if env_id:
+            cmd_args += ['-e', env_id]
         cmd_args += shlex.split(command)
         return subprocess.run(cmd_args, capture_output=True, text=True,
                               cwd=cwd)
@@ -79,31 +79,31 @@ class TestMainFlow(unittest.TestCase):
         result = self.sandbox_run(cmd)
         self.assertEqual('', result.stderr)
         self.assertEqual(77, result.returncode)
-        self.assertTrue(os.path.exists(JAIL_DIR),
-                        f'Jail directory was not created: {JAIL_DIR}')
+        self.assertTrue(os.path.exists(ENV_DIR),
+                        f'Env directory was not created: {ENV_DIR}')
 
-    def test_jail_id_from_cwd(self):
-        # If jail id is not passed, it should be constructed from
+    def test_env_id_from_cwd(self):
+        # If env id is not passed, it should be constructed from
         # current working dir.
         cwd = self.temp_dir
-        jail_id = str(cwd).replace('/', '-').strip('-')
-        jail_dir_from_cwd = jail_dir(jail_id)
-        rmdir(jail_dir_from_cwd)
+        env_id = str(cwd).replace('/', '-').strip('-')
+        env_dir_from_cwd = env_dir(env_id)
+        rmdir(env_dir_from_cwd)
         try:
             # Expose the directory where test coverage data is stored,
             # otherwise the test fails in coverage gathering mode.
             cover_path = Path(os.getcwd()) /  'cover'
             cover_path = cover_path.relative_to(Path.home())
             config = Config(home_writeable=[str(cover_path)])
-            result = self.sandbox_run('ls', config=config, jail_id=None,
+            result = self.sandbox_run('ls', config=config, env_id=None,
                                       cwd=cwd)
             self.assertSuccess(result)
-            self.assertFalse(os.path.exists(JAIL_DIR))
-            self.assertTrue(os.path.exists(jail_dir_from_cwd), 
-                            f'jail dir is missing {jail_dir_from_cwd}')
+            self.assertFalse(os.path.exists(ENV_DIR))
+            self.assertTrue(os.path.exists(env_dir_from_cwd), 
+                            f'env dir is missing {env_dir_from_cwd}')
         finally:
             pass
-            rmdir(jail_dir_from_cwd)
+            rmdir(env_dir_from_cwd)
 
     def test_process_isolation(self):
         cmd = 'ps aux --noheaders'
@@ -132,9 +132,9 @@ class TestMainFlow(unittest.TestCase):
         self.assertSuccess(result)
 
         # Ensure the file was not created in the user home, but in the
-        # jail home dir.
+        # jailed env home dir.
         self.assertFalse(os.path.exists(HOME_DIR / fname))
-        jail_file = JAIL_DIR / 'home' / fname
+        jail_file = ENV_DIR / 'home' / fname
         self.assertTrue(os.path.exists(jail_file))
 
         self.assertEqual('Hello world\n', read(jail_file))
