@@ -1,210 +1,128 @@
 package netns
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/wrr/drop/internal/config"
 )
 
-type SlirpCommand struct {
-	Execute   string         `json:"execute"`
-	Arguments map[string]any `json:"arguments"`
-}
-
-// SetupFirewall restrict traffic to the host loopback which could be
-// exposed on machines where DNS IP address on the host is a loopback.
-//
-// Generic loopback traffic restriction is provided by the
-// --disable-host-loopback option to slirp4netns, firewall rules are
-// only needed to cover the one missing case.
-//
-// Prefers nftables if available, falls back to iptables.
-//
-// For details, see:
-// https://github.com/rootless-containers/slirp4netns/blob/v0.4.3/slirp4netns.1.md#filtering-connections
-func SetupFirewall() error {
-	if isNftAvailable() {
-		return setupFirewallNft()
-	}
-	return setupFirewallIptables()
-}
-
-// isNftAvailable checks if the nft command is available on the system
-func isNftAvailable() bool {
-	_, err := exec.LookPath("nft")
-	return err == nil
-}
-
-// setupFirewallNft sets up firewall rules using nftables
-func setupFirewallNft() error {
-	err := exec.Command("nft", "add", "table", "inet", "filter").Run()
-	if err != nil {
-		return fmt.Errorf("failed to add nftables inet table: %v", err)
-	}
-	err = exec.Command("nft", "add", "chain", "inet", "filter", "output", "{", "type", "filter", "hook", "output", "priority", "0", ";", "}").Run()
-	if err != nil {
-		return fmt.Errorf("failed to add nftables chain: %v", err)
-	}
-
-	// Accept UDP to 10.0.2.3:53
-	err = exec.Command("nft", "add", "rule", "inet", "filter", "output", "ip", "daddr", "10.0.2.3", "udp", "dport", "53", "accept").Run()
-	if err != nil {
-		return fmt.Errorf("failed to add nftables rule to accept DNS traffic: %v", err)
-	}
-
-	// Drop all other traffic to 10.0.2.3
-	err = exec.Command("nft", "add", "rule", "inet", "filter", "output", "ip", "daddr", "10.0.2.3", "drop").Run()
-	if err != nil {
-		return fmt.Errorf("failed to add nftables rule to drop other traffic: %v", err)
-	}
-	return nil
-}
-
-// setupFirewallIptables sets up firewall rules using iptables (fallback)
-func setupFirewallIptables() error {
-	// Accept UDP to 10.0.2.3:53
-	err := exec.Command("iptables", "-A", "OUTPUT", "-d", "10.0.2.3", "-p", "udp", "--dport", "53", "-j", "ACCEPT").Run()
-	if err != nil {
-		return fmt.Errorf("failed to run 'iptables' to accept traffic to DNS port: %v", err)
-	}
-
-	// Drop all other traffic to 10.0.2.3
-	err = exec.Command("iptables", "-A", "OUTPUT", "-d", "10.0.2.3", "-j", "DROP").Run()
-	if err != nil {
-		return fmt.Errorf("failed to run 'iptables' to drop traffic to DNS IP: %v", err)
-	}
-
-	return nil
-}
-
-// StartSlirp4netns starts slirp4netns to provide network connectivity
+// StartPasta starts pasta to provide network connectivity
 // within a network namespace and configures port forwarding.
 //
 // Returns a cleanup function that should be called when program exits.
-func StartSlirp4netns(jailedPid int, portForwards []*config.PortForward, runDir string) (func(), error) {
-	var sockPath string
-	var slirpArgs []string
+func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string) (func(), error) {
+	var pastaArgs []string
 
-	// Create pipe for ready notification
-	readyRead, readyWrite, err := os.Pipe()
+	// Named pipe to be used by pasta to notify when network setup is
+	// finished.
+	pidFifoPath := filepath.Join(runDir, "pasta.pid")
+	err := syscall.Mkfifo(pidFifoPath, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create pipe: %v", err)
+		return nil, fmt.Errorf("failed to create pipe %s: pidFifoPath, %v", pidFifoPath, err)
 	}
 
-	slirpArgs = []string{
-		"--configure",
-		"--mtu=65520",
-		"--disable-host-loopback",
-		"--ready-fd=3",
+	pastaArgs = []string{
+		"--config-net",
+		// Address to be used in the namespace as DNS. Pasta forwards DNS
+		// requests to this address to the actual host DNS.
+		"--dns-forward", "10.0.2.3",
+		"--pid", pidFifoPath,
+		"--udp-ports", "none",
+		// Ports open on the host that are accessible from a namespace.
+		// This mapping is also needed to allow drop instances to connect
+		// to one another (one instance exposes a port to host with
+		// --tcp-port and the other needs --tcp-ns to be able connect to
+		// this port).
+		"--tcp-ns", "none",
+		"--udp-ns", "none",
+		"--no-map-gw",
+		"--log-file", filepath.Join(runDir, "pasta.log"),
 	}
-	needPortForwading := len(portForwards) > 0
-	if needPortForwading {
-		sockPath = filepath.Join(runDir, "slirp4netns.sock")
-		slirpArgs = append(slirpArgs, "--api-socket", sockPath)
+
+	// Ports open in the namespace that are accessible from the host
+	tcpPorts := []string{"auto"}
+	// Add port forwarding arguments
+	if len(portForwards) > 0 {
+		tcpPorts = make([]string, 0, len(portForwards))
+		for _, pf := range portForwards {
+			hostAddr := pf.HostIP
+			if hostAddr == "" {
+				hostAddr = "localhost"
+			}
+			fmt.Printf("Port forwarding: %s:%d -> %d\n", hostAddr, pf.HostPort, pf.GuestPort)
+
+			if pf.HostIP == "" {
+				tcpPorts = append(tcpPorts, fmt.Sprintf("%d:%d", pf.HostPort, pf.GuestPort))
+			} else {
+				tcpPorts = append(tcpPorts, fmt.Sprintf("%s/%d:%d", pf.HostIP, pf.HostPort, pf.GuestPort))
+			}
+		}
 	}
-	slirpArgs = append(slirpArgs, fmt.Sprintf("%d", jailedPid), "tap0")
-	slirpCmd := exec.Command("slirp4netns", slirpArgs...)
-	// slirpCmd.Stderr = os.Stderr
-	slirpCmd.ExtraFiles = []*os.File{readyWrite}
-	slirpCmd.SysProcAttr = &syscall.SysProcAttr{
-		// Kill slirp4netns when drop is killed.
+
+	if len(tcpPorts) > 0 {
+		pastaArgs = append(pastaArgs, "--tcp-port", strings.Join(tcpPorts, ","))
+	}
+
+	pastaArgs = append(pastaArgs, fmt.Sprintf("%d", jailedPid))
+
+	pastaCmd := exec.Command("pasta", pastaArgs...)
+	// pastaCmd.Stderr = os.Stderr
+	pastaCmd.SysProcAttr = &syscall.SysProcAttr{
+		// Kill pasta when drop is killed.
 		Pdeathsig: syscall.SIGKILL,
 	}
 
-	if err := slirpCmd.Start(); err != nil {
-		readyRead.Close()
-		readyWrite.Close()
+	if err := pastaCmd.Start(); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
-			return nil, fmt.Errorf("slirp4netns binary for isolated networking not found.\n" +
-				"Please install slirp4netns package, for example, on Debian/Ubuntu: \n\n" +
-				"   $ sudo apt-get install slirp4netns\n\n" +
+			return nil, fmt.Errorf("pasta binary for isolated networking not found.\n" +
+				"Please install passt/pasta package, for example, on Debian/Ubuntu: \n\n" +
+				"   $ sudo apt-get install passt\n\n" +
 				"The package is available on most Linux distributions, see:\n" +
-				"https://github.com/rootless-containers/slirp4netns?tab=readme-ov-file#quick-start")
+				"https://passt.top/passt/about/#availability")
 		}
-		return nil, fmt.Errorf("failed to start slirp4netns: %v", err)
+		return nil, fmt.Errorf("failed to start pasta: %v", err)
 	}
 
 	cleanup := func() {
-		slirpCmd.Process.Kill()
-		slirpCmd.Wait()
-		if sockPath != "" {
-			os.Remove(sockPath)
-		}
+		pastaCmd.Process.Kill()
+		pastaCmd.Wait()
+		os.Remove(pidFifoPath)
 	}
 
-	// Close write end in parent
-	readyWrite.Close()
-	err = waitForReady(readyRead)
-	readyRead.Close()
-	if err != nil {
+	if err := waitNetworkReady(pidFifoPath); err != nil {
 		cleanup()
-		return nil, fmt.Errorf("slirp4netns failed to start: %v", err)
-	}
-
-	if needPortForwading {
-		if err := setupPortForwarding(sockPath, portForwards); err != nil {
-			cleanup()
-			return nil, fmt.Errorf("failed to setup port forwarding: %v", err)
-		}
+		return nil, fmt.Errorf("pasta failed to start: %v", err)
 	}
 
 	return cleanup, nil
 }
 
-// waitForReady waits for slirp4netns to signal readiness via readyRead file.
-func waitForReady(readyRead *os.File) error {
+// waitNetworkReady waits for pasta to write its PID to the named
+// pipe, which indicates network configuration is done.
+func waitNetworkReady(pidFifoPath string) error {
 	const timeout = 5 * time.Second
-	readyRead.SetReadDeadline(time.Now().Add(timeout))
-	buf := make([]byte, 1)
-	n, err := readyRead.Read(buf)
+
+	// TODO: this blocks indefinitely if pasta didn't open its end for writing (for
+	// example due to initialization error).
+	file, err := os.Open(pidFifoPath)
 	if err != nil {
-		return fmt.Errorf("failed to read from ready-fd: %v", err)
+		return fmt.Errorf("failed to open %s: %v", pidFifoPath, err)
 	}
-	if n != 1 || buf[0] != '1' {
-		return fmt.Errorf("unexpected ready signal: got %d bytes, expected '1'", n)
+	defer file.Close()
+	file.SetReadDeadline(time.Now().Add(timeout))
+
+	buf := make([]byte, 32)
+	if _, err := file.Read(buf); err != nil {
+		return fmt.Errorf("failed to read from %s: %v", pidFifoPath, err)
 	}
-	return nil
-}
-
-// setupPortForwarding configures port forwarding using slirp4netns API socket
-func setupPortForwarding(sockPath string, portForwards []*config.PortForward) error {
-	for _, pf := range portForwards {
-		cmd := SlirpCommand{
-			Execute: "add_hostfwd",
-			Arguments: map[string]any{
-				"proto":      "tcp",
-				"host_addr":  pf.HostIP,
-				"host_port":  pf.HostPort,
-				"guest_port": pf.GuestPort,
-			},
-		}
-		jsonData, err := json.Marshal(cmd)
-		if err != nil {
-			return fmt.Errorf("failed to marshal JSON for %s:%d->%d: %v", pf.HostIP, pf.HostPort, pf.GuestPort, err)
-		}
-
-		// slirp4netns requires separate connection per each command.
-		conn, err := net.Dial("unix", sockPath)
-		if err != nil {
-			return fmt.Errorf("failed to connect to slirp4netns socket %s: %v", sockPath, err)
-		}
-		_, err = conn.Write(jsonData)
-		conn.Close()
-
-		if err != nil {
-			return fmt.Errorf("failed to send port forwarding command %s:%d->%d: %v", pf.HostIP, pf.HostPort, pf.GuestPort, err)
-		}
-
-		fmt.Printf("Port forwarding: %s:%d -> 10.0.2.100:%d\n", pf.HostIP, pf.HostPort, pf.GuestPort)
-	}
-
+	// pidContent := strings.TrimSpace(string(buf[:n]))
+	// fmt.Printf("DEBUG: pasta PID: %s\n", pidContent)
 	return nil
 }

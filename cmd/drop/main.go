@@ -220,10 +220,10 @@ Options:
 
 	childEnd.Close()
 
-	// Start slirp4netns to provide network connectivity to the jailed process
+	// Start pasta to provide network connectivity to the jailed process
 	// in isolated network mode
 	if networkMode == "isolated" {
-		cleanup, err := netns.StartSlirp4netns(cmd.Process.Pid, parsedPortForwards, runDir)
+		cleanup, err := netns.StartPasta(cmd.Process.Pid, parsedPortForwards, runDir)
 		if err != nil {
 			return 1, err
 		}
@@ -231,8 +231,8 @@ Options:
 	}
 
 	// Signal child process that setup is finished. This needs to be
-	// done when slirp4netns is running, because only then the child
-	// can run netns.SetupFirewall
+	// done when pasta is running, because only then the child can
+	// successfully run programs that use network.
 	if err := signalParentReady(parentEnd); err != nil {
 		return 1, err
 	}
@@ -257,7 +257,7 @@ func childProcessEntry() (int, error) {
 	envId := os.Args[2]
 	configPath := os.Args[3]
 	runDir := os.Args[4]
-	networkMode := os.Args[5]
+	// networkMode := os.Args[5]
 	homeDir := os.Args[6]
 	progWithArgs := os.Args[7:]
 
@@ -269,14 +269,6 @@ func childProcessEntry() (int, error) {
 	}
 	if err := waitParentReady(readEnd); err != nil {
 		return 1, err
-	}
-
-	if networkMode == "isolated" {
-		// Can be done only after parent setup is done (slirp4netns is
-		// started).
-		if err := netns.SetupFirewall(); err != nil {
-			return 1, err
-		}
 	}
 
 	var paths *jailfs.Paths
