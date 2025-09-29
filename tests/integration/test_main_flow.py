@@ -56,13 +56,16 @@ class TestMainFlow(unittest.TestCase):
             shutil.rmtree(self.temp_dir)
 
     def sandbox_run(self, command, config: Config = None,
-                    env_id: str = ENV_ID, cwd=None):
+                    env_id: str = ENV_ID, cwd=None, drop_extra_args=None):
         """Execute a command in the sandbox and return its result."""
         if config is None:
             config = Config()
         config_file = os.path.join(self.temp_dir, 'config.toml')
         write_config(config, config_file)
-        cmd_args = [f'{os.getcwd()}/drop', '-c', config_file]
+        cmd_args = [f'{os.getcwd()}/drop']
+        if drop_extra_args:
+            cmd_args += shlex.split(drop_extra_args)
+        cmd_args += ['-c', config_file]
         if env_id:
             cmd_args += ['-e', env_id]
         cmd_args += shlex.split(command)
@@ -81,6 +84,28 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual(77, result.returncode)
         self.assertTrue(os.path.exists(ENV_DIR),
                         f'Env directory was not created: {ENV_DIR}')
+
+    def test_uid_gid_mapping(self):
+        def uid_gid_from_stdout():
+            return map(int, result.stdout.strip().split('\n'))
+
+        uid = os.getuid()
+        gid = os.getgid()
+
+        # Drop should preserve current user UID/GID
+        result = self.sandbox_run('bash -c "id -u; id -g"')
+        self.assertSuccess(result)
+        jail_uid, jail_gid = uid_gid_from_stdout()
+        self.assertEqual(uid, jail_uid)
+        self.assertEqual(gid, jail_gid)
+
+        # In root mode (-r flag), drop should use UID/GID 0
+        result = self.sandbox_run('bash -c "id -u; id -g"',
+                                  drop_extra_args='-r')
+        self.assertSuccess(result)
+        jail_uid, jail_gid = uid_gid_from_stdout()
+        self.assertEqual(0, jail_uid),
+        self.assertEqual(0, jail_gid)
 
     def test_env_id_from_cwd(self):
         # If env id is not passed, it should be constructed from
@@ -208,6 +233,7 @@ class TestMainFlow(unittest.TestCase):
 
         finally:
             del os.environ['FOO']
+
 
 @contextmanager
 def scoped_dir(path):
