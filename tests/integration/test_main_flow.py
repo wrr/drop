@@ -234,6 +234,42 @@ class TestMainFlow(unittest.TestCase):
         finally:
             del os.environ['FOO']
 
+    def test_devices(self):
+        # Ensure /dev/null can be written to but its size remains 0
+        cmd = 'bash -c "echo foo > /dev/null && stat -c %s /dev/null"'
+        result = self.sandbox_run(cmd)
+        self.assertSuccess(result)
+        stat_out = result.stdout.strip()
+        self.assertEqual('0', stat_out)
+
+        # Read 10 bytes from /dev/zero and count them
+        cmd = 'bash -c "dd if=/dev/zero bs=10 count=1 2>/dev/null | wc -c"'
+        result = self.sandbox_run(cmd)
+        self.assertSuccess(result)
+        wc_out = result.stdout.strip()
+        self.assertEqual('10', wc_out)
+
+        # Read 4 bytes from each of /dev/random and /dev/urandom and count them
+        cmd = 'bash -c "head -c 4 -q /dev/random /dev/urandom|wc -c"'
+        result = self.sandbox_run(cmd)
+        self.assertSuccess(result)
+        wc_out = result.stdout.strip()
+        self.assertEqual('8', wc_out)
+
+        # Ensure write to /dev/full returns an error
+        result = self.sandbox_run('bash -c "echo foo > /dev/full"')
+        wc_out = result.stdout.strip()
+        self.assertIn('No space left on device', result.stderr)
+        self.assertEqual(1, result.returncode)
+
+        # In total, expect only 13 entries in the jailed /dev dir (5
+        # devices, 2 dirs, 6 links)
+        cmd = 'bash -c "ls -1A /dev |wc -l"'
+        result = self.sandbox_run(cmd)
+        self.assertSuccess(result)
+        stat_out = result.stdout.strip()
+        self.assertEqual('13', stat_out)
+
 
 @contextmanager
 def scoped_dir(path):
