@@ -3,7 +3,6 @@ package jailfs
 import (
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -49,11 +48,7 @@ type Paths struct {
 
 // NewPaths creates Paths object with the relevant paths for the
 // current environment and creates missing dir and files.
-func NewPaths(envId string, configPath string, runDir string) (*Paths, error) {
-	hostHome, err := homeDir()
-	if err != nil {
-		return nil, err
-	}
+func NewPaths(envId string, hostHome string, configPath string, runDir string) (*Paths, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -107,12 +102,8 @@ func NewPaths(envId string, configPath string, runDir string) (*Paths, error) {
 // files and dirs (for example, the main root file system mount
 // point). The directory can be removed when this jail instance
 // terminates.
-func NewRunDir(envId string) (string, error) {
-	hostHome, err := homeDir()
-	if err != nil {
-		return "", err
-	}
-	parent := filepath.Join(hostHome, ".drop", "internal", "run")
+func NewRunDir(homeDir string, envId string) (string, error) {
+	parent := filepath.Join(homeDir, ".drop", "internal", "run")
 
 	if err := MkdirAll(parent); err != nil {
 		return "", err
@@ -171,14 +162,6 @@ func pathToEnvId(path string) string {
 	// Keep only allowed env ID characters
 	reg := regexp.MustCompile(`[^` + envIdChars + `]`)
 	return reg.ReplaceAllString(dname, "_")
-}
-
-func homeDir() (string, error) {
-	currentUser, err := user.Current()
-	if err != nil {
-		return "", fmt.Errorf("failed to get current user: %v", err)
-	}
-	return currentUser.HomeDir, nil
 }
 
 func ensureDirWithNoPerms(path string) error {

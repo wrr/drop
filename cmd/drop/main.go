@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"runtime"
 	"strings"
 	"syscall"
@@ -20,25 +21,6 @@ import (
 
 // stringSlice implements flag.Value interface for repeated string flags
 type stringSlice []string
-
-// signalParentReady writes to the pipe to signal that parent setup has finished
-func signalParentReady(parentEnd *os.File) error {
-	defer parentEnd.Close()
-	if _, err := parentEnd.Write([]byte{1}); err != nil {
-		return fmt.Errorf("failed to write to network ready pipe: %v", err)
-	}
-	return nil
-}
-
-// waitParentReady blocks until the parent signals the setup has finished
-func waitParentReady(childEnd *os.File) error {
-	defer childEnd.Close()
-	buf := make([]byte, 1)
-	if _, err := childEnd.Read(buf); err != nil {
-		return fmt.Errorf("failed to read from pipe: %v", err)
-	}
-	return nil
-}
 
 func (s *stringSlice) String() string {
 	return strings.Join(*s, ",")
@@ -68,6 +50,7 @@ func parentProcessEntry() (int, error) {
 	var envId string
 	var configPath string
 	var networkMode string
+	var beRoot bool
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `drop limits programs abilities to read and write user's files
 Usage: drop [options] [command...]
@@ -80,6 +63,10 @@ Options:
 	flag.StringVar(&envId, "e", "", "Environment ID")
 	flag.StringVar(&configPath, "c", "", "Path to config file")
 	flag.StringVar(&networkMode, "n", "isolated", "Network mode: off, isolated, or unjailed")
+	flag.BoolVar(&beRoot, "r", false, "Be root (uid 0) in the jail. Useful for running installation scripts that\n"+
+		"require to be run as root. This option doesn't grant any additional privileges to the jailed\n"+
+		"processes. For convenience, the home dir of a root user is not set to /root, but\n"+
+		"kept as the original home dir.")
 
 	err := flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
@@ -88,6 +75,13 @@ Options:
 
 	if networkMode != "off" && networkMode != "isolated" && networkMode != "unjailed" {
 		return 1, fmt.Errorf("invalid network mode '%s': must be 'off', 'isolated', or 'unjailed'", networkMode)
+	}
+
+	// Obtain home dir in the parent, because with -r option child we
+	// be run as root, but we don't want to use /root as the home dir.
+	homeDir, err := currentUserHomeDir()
+	if err != nil {
+		return 1, err
 	}
 
 	if envId == "" {
@@ -114,7 +108,7 @@ Options:
 		return 1, fmt.Errorf("port forwarding (-p) is only supported with isolated network mode (-n isolated)")
 	}
 
-	runDir, err := jailfs.NewRunDir(envId)
+	runDir, err := jailfs.NewRunDir(homeDir, envId)
 	if err != nil {
 		return 1, fmt.Errorf("failed to create run dir: %v", err)
 	}
@@ -131,7 +125,7 @@ Options:
 	//
 	// This passes all the arguments correctly also when one of them
 	// (configPath) is an empty string
-	childArgs := append([]string{"-child", envId, configPath, runDir, networkMode}, flag.Args()...)
+	childArgs := append([]string{"-child", envId, configPath, runDir, networkMode, homeDir}, flag.Args()...)
 	cmd := exec.Command(os.Args[0], childArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -144,6 +138,17 @@ Options:
 		syscall.CLONE_NEWUSER)
 	if networkMode != "unjailed" {
 		cloneFlags |= syscall.CLONE_NEWNET
+	}
+
+	var containerUID, containerGID int
+	if beRoot {
+		containerUID = 0
+		containerGID = 0
+	} else {
+		// Keep using current user uid an gid in the jail (so the user is
+		// recognized as the same user)
+		containerUID = os.Getuid()
+		containerGID = os.Getgid()
 	}
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -174,20 +179,16 @@ Options:
 			unix.CAP_FOWNER,
 			unix.CAP_NET_ADMIN,
 		},
-
-		// Keep using current user uid an gid in the jail (so the user is
-		// recognized as the same user)
 		UidMappings: []syscall.SysProcIDMap{
 			{
-				//ContainerID: os.Getuid(),
-				ContainerID: os.Getuid(),
+				ContainerID: containerUID,
 				HostID:      os.Getuid(),
 				Size:        1,
 			},
 		},
 		GidMappings: []syscall.SysProcIDMap{
 			{
-				ContainerID: os.Getgid(),
+				ContainerID: containerGID,
 				HostID:      os.Getgid(),
 				Size:        1,
 			},
@@ -250,14 +251,15 @@ Options:
 }
 
 func childProcessEntry() (int, error) {
-	if len(os.Args) < 6 {
+	if len(os.Args) < 7 {
 		return 1, fmt.Errorf("incorrect number of arguments; -child is an internal argument and should not be passed directly")
 	}
 	envId := os.Args[2]
 	configPath := os.Args[3]
 	runDir := os.Args[4]
 	networkMode := os.Args[5]
-	progWithArgs := os.Args[6:]
+	homeDir := os.Args[6]
+	progWithArgs := os.Args[7:]
 
 	// Wait for parent to signal that it has finished setup.
 	// The read end of the pipe is inherited as file descriptor 3
@@ -277,7 +279,9 @@ func childProcessEntry() (int, error) {
 		}
 	}
 
-	paths, err := jailfs.NewPaths(envId, configPath, runDir)
+	var paths *jailfs.Paths
+	var err error
+	paths, err = jailfs.NewPaths(envId, homeDir, configPath, runDir)
 	if err != nil {
 		return 1, err
 	}
@@ -343,6 +347,25 @@ func FD_SET(fd int, p *syscall.FdSet) {
 	p.Bits[fd/64] |= 1 << (uint(fd) % 64)
 }
 
+// signalParentReady writes to the pipe to signal that parent setup has finished
+func signalParentReady(parentEnd *os.File) error {
+	defer parentEnd.Close()
+	if _, err := parentEnd.Write([]byte{1}); err != nil {
+		return fmt.Errorf("failed to write to network ready pipe: %v", err)
+	}
+	return nil
+}
+
+// waitParentReady blocks until the parent signals the setup has finished
+func waitParentReady(childEnd *os.File) error {
+	defer childEnd.Close()
+	buf := make([]byte, 1)
+	if _, err := childEnd.Read(buf); err != nil {
+		return fmt.Errorf("failed to read from pipe: %v", err)
+	}
+	return nil
+}
+
 // discardChildTermInjection checks if any input is pending on
 // the unjailed parent standard input and discards it.
 //
@@ -400,4 +423,12 @@ func dropAllCaps() error {
 		return fmt.Errorf("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
 	}
 	return nil
+}
+
+func currentUserHomeDir() (string, error) {
+	currentUser, err := user.Current()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current user: %v", err)
+	}
+	return currentUser.HomeDir, nil
 }
