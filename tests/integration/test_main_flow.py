@@ -270,6 +270,29 @@ class TestMainFlow(unittest.TestCase):
         stat_out = result.stdout.strip()
         self.assertEqual('13', stat_out)
 
+    def test_networking(self):
+        # External connection to IP address
+        result = self.sandbox_run('nc -zv -w 1 1.1.1.1 80')
+        self.assertEqual(0, result.returncode)
+        self.assertIn('succeeded', result.stderr)
+
+        # External connection with DNS resolution
+        result = self.sandbox_run('nc -zv -w 1 google.com 80')
+        self.assertEqual(0, result.returncode)
+        self.assertIn('succeeded', result.stderr)
+
+        # No external connections allowed when run with '-n off'
+        # option
+        result = self.sandbox_run('nc -zv -w 1 1.1.1.1 80',
+                                  drop_extra_args='-n off')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Network is unreachable', result.stderr)
+
+        result = self.sandbox_run('nc -zv -w 1 google.com 80',
+                                  drop_extra_args='-n off')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Temporary failure in name resolution', result.stderr)
+
 
 @contextmanager
 def scoped_dir(path):
