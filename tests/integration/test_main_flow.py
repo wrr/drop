@@ -56,7 +56,8 @@ class TestMainFlow(unittest.TestCase):
             shutil.rmtree(self.temp_dir)
 
     def sandbox_run(self, command, config: Config = None,
-                    env_id: str = ENV_ID, cwd=None, drop_extra_args=None):
+                    env_id: str = ENV_ID, drop_extra_args=None,
+                    **subprocess_kwargs):
         """Execute a command in the sandbox and return its result."""
         if config is None:
             config = Config()
@@ -70,7 +71,7 @@ class TestMainFlow(unittest.TestCase):
             cmd_args += ['-e', env_id]
         cmd_args += shlex.split(command)
         return subprocess.run(cmd_args, capture_output=True, text=True,
-                              cwd=cwd)
+                              **subprocess_kwargs)
 
     def assertSuccess(self, result):
         self.assertTrue(result.stderr == '',
@@ -292,6 +293,25 @@ class TestMainFlow(unittest.TestCase):
                                   drop_extra_args='-n off')
         self.assertEqual(1, result.returncode)
         self.assertIn('Temporary failure in name resolution', result.stderr)
+
+
+    def test_open_fds_not_passed_to_sanbox(self):
+        try:
+            # Start drop with many additional open file descriptors,
+            # sandboxed process should not have access to these file
+            # descriptors, but only to stdin, stdout and stderr.
+            pass_fds = []
+            for x in range(10):
+                pass_fds.extend(os.pipe())
+            result =  self.sandbox_run('ls /proc/1/fd', pass_fds=pass_fds)
+            self.assertSuccess(result)
+            fds = [int(fd) for fd in result.stdout.splitlines()]
+            # Except 4 open FDs, because one is used by 'ls' to read
+            # content of the /proc/1/fd dir
+            self.assertEqual([0, 1, 2, 3], fds)
+        finally:
+            for fd in pass_fds:
+                os.close(fd)
 
 
 @contextmanager

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"os/user"
@@ -139,7 +140,6 @@ Options:
 	if networkMode != "unjailed" {
 		cloneFlags |= syscall.CLONE_NEWNET
 	}
-
 	var containerUID, containerGID int
 	if beRoot {
 		containerUID = 0
@@ -326,6 +326,9 @@ func childProcessEntry() (int, error) {
 		return 1, fmt.Errorf("command not found: %v", err)
 	}
 
+	if err := AllFdsCloseOnExec(); err != nil {
+		return 1, fmt.Errorf("failed to set open file descriptors to close: %v", err)
+	}
 	// Replace the current process
 	if err := syscall.Exec(prog, progWithArgs, envVars); err != nil {
 		return 1, fmt.Errorf("exec %s failed: %v", progWithArgs[0], err)
@@ -423,4 +426,17 @@ func currentUserHomeDir() (string, error) {
 		return "", fmt.Errorf("failed to get current user: %v", err)
 	}
 	return currentUser.HomeDir, nil
+}
+
+// AllFdsCloseOnExec ensures all open file descriptors have O_CLOEXEC
+// flag set, so are not inherited by the executed process. ExtraFiles
+// argument supported by the Go exec package applies only to Files
+// open using the Go API, which always passes O_CLOEXEC flag when
+// opening files and then reverts the flag for files on the ExtraFiles
+// list. File descriptors passed from the parent process, or file
+// descriptors that are created by direct Linux syscalls without
+// O_CLOEXEC flag are by convention not closed by Go when new process
+// is executed.
+func AllFdsCloseOnExec() error {
+	return unix.CloseRange(3, math.MaxInt32, unix.CLOSE_RANGE_CLOEXEC)
 }
