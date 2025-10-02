@@ -23,6 +23,7 @@ func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string
 	// File where pasta writes deamon child process pid after network
 	// setup is done.
 	pidPath := filepath.Join(runDir, "pasta.pid")
+	logPath := filepath.Join(runDir, "pasta.log")
 
 	pastaArgs = []string{
 		"--config-net",
@@ -39,7 +40,7 @@ func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string
 		"--tcp-ns", "none",
 		"--udp-ns", "none",
 		"--no-map-gw",
-		"--log-file", filepath.Join(runDir, "pasta.log"),
+		"--log-file", logPath,
 	}
 
 	// Ports open in the namespace that are accessible from the host
@@ -69,10 +70,17 @@ func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string
 	pastaArgs = append(pastaArgs, fmt.Sprintf("%d", jailedPid))
 
 	pastaCmd := exec.Command("pasta", pastaArgs...)
-	// pastaCmd.Stderr = os.Stderr
 	pastaCmd.SysProcAttr = &syscall.SysProcAttr{
 		// Kill pasta when drop is killed.
 		Pdeathsig: syscall.SIGKILL,
+	}
+
+	pastaLog := func() string {
+		content, err := os.ReadFile(logPath)
+		if err != nil {
+			return ""
+		}
+		return fmt.Sprintf("\n\nPasta log:\n%s", string(content))
 	}
 
 	if err := pastaCmd.Start(); err != nil {
@@ -89,7 +97,7 @@ func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string
 	// When started as a daemon, pasta parent process exits after
 	// network setup is done and pid is written to pidPath.
 	if err := pastaCmd.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to start pasta")
+		return nil, fmt.Errorf("failed to start pasta to isolate networking%v", pastaLog())
 	}
 
 	var daemonPid int
@@ -106,7 +114,7 @@ func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string
 	daemonPid, err := readDaemonPid(pidPath)
 	if err != nil {
 		cleanup()
-		return nil, fmt.Errorf("pasta failed to start: %v", err)
+		return nil, fmt.Errorf("failed to read pasta daemon pid: %v%v", err, pastaLog())
 	}
 
 	return cleanup, nil
