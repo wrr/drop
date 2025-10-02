@@ -6,9 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/wrr/drop/internal/config"
 )
@@ -20,20 +20,16 @@ import (
 func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string) (func(), error) {
 	var pastaArgs []string
 
-	// Named pipe to be used by pasta to notify when network setup is
-	// finished.
-	pidFifoPath := filepath.Join(runDir, "pasta.pid")
-	err := syscall.Mkfifo(pidFifoPath, 0600)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create pipe %s: pidFifoPath, %v", pidFifoPath, err)
-	}
+	// File where pasta writes deamon child process pid after network
+	// setup is done.
+	pidPath := filepath.Join(runDir, "pasta.pid")
 
 	pastaArgs = []string{
 		"--config-net",
 		// Address to be used in the namespace as DNS. Pasta forwards DNS
 		// requests to this address to the actual host DNS.
 		"--dns-forward", "10.0.2.3",
-		"--pid", pidFifoPath,
+		"--pid", pidPath,
 		"--udp-ports", "none",
 		// Ports open on the host that are accessible from a namespace.
 		// This mapping is also needed to allow drop instances to connect
@@ -90,13 +86,25 @@ func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string
 		return nil, fmt.Errorf("failed to start pasta: %v", err)
 	}
 
-	cleanup := func() {
-		pastaCmd.Process.Kill()
-		pastaCmd.Wait()
-		os.Remove(pidFifoPath)
+	// When started as a daemon, pasta parent process exits after
+	// network setup is done and pid is written to pidPath.
+	if err := pastaCmd.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to start pasta")
 	}
 
-	if err := waitNetworkReady(pidFifoPath); err != nil {
+	var daemonPid int
+
+	cleanup := func() {
+		if daemonPid != 0 {
+			daemon, err := os.FindProcess(daemonPid)
+			if err == nil {
+				daemon.Kill()
+			}
+		}
+		os.Remove(pidPath)
+	}
+	daemonPid, err := readDaemonPid(pidPath)
+	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("pasta failed to start: %v", err)
 	}
@@ -104,25 +112,16 @@ func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string
 	return cleanup, nil
 }
 
-// waitNetworkReady waits for pasta to write its PID to the named
-// pipe, which indicates network configuration is done.
-func waitNetworkReady(pidFifoPath string) error {
-	const timeout = 5 * time.Second
-
-	// TODO: this blocks indefinitely if pasta didn't open its end for writing (for
-	// example due to initialization error).
-	file, err := os.Open(pidFifoPath)
+// readDaemonPid reads pasta daemon pid from a file.
+func readDaemonPid(pidPath string) (int, error) {
+	content, err := os.ReadFile(pidPath)
 	if err != nil {
-		return fmt.Errorf("failed to open %s: %v", pidFifoPath, err)
+		return 0, fmt.Errorf("failed to read %s: %v", pidPath, err)
 	}
-	defer file.Close()
-	file.SetReadDeadline(time.Now().Add(timeout))
-
-	buf := make([]byte, 32)
-	if _, err := file.Read(buf); err != nil {
-		return fmt.Errorf("failed to read from %s: %v", pidFifoPath, err)
+	pidStr := strings.TrimSpace(string(content))
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse pasta pid: %v", err)
 	}
-	// pidContent := strings.TrimSpace(string(buf[:n]))
-	// fmt.Printf("DEBUG: pasta PID: %s\n", pidContent)
-	return nil
+	return pid, nil
 }
