@@ -46,8 +46,25 @@ func main() {
 	os.Exit(exitCode)
 }
 
+func newPathsAndConfig(envId, homeDir, configPath, runDir string) (*jailfs.Paths, *config.Config, error) {
+	paths, err := jailfs.NewPaths(envId, homeDir, configPath, runDir)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cfg, err := config.Read(paths.Config)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return paths, cfg, nil
+}
+
 func parentProcessEntry() (int, error) {
-	var portForwards []string
+	var tcpPortsToHost []string
+	var tcpPortsFromHost []string
+	var udpPortsToHost []string
+	var udpPortsFromHost []string
 	var envId string
 	var configPath string
 	var networkMode string
@@ -60,7 +77,10 @@ Options:
 		flag.PrintDefaults()
 	}
 
-	flag.Var((*stringSlice)(&portForwards), "p", "Publish tcp port(s) to the host. Format: [hostIP:]hostPort[:containerPort]")
+	flag.Var((*stringSlice)(&tcpPortsToHost), "t", "Publish TCP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]")
+	flag.Var((*stringSlice)(&tcpPortsFromHost), "T", "Publish TCP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]")
+	flag.Var((*stringSlice)(&udpPortsToHost), "u", "Publish UDP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]")
+	flag.Var((*stringSlice)(&udpPortsFromHost), "U", "Publish UDP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]")
 	flag.StringVar(&envId, "e", "", "Environment ID")
 	flag.StringVar(&configPath, "c", "", "Path to config file")
 	flag.StringVar(&networkMode, "n", "isolated", "Network mode: off, isolated, or unjailed")
@@ -96,24 +116,37 @@ Options:
 		}
 	}
 
-	var parsedPortForwards []*config.PortForward
-	for _, pf := range portForwards {
-		parsed, err := config.ParsePortForward(pf)
-		if err != nil {
-			return 1, fmt.Errorf("invalid port forwarding specification '%s': %v", pf, err)
-		}
-		parsedPortForwards = append(parsedPortForwards, parsed)
-	}
-
-	if len(parsedPortForwards) > 0 && networkMode != "isolated" {
-		return 1, fmt.Errorf("port forwarding (-p) is only supported with isolated network mode (-n isolated)")
-	}
-
 	runDir, err := jailfs.NewRunDir(homeDir, envId)
 	if err != nil {
 		return 1, fmt.Errorf("failed to create run dir: %v", err)
 	}
 	defer jailfs.CleanRunDir(runDir)
+
+	_, cfg, err := newPathsAndConfig(envId, homeDir, configPath, runDir)
+	if err != nil {
+		return 1, err
+	}
+
+	if (len(tcpPortsToHost) > 0 ||
+		len(tcpPortsFromHost) > 0 ||
+		len(udpPortsToHost) > 0 ||
+		len(udpPortsFromHost) > 0) &&
+		networkMode != "isolated" {
+		return 1, fmt.Errorf("port forwarding is only supported with isolated network mode (-n isolated)")
+	}
+	// Command line flags take priority over the config file.
+	if len(tcpPortsToHost) > 0 {
+		cfg.Net.TCPPortsToHost = tcpPortsToHost
+	}
+	if len(tcpPortsFromHost) > 0 {
+		cfg.Net.TCPPortsFromHost = tcpPortsFromHost
+	}
+	if len(udpPortsToHost) > 0 {
+		cfg.Net.UDPPortsToHost = udpPortsToHost
+	}
+	if len(udpPortsFromHost) > 0 {
+		cfg.Net.UDPPortsFromHost = udpPortsFromHost
+	}
 
 	// Pipe for synchronizing setup with the child process.
 	childEnd, parentEnd, err := os.Pipe()
@@ -223,7 +256,7 @@ Options:
 	// Start pasta to provide network connectivity to the jailed process
 	// in isolated network mode
 	if networkMode == "isolated" {
-		cleanup, err := netns.StartPasta(cmd.Process.Pid, parsedPortForwards, runDir)
+		cleanup, err := netns.StartPasta(cmd.Process.Pid, cfg.Net, runDir)
 		if err != nil {
 			return 1, err
 		}
@@ -271,14 +304,7 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	var paths *jailfs.Paths
-	var err error
-	paths, err = jailfs.NewPaths(envId, homeDir, configPath, runDir)
-	if err != nil {
-		return 1, err
-	}
-
-	cfg, err := config.Read(paths.Config)
+	paths, cfg, err := newPathsAndConfig(envId, homeDir, configPath, runDir)
 	if err != nil {
 		return 1, err
 	}

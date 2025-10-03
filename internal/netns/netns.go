@@ -13,11 +13,27 @@ import (
 	"github.com/wrr/drop/internal/config"
 )
 
+// portMappingArgs returns pasta port mapping arguments. If the mappings list
+// is empty, the port mapping is disabled with the "none"
+// argument. Each mapping is translated to a separate pasta argument,
+// for example: --tcp-ports 80:8000 --tcp-ports 5000
+func portMappingArgs(argName string, mappings []string) []string {
+	if len(mappings) == 0 {
+		return []string{argName, "none"}
+	}
+
+	var result []string
+	for _, mapping := range mappings {
+		result = append(result, argName, mapping)
+	}
+	return result
+}
+
 // StartPasta starts pasta to provide network connectivity
 // within a network namespace and configures port forwarding.
 //
 // Returns a cleanup function that should be called when program exits.
-func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string) (func(), error) {
+func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), error) {
 	var pastaArgs []string
 
 	// File where pasta writes deamon child process pid after network
@@ -31,41 +47,21 @@ func StartPasta(jailedPid int, portForwards []*config.PortForward, runDir string
 		// requests to this address to the actual host DNS.
 		"--dns-forward", "10.0.2.3",
 		"--pid", pidPath,
-		"--udp-ports", "none",
-		// Ports open on the host that are accessible from a namespace.
-		// This mapping is also needed to allow drop instances to connect
-		// to one another (one instance exposes a port to host with
-		// --tcp-port and the other needs --tcp-ns to be able connect to
-		// this port).
-		"--tcp-ns", "none",
-		"--udp-ns", "none",
 		"--no-map-gw",
 		"--log-file", logPath,
 	}
 
-	// Ports open in the namespace that are accessible from the host
-	tcpPorts := []string{"auto"}
-	// Add port forwarding arguments
-	if len(portForwards) > 0 {
-		tcpPorts = make([]string, 0, len(portForwards))
-		for _, pf := range portForwards {
-			hostAddr := pf.HostIP
-			if hostAddr == "" {
-				hostAddr = "localhost"
-			}
-			fmt.Printf("Port forwarding: %s:%d -> %d\n", hostAddr, pf.HostPort, pf.GuestPort)
-
-			if pf.HostIP == "" {
-				tcpPorts = append(tcpPorts, fmt.Sprintf("%d:%d", pf.HostPort, pf.GuestPort))
-			} else {
-				tcpPorts = append(tcpPorts, fmt.Sprintf("%s/%d:%d", pf.HostIP, pf.HostPort, pf.GuestPort))
-			}
-		}
-	}
-
-	if len(tcpPorts) > 0 {
-		pastaArgs = append(pastaArgs, "--tcp-port", strings.Join(tcpPorts, ","))
-	}
+	// TCP ports open in the namespace that are accessible from the host.
+	pastaArgs = append(pastaArgs, portMappingArgs("--tcp-ports", netConfig.TCPPortsToHost)...)
+	// TCP ports open on the host that are accessible from the namespace.
+	// This mapping is also needed to allow drop instances to connect
+	// to one another (one instance exposes a port to host with
+	// --tcp-port and the other needs --tcp-ns to be able connect to
+	// this port.
+	pastaArgs = append(pastaArgs, portMappingArgs("--tcp-ns", netConfig.TCPPortsFromHost)...)
+	// The same, but for the UDP ports
+	pastaArgs = append(pastaArgs, portMappingArgs("--udp-ports", netConfig.UDPPortsToHost)...)
+	pastaArgs = append(pastaArgs, portMappingArgs("--udp-ns", netConfig.UDPPortsFromHost)...)
 
 	pastaArgs = append(pastaArgs, fmt.Sprintf("%d", jailedPid))
 
