@@ -11,12 +11,20 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+type Net struct {
+	TCPPortsToHost   []string `toml:"tcp_ports_to_host"`
+	TCPPortsFromHost []string `toml:"tcp_ports_from_host"`
+	UDPPortsToHost   []string `toml:"udp_ports_to_host"`
+	UDPPortsFromHost []string `toml:"udp_ports_from_host"`
+}
+
 type Config struct {
 	HomeVisible   []string `toml:"home_visible"`
 	HomeWriteable []string `toml:"home_writeable"`
 	ProcReadable  []string `toml:"proc_readable"`
 	Hide          []string `toml:"hide"`
 	EnvExpose     []string `toml:"env_expose"`
+	Net           Net      `toml:"net"`
 }
 
 type PortForward struct {
