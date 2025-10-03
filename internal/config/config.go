@@ -54,49 +54,79 @@ func Parse(configStr string) (*Config, error) {
 	return &config, nil
 }
 
-// parsePortForward parses Docker-like port forwarding syntax
-// Supported formats:
-// - port (e.g., "8080") -> maps host port 8080 to guest port 8080
-// - hostPort:guestPort (e.g., "8080:80") -> maps host port 8080 to guest port 80
-// - hostIP:hostPort:guestPort (e.g., "127.0.0.1:8080:80") -> binds to specific host IP
-func ParsePortForward(portSpec string) (*PortForward, error) {
-	parts := strings.Split(portSpec, ":")
-	hostIP := "0.0.0.0"
-	if len(parts) >= 2 && strings.Contains(parts[0], ".") {
-		hostIP = parts[0]
-		parts = parts[1:]
-		if net.ParseIP(hostIP) == nil {
-			return nil, fmt.Errorf("invalid port forwarding IP address: %s", hostIP)
+// ValidatePortForward validates Pasta-like port forwarding syntax.
+//
+// To keep things simple and keep an option of using a different
+// connectivity tool, only the simplest Pasta mapping expressions are
+// allowed.
+//
+// Supported format of forwardSpecs items:
+//   - port (e.g., "8080") -> maps host port 8080 to guest port 8080
+//   - hostPort:guestPort (e.g., "8080:80") -> maps host port 8080 to guest port 80
+//   - hostIP/hostPort:guestPort (e.g., "127.0.0.1/8080:80") -> maps
+//     host port 8080 bound to IP address 127.0.0.1 to gues port 80
+//   - "none" -> disables port mapping
+//   - "auto" -> automatically forwards all open ports
+func ValidatePortForward(forwardSpecs []string) error {
+	hasAuto := false
+	hasNone := false
+
+	for _, mapping := range forwardSpecs {
+		mapping = strings.TrimSpace(mapping)
+		if mapping == "auto" {
+			hasAuto = true
+			continue
+		}
+		if mapping == "none" {
+			hasNone = true
+			continue
+		}
+		portPart := mapping
+
+		// Check if host IP is specified
+		if strings.Contains(mapping, "/") {
+			parts := strings.SplitN(mapping, "/", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("invalid port forwarding format: %s", mapping)
+			}
+			hostIP := parts[0]
+			portPart = parts[1]
+			if net.ParseIP(hostIP) == nil {
+				return fmt.Errorf("invalid port forwarding IP address: %s", hostIP)
+			}
+		}
+
+		parts := strings.Split(portPart, ":")
+		if len(parts) == 0 || len(parts) > 2 {
+			return fmt.Errorf("invalid port forwarding format: %s", mapping)
+		}
+
+		for i := range len(parts) {
+			if err := validatePort(parts[i]); err != nil {
+				return err
+			}
 		}
 	}
-	if len(parts) == 0 || len(parts) > 2 {
-		return nil, fmt.Errorf("invalid port forwarding format: %s", portSpec)
+
+	if hasAuto && len(forwardSpecs) > 1 {
+		return fmt.Errorf("\"auto\" must be the only port forwarding rule")
 	}
-	hostPort, err := toPort(parts[0])
-	if err != nil {
-		return nil, err
+	if hasNone && len(forwardSpecs) > 1 {
+		return fmt.Errorf("\"none\" must be the only port forwarding rule")
 	}
-	var guestPort int
-	if len(parts) == 2 {
-		guestPort, err = toPort(parts[1])
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		guestPort = hostPort
-	}
-	return &PortForward{HostIP: hostIP, HostPort: hostPort, GuestPort: guestPort}, nil
+
+	return nil
 }
 
-func toPort(s string) (int, error) {
+func validatePort(s string) error {
 	port, err := strconv.Atoi(s)
 	if err != nil {
-		return -1, fmt.Errorf("invalid port number '%s': %v", s, err)
+		return fmt.Errorf("invalid port number '%s': %v", s, err)
 	}
 	if port < 1 || port > 65535 {
-		return -1, fmt.Errorf("port number out of range: %d", port)
+		return fmt.Errorf("port number out of range: %d", port)
 	}
-	return port, nil
+	return nil
 }
 
 // validateEnvExpose check if all patterns in the env_expose list are valid glob patterns.
