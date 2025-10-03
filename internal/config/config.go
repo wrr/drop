@@ -85,7 +85,7 @@ func ValidatePortForward(forwardSpecs []string) error {
 
 		// Check if host IP is specified
 		if strings.Contains(mapping, "/") {
-			parts := strings.SplitN(mapping, "/", 2)
+			parts := strings.Split(mapping, "/")
 			if len(parts) != 2 {
 				return fmt.Errorf("invalid port forwarding format: %s", mapping)
 			}
