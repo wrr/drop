@@ -316,6 +316,10 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
+	if err := ensureCapSysAdmin(); err != nil {
+		return 1, err
+	}
+
 	paths, cfg, err := newPathsAndConfig(envId, homeDir, configPath, runDir)
 	if err != nil {
 		return 1, err
@@ -374,6 +378,28 @@ func childProcessEntry() (int, error) {
 
 	// Should never be reached
 	return 3, fmt.Errorf("exec failed")
+}
+
+// ensureCapSysAdmin returns an error if process doesn't have
+// CAP_SYS_ADMIN capability. Ubuntu restricts user namespaces creation
+// via apparmor profiles, but programs that are not allowed to create
+// user namespaces, can in fact create them but without capabilities
+// that make the namespace usable (clone system call succeeds, child
+// process runs and has different user namespace from it's parent as
+// indicated by a different id in /proc/self/ns/user). To detect
+// situation when creating a namespace is blocked by app armor
+// profile, we test for a presence of CAP_SYS_ADMIN.
+func ensureCapSysAdmin() error {
+	caps := cap.GetProc()
+	hasCap, err := caps.GetFlag(cap.Effective, unix.CAP_SYS_ADMIN)
+	if err != nil {
+		return fmt.Errorf("failed to check CAP_SYS_ADMIN capability: %v", err)
+	}
+	if !hasCap {
+		return fmt.Errorf("not enough capabilities. Are Linux user namespaces enabled? " +
+			"Is drop allowed to use user namespaces via AppArmor profile?")
+	}
+	return nil
 }
 
 func FD_SET(fd int, p *syscall.FdSet) {
