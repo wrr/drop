@@ -313,6 +313,36 @@ class TestMainFlow(unittest.TestCase):
             for fd in pass_fds:
                 os.close(fd)
 
+    def test_port_flags_validation(self):
+        test_cases = [
+            {
+                'args': '-t foo',
+                'expected': 'invalid -t flag: invalid port number \'foo\''
+            },
+            {
+                'args': '-T 0',
+                'expected': 'invalid -T flag: port number out of range: 0'
+            },
+            {
+                'args': '-u auto -u 8080',
+                'expected': ('invalid -u flag: "auto" must be the only '
+                             'port forwarding rule')
+            },
+            {
+                'args': '-U foo.ip/8080:80',
+                'expected': ('invalid -U flag: invalid port forwarding '
+                             'IP address: foo.ip')
+            }
+        ]
+
+        for tc in test_cases:
+            with self.subTest(args=tc['args']):
+                result = self.sandbox_run('ls', drop_extra_args=tc['args'])
+                self.assertNotEqual(0, result.returncode,
+                                   f"Expected failure for {tc['args']}")
+                self.assertIn(tc['expected'], result.stderr)
+
+
 
 @contextmanager
 def scoped_dir(path):

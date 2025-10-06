@@ -136,15 +136,27 @@ Options:
 	}
 	// Command line flags take priority over the config file.
 	if len(tcpPortsToHost) > 0 {
+		if err := config.ValidatePortForward(tcpPortsToHost); err != nil {
+			return 1, fmt.Errorf("invalid -t flag: %v", err)
+		}
 		cfg.Net.TCPPortsToHost = tcpPortsToHost
 	}
 	if len(tcpPortsFromHost) > 0 {
+		if err := config.ValidatePortForward(tcpPortsFromHost); err != nil {
+			return 1, fmt.Errorf("invalid -T flag: %v", err)
+		}
 		cfg.Net.TCPPortsFromHost = tcpPortsFromHost
 	}
 	if len(udpPortsToHost) > 0 {
+		if err := config.ValidatePortForward(udpPortsToHost); err != nil {
+			return 1, fmt.Errorf("invalid -u flag: %v", err)
+		}
 		cfg.Net.UDPPortsToHost = udpPortsToHost
 	}
 	if len(udpPortsFromHost) > 0 {
+		if err := config.ValidatePortForward(udpPortsFromHost); err != nil {
+			return 1, fmt.Errorf("invalid -U flag: %v", err)
+		}
 		cfg.Net.UDPPortsFromHost = udpPortsFromHost
 	}
 
