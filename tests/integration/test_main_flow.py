@@ -63,16 +63,25 @@ class TestMainFlow(unittest.TestCase):
     def setUp(self):
         rmdir(ENV_DIR)
         self.temp_dir = tempfile.mkdtemp(prefix='drop-tests')
+        self.background_processes = []
 
     def tearDown(self):
+        for process in self.background_processes:
+            if process.poll() is None:  # Process is still running
+                process.kill()
+
         rmdir(ENV_DIR)
         if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
-    def sandbox_run(self, command, config: Config = None,
-                    env_id: str = ENV_ID, drop_extra_args=None,
-                    **subprocess_kwargs):
-        """Execute a command in the sandbox and return its result."""
+    def sandbox_run_background(self, command, config: Config = None,
+                               env_id: str = ENV_ID, drop_extra_args=None,
+                               **subprocess_kwargs):
+        """Execute a command in the sandbox.
+
+        Does not wait for the command to finish execution.
+        Returns Popen object.
+        """
         if config is None:
             config = Config()
         config_file = os.path.join(self.temp_dir, 'config.toml')
@@ -84,8 +93,26 @@ class TestMainFlow(unittest.TestCase):
         if env_id:
             cmd_args += ['-e', env_id]
         cmd_args += shlex.split(command)
-        return subprocess.run(cmd_args, capture_output=True, text=True,
-                              **subprocess_kwargs)
+        process = subprocess.Popen(cmd_args, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True,
+                                   **subprocess_kwargs)
+        self.background_processes.append(process)
+        return process
+
+    def sandbox_run(self, command, config: Config = None,
+                    env_id: str = ENV_ID, drop_extra_args=None,
+                    **subprocess_kwargs):
+        """Execute a command in the sandbox and return its result."""
+        process = self.sandbox_run_background(
+            command, config, env_id, drop_extra_args, **subprocess_kwargs)
+        stdout, stderr = process.communicate()
+        retcode = process.poll()
+        return subprocess.CompletedProcess(
+            returncode=retcode,
+            args=process.args,
+            stdout=stdout,
+            stderr=stderr
+        )
 
     def assertSuccess(self, result):
         self.assertTrue(result.stderr == '',
