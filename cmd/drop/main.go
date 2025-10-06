@@ -402,10 +402,6 @@ func ensureCapSysAdmin() error {
 	return nil
 }
 
-func FD_SET(fd int, p *syscall.FdSet) {
-	p.Bits[fd/64] |= 1 << (uint(fd) % 64)
-}
-
 // signalParentReady writes to the pipe to signal that parent setup has finished
 func signalParentReady(parentEnd *os.File) error {
 	defer parentEnd.Close()
@@ -448,26 +444,31 @@ func discardChildTermInjection() {
 		// parent input terminal with some delay. We just discard whatever
 		// is available after wait() returns.
 
-		var readfds syscall.FdSet
+		readfds := &unix.FdSet{}
 		const stdin int = 0
-		FD_SET(stdin, &readfds)
+		readfds.Zero()
+		readfds.Set(stdin)
 
-		n, err := syscall.Select(stdin+1, &readfds, nil, nil, &syscall.Timeval{Sec: 0, Usec: 0})
+		fd_count, err := unix.Select(stdin+1, readfds, nil, nil, &unix.Timeval{Sec: 0, Usec: 0})
+		if err != nil {
+			fmt.Printf("Failed to discard jailed process stdin leftowers: %v", err)
+			return
+		}
+		if fd_count == 0 {
+			// Nothing available
+			return
+		}
+		buf := make([]byte, 128)
+		n, err := unix.Read(stdin, buf)
 		if err != nil {
 			fmt.Printf("Failed to discard jailed process stdin leftowers: %v", err)
 			return
 		}
 		if n == 0 {
-			// Nothing available
+			// EOF
 			return
 		}
-		buf := make([]byte, 128)
-		_, err = syscall.Read(stdin, buf)
-		if err != nil {
-			fmt.Printf("Failed to discard jailed process stdin leftowers: %v", err)
-			return
-		}
-		fmt.Fprintf(os.Stderr, "Discarding %s\n", string(buf))
+		fmt.Fprintf(os.Stderr, "Discarding %d chars\n", n)
 	}
 }
 
