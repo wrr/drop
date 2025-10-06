@@ -331,13 +331,23 @@ class TestMainFlow(unittest.TestCase):
         self.assertIn('Temporary failure in name resolution', result.stderr)
 
     def test_port_forwarding(self):
-        # expose port 20112 from the sandbox to the host
+        # expose TCP port 20112 from the sandbox to the host
         process = self.sandbox_run_background(
             'bash -c "echo -n "hello" | nc -4 -l -p 20112"',
             config=Config(tcp_ports_to_host=["20112"]),
         )
 
-        response = loopback_read(20112)
+        response = loopback_read_tcp(20112)
+        self.assertEqual('hello', response)
+        self.assertSuccess(wait_process_completed(process))
+
+        # expose UDP port 20112 from the sandbox to the host
+        process = self.sandbox_run_background(
+            'bash -c "echo -n "hello" | nc -4 -W 1 -u -l -p 20112"',
+            config=Config(udp_ports_to_host=["20112"]),
+        )
+
+        response = loopback_read_udp(20112)
         self.assertEqual('hello', response)
         self.assertSuccess(wait_process_completed(process))
 
@@ -427,20 +437,45 @@ def wait_process_completed(process):
         stderr=stderr
     )
 
-def loopback_read(tcp_port):
+def loopback_read_tcp(tcp_port):
     """Attempt to connect to a TCP port and return the response string.
 
     Retries upto 7 times with exponential backoff.
     """
+    def tcp_read(sock):
+        sock.connect(('127.0.0.1', tcp_port))
+        return sock.recv(1024).decode('utf-8')
+
+    return socket_read(socket.SOCK_STREAM, tcp_read)
+
+def loopback_read_udp(udp_port):
+    """Attempt to send UDP data to a port and return the response string.
+
+    Retries upto 7 times with exponential backoff.
+    """
+    def udp_read(sock):
+        # Send data first so server knows where to respond
+        sock.sendto(b'test\n', ('127.0.0.1', udp_port))
+        response, addr = sock.recvfrom(1024)
+        return response.decode('utf-8')
+
+    return socket_read(socket.SOCK_DGRAM, udp_read)
+
+def socket_read(socket_type, read_callback):
+    """Generic socket read with retry logic and exponential backoff.
+
+    Args:
+        socket_type: socket.SOCK_STREAM or socket.SOCK_DGRAM
+        read_callback: function that takes a socket and returns response string
+    """
     retries_count = 7
     delay_sec = 0.05
     for retry in range(retries_count):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock = socket.socket(socket.AF_INET, socket_type)
         try:
             sock.settimeout(1.0)
-            sock.connect(('127.0.0.1', tcp_port))
-            return sock.recv(1024).decode('utf-8')
-        except ConnectionRefusedError as e:
+            return read_callback(sock)
+        except (ConnectionRefusedError, socket.timeout, OSError) as e:
             if retry == retries_count - 1:
                 raise e
             time.sleep(delay_sec)
