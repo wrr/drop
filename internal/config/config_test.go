@@ -315,6 +315,42 @@ home_visible = [invalid syntax
 			expected: Config{},
 			error:    "failed to parse config",
 		},
+		{
+			name: "invalid tcp_ports_to_host",
+			tomlStr: `
+[net]
+tcp_ports_to_host = ["8080", "invalid_port"]
+`,
+			expected: Config{},
+			error:    "invalid tcp_ports_to_host",
+		},
+		{
+			name: "invalid tcp_ports_from_host",
+			tomlStr: `
+[net]
+tcp_ports_from_host = ["8080", "auto"]
+`,
+			expected: Config{},
+			error:    "invalid tcp_ports_from_host: \"auto\" must be the only port forwarding rule",
+		},
+		{
+			name: "invalid udp_ports_to_host",
+			tomlStr: `
+[net]
+udp_ports_to_host = ["0"]
+`,
+			expected: Config{},
+			error:    "invalid udp_ports_to_host: port number out of range: 0",
+		},
+		{
+			name: "invalid udp_ports_from_host",
+			tomlStr: `
+[net]
+udp_ports_from_host = ["invalid.ip/8080:80"]
+`,
+			expected: Config{},
+			error:    "invalid udp_ports_from_host: invalid port forwarding IP address: invalid.ip",
+		},
 	}
 
 	for _, tt := range tests {

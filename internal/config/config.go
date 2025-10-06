@@ -51,6 +51,22 @@ func Parse(configStr string) (*Config, error) {
 		return nil, err
 	}
 
+	if err := ValidatePortForward(config.Net.TCPPortsToHost); err != nil {
+		return nil, fmt.Errorf("invalid tcp_ports_to_host: %v", err)
+	}
+
+	if err := ValidatePortForward(config.Net.TCPPortsFromHost); err != nil {
+		return nil, fmt.Errorf("invalid tcp_ports_from_host: %v", err)
+	}
+
+	if err := ValidatePortForward(config.Net.UDPPortsToHost); err != nil {
+		return nil, fmt.Errorf("invalid udp_ports_to_host: %v", err)
+	}
+
+	if err := ValidatePortForward(config.Net.UDPPortsFromHost); err != nil {
+		return nil, fmt.Errorf("invalid udp_ports_from_host: %v", err)
+	}
+
 	return &config, nil
 }
 
