@@ -3,8 +3,10 @@ import os
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 import tempfile
+import time
 import unittest
 
 from contextlib import contextmanager
@@ -105,14 +107,7 @@ class TestMainFlow(unittest.TestCase):
         """Execute a command in the sandbox and return its result."""
         process = self.sandbox_run_background(
             command, config, env_id, drop_extra_args, **subprocess_kwargs)
-        stdout, stderr = process.communicate()
-        retcode = process.poll()
-        return subprocess.CompletedProcess(
-            returncode=retcode,
-            args=process.args,
-            stdout=stdout,
-            stderr=stderr
-        )
+        return wait_process_completed(process)
 
     def assertSuccess(self, result):
         self.assertTrue(result.stderr == '',
@@ -335,6 +330,16 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn('Temporary failure in name resolution', result.stderr)
 
+    def test_port_forwarding(self):
+        # expose port 20112 from the sandbox to the host
+        process = self.sandbox_run_background(
+            'bash -c "echo -n "hello" | nc -4 -l -p 20112"',
+            config=Config(tcp_ports_to_host=["20112"]),
+        )
+
+        response = loopback_read(20112)
+        self.assertEqual('hello', response)
+        self.assertSuccess(wait_process_completed(process))
 
     def test_open_fds_not_passed_to_sanbox(self):
         try:
@@ -411,3 +416,35 @@ def write_config(config: Config, path: str) -> None:
 def read(path: str) -> str:
     with open(path, 'r') as f:
         return f.read()
+
+def wait_process_completed(process):
+    stdout, stderr = process.communicate()
+    retcode = process.poll()
+    return subprocess.CompletedProcess(
+        returncode=retcode,
+        args=process.args,
+        stdout=stdout,
+        stderr=stderr
+    )
+
+def loopback_read(tcp_port):
+    """Attempt to connect to a TCP port and return the response string.
+
+    Retries upto 7 times with exponential backoff.
+    """
+    retries_count = 7
+    delay_sec = 0.05
+    for retry in range(retries_count):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(1.0)
+            sock.connect(('127.0.0.1', tcp_port))
+            return sock.recv(1024).decode('utf-8')
+        except ConnectionRefusedError as e:
+            if retry == retries_count - 1:
+                raise e
+            time.sleep(delay_sec)
+            # Retry with backoff
+            delay_sec *= 2
+        finally:
+            sock.close()
