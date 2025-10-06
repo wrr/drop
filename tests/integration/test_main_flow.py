@@ -26,12 +26,20 @@ class Config:
                  home_writeable: List[str] = None,
                  proc_readable: List[str] = None,
                  hide: List[str] = None,
-                 env_expose: List[str] = None):
+                 env_expose: List[str] = None,
+                 tcp_ports_to_host: List[str] = None,
+                 tcp_ports_from_host: List[str] = None,
+                 udp_ports_to_host: List[str] = None,
+                 udp_ports_from_host: List[str] = None):
         self.home_visible = home_visible or []
         self.home_writeable = home_writeable or []
         self.proc_readable = proc_readable or []
         self.hide = hide or []
         self.env_expose = env_expose or []
+        self.tcp_ports_to_host = tcp_ports_to_host or []
+        self.tcp_ports_from_host = tcp_ports_from_host or []
+        self.udp_ports_to_host = udp_ports_to_host or []
+        self.udp_ports_from_host = udp_ports_from_host or []
 
     def toml(self) -> str:
         """Return configuration as TOML string"""
@@ -40,7 +48,13 @@ class Config:
             f'home_writeable = {str(self.home_writeable)}',
             f'proc_readable = {str(self.proc_readable)}',
             f'hide = {str(self.hide)}',
-            f'env_expose = {str(self.env_expose)}'
+            f'env_expose = {str(self.env_expose)}',
+            '',
+            '[net]',
+            f'tcp_ports_to_host = {str(self.tcp_ports_to_host)}',
+            f'tcp_ports_from_host = {str(self.tcp_ports_from_host)}',
+            f'udp_ports_to_host = {str(self.udp_ports_to_host)}',
+            f'udp_ports_from_host = {str(self.udp_ports_from_host)}'
         ]
         return '\n'.join(toml_lines)
 
