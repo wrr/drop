@@ -355,8 +355,11 @@ func childProcessEntry() (int, error) {
 	}
 
 	if len(progWithArgs) == 0 {
-		// TODO: use SHELL env variable
-		progWithArgs = []string{"bash"}
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "/bin/sh"
+		}
+		progWithArgs = []string{shell}
 	}
 
 	// Filter environment variables and always include debian_chroot
