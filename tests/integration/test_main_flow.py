@@ -276,6 +276,13 @@ class TestMainFlow(unittest.TestCase):
 
         self.assertEqual('hello\n', read(jail_var_file))
 
+    def test_etc(self):
+        # Test that /etc/resolv.conf contains the expected DNS configuration
+        cmd = 'cat /etc/resolv.conf'
+        result = self.sandbox_run(cmd)
+        self.assertSuccess(result)
+        self.assertIn('nameserver 10.0.2.3', result.stdout)
+
     def test_env_expose(self):
         os.environ['FOO'] = 'bar'
 

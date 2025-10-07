@@ -24,20 +24,8 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	// For DNS to work in the container /etc/resolv.conf needs to be
-	// overwritten. We use overlayfs for this instead of bind mounting
-	// /etc/resolv.conf. On Ubuntu /etc/resolv.conf is a symlink to
-	// ../run/systemd/resolve/stub-resolv.conf. It is not possible for a
-	// bind mount to replace a symlink, so our resolv.conf would still
-	// need to be at ../run/systemd/resolve/stub-resolv.conf. Having
-	// read-only overlayfs with our /etc/resolv.conf in a top level hides
-	// the symlink, so is more elegant and also allows to easily replace more
-	// config files as needed.
-	//
-	// Readonly overlayfs does not require upperdir= and workdir= params.
-	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
-	if err := syscall.Mount("etc", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
-		return fmt.Errorf("mount /etc failed: %v", err)
+	if err := mountEtc(paths); err != nil {
+		return err
 	}
 
 	if err := syscall.Mount("run", paths.FsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
@@ -379,6 +367,25 @@ func mountVar(paths *Paths) error {
 	flags := uintptr(syscall.MS_NOSUID)
 	if err := bindDir(paths.Var, paths.FsRoot+"/var", flags); err != nil {
 		return fmt.Errorf("mount /var failed: %v", err)
+	}
+	return nil
+}
+
+func mountEtc(paths *Paths) error {
+	// For DNS to work in the container /etc/resolv.conf needs to be
+	// overwritten. We use overlayfs for this instead of bind mounting
+	// /etc/resolv.conf. On Ubuntu /etc/resolv.conf is a symlink to
+	// ../run/systemd/resolve/stub-resolv.conf. It is not possible for a
+	// bind mount to replace a symlink, so our resolv.conf would still
+	// need to be at ../run/systemd/resolve/stub-resolv.conf. Having
+	// read-only overlayfs with our /etc/resolv.conf in a top level hides
+	// the symlink, so is more elegant and also allows to easily replace more
+	// config files as needed.
+	//
+	// Readonly overlayfs does not require upperdir= and workdir= params.
+	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
+	if err := syscall.Mount("etc", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
+		return fmt.Errorf("mount /etc failed: %v", err)
 	}
 	return nil
 }
