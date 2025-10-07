@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/user"
 	"runtime"
+	"runtime/coverage"
 	"strings"
 	"syscall"
 
@@ -384,6 +385,18 @@ func childProcessEntry() (int, error) {
 	if err := AllFdsCloseOnExec(); err != nil {
 		return 1, fmt.Errorf("failed to set open file descriptors to close: %v", err)
 	}
+	coverdir := os.Getenv("GOCOVERDIR")
+	if coverdir != "" {
+		// Since the current process is replaced with Exec, we need
+		// to write coverage data manually, Go hooks will not execute.
+		if err := coverage.WriteMetaDir(coverdir); err != nil {
+			return 1, fmt.Errorf("failed to write coverage metadata: %v", err)
+		}
+		if err := coverage.WriteCountersDir(coverdir); err != nil {
+			return 1, fmt.Errorf("failed to write coverage counters: %v", err)
+		}
+	}
+
 	// Replace the current process
 	if err := syscall.Exec(prog, progWithArgs, envVars); err != nil {
 		return 1, fmt.Errorf("exec %s failed: %v", progWithArgs[0], err)

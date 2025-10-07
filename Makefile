@@ -34,10 +34,10 @@ test-all: test test-integration
 # Gather coverage information for unit tests, integration tests and
 # all tests combined.
 cover:
-	go build -cover ./cmd/drop
+	go build -cover -covermode=atomic ./cmd/drop
 	rm -rf cover
 	mkdir -p cover/unit cover/int cover/all
-	go test -v -cover ./... -args -test.gocoverdir="$(PWD)/cover/unit"
+	go test -v -cover -covermode=atomic ./... -args -test.gocoverdir="$(PWD)/cover/unit"
 	GOCOVERDIR="$(PWD)/cover/int/" python3 -m unittest discover tests/integration/
 	go tool covdata merge -i=cover/unit,cover/int -o=cover/all
 	go tool covdata textfmt -i=./cover/unit -o=cover/unit/unit.cov

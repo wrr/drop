@@ -164,7 +164,6 @@ class TestMainFlow(unittest.TestCase):
             self.assertTrue(os.path.exists(env_dir_from_cwd), 
                             f'env dir is missing {env_dir_from_cwd}')
         finally:
-            pass
             rmdir(env_dir_from_cwd)
 
     def test_process_isolation(self):
