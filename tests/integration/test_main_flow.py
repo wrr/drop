@@ -359,6 +359,17 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn('Temporary failure in name resolution', result.stderr)
 
+    def test_pasta_not_found_error(self):
+        # Ensure a helpful error message is shown when pasta binary is
+        # not found. Clear the PATH to make pasta unavailable
+        result = self.sandbox_run('ls', env={'PATH': ''})
+        self.assertEqual(1, result.returncode)
+        self.assertIn(
+            'pasta binary for isolated networking not found', result.stderr)
+        self.assertIn('sudo apt-get install passt', result.stderr)
+        self.assertIn(
+            'https://passt.top/passt/about/#availability', result.stderr)
+
     def test_port_forwarding(self):
         # expose TCP port 20112 from the sandbox to the host
         process = self.sandbox_run_background(
