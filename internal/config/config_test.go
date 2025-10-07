@@ -256,7 +256,6 @@ func TestParse(t *testing.T) {
 			tomlStr: `
 home_visible = ["/home/user/docs", "/tmp"]
 home_writeable = ["/home/user/work"]
-proc_readable = ["/proc/cpuinfo", "/proc/meminfo"]
 hide = ["/etc/shadow", "/root"]
 env_expose = ["HOME", "PATH", "LC_*"]
 
@@ -269,7 +268,6 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			expected: Config{
 				HomeVisible:   []string{"/home/user/docs", "/tmp"},
 				HomeWriteable: []string{"/home/user/work"},
-				ProcReadable:  []string{"/proc/cpuinfo", "/proc/meminfo"},
 				Hide:          []string{"/etc/shadow", "/root"},
 				EnvExpose:     []string{"HOME", "PATH", "LC_*"},
 				Net: Net{
@@ -287,7 +285,6 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			expected: Config{
 				HomeVisible:   nil,
 				HomeWriteable: nil,
-				ProcReadable:  nil,
 				Hide:          nil,
 				EnvExpose:     nil,
 				Net: Net{
@@ -380,7 +377,6 @@ udp_ports_from_host = ["invalid.ip/8080:80"]
 
 			expectListEquals(t, "HomeVisible", result.HomeVisible, tt.expected.HomeVisible)
 			expectListEquals(t, "HomeWriteable", result.HomeWriteable, tt.expected.HomeWriteable)
-			expectListEquals(t, "ProcReadable", result.ProcReadable, tt.expected.ProcReadable)
 			expectListEquals(t, "Hide", result.Hide, tt.expected.Hide)
 			expectListEquals(t, "EnvExpose", result.EnvExpose, tt.expected.EnvExpose)
 

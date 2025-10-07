@@ -21,7 +21,6 @@ type Net struct {
 type Config struct {
 	HomeVisible   []string `toml:"home_visible"`
 	HomeWriteable []string `toml:"home_writeable"`
-	ProcReadable  []string `toml:"proc_readable"`
 	Hide          []string `toml:"hide"`
 	EnvExpose     []string `toml:"env_expose"`
 	Net           Net      `toml:"net"`

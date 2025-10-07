@@ -1,12 +1,9 @@
 package jailfs
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -65,10 +62,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		}
 	}
 
-	if err := syscall.Mount("proc", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
-		return fmt.Errorf("mount proc failed: %v", err)
-	}
-	if err := hideProcFiles(cfg.ProcReadable, paths); err != nil {
+	if err := mountProc(paths); err != nil {
 		return err
 	}
 
@@ -299,37 +293,54 @@ func cleanDir(dir string) string {
 	return dir
 }
 
-func hideProcFiles(procAccessible []string, paths *Paths) error {
+func mountProc(paths *Paths) error {
+	if err := syscall.Mount("proc", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
+		return fmt.Errorf("mount proc failed: %v", err)
+	}
+	return hideProcEntries(paths)
+}
+
+// hideProcEntries hides the same /proc paths that runc default configuration
+// hides. In addition runc configures the following paths to be
+// read-only:
+// "/proc/bus",
+// "/proc/fs",
+// "/proc/irq",
+// "/proc/sys",
+// "/proc/sysrq-trigger"
+// We skip this step, because Linux already makes these paths
+// read-only, perhaps this is needed in case container is started as root,
+// which Drop doesn't allow.
+func hideProcEntries(paths *Paths) error {
+	hide := []string{
+		"acpi",
+		"asound",
+		"kcore",
+		"keys",
+		"latency_stats",
+		"timer_list",
+		"timer_stats",
+		"sched_debug",
+		"scsi",
+	}
+
 	procRoot := paths.FsRoot + "/proc"
 	entries, err := os.ReadDir(procRoot)
 	if err != nil {
 		return fmt.Errorf("failed to read %v: %v", procRoot, err)
 	}
 
-	procAccessible = append(procAccessible, "uptime", "loadavg", "meminfo", "stat", "sys")
-
 	for _, entry := range entries {
 		name := entry.Name()
-		fullPath := filepath.Join(procRoot, name)
-
-		// Proc entries with all digits are connected to processes with
-		// the same id. Proc contains only processes started in the jail,
-		// so all these entries are accessible.
-		accessible := allDigits(name) || slices.Contains(procAccessible, name)
-		if accessible {
+		if !slices.Contains(hide, name) {
 			continue
 		}
 		info, err := entry.Info()
+		fullPath := filepath.Join(procRoot, name)
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				// Removed after ReadDir returned
-				continue
-			}
 			return fmt.Errorf("failed to retrieve file info for %s %v", fullPath, err)
 		}
-		if info.Mode()&fs.ModeSymlink != 0 {
-			// skip symlinks such as /proc/self
-		} else if info.IsDir() {
+		if info.IsDir() {
 			if err := bindDir(paths.EmptyDir, fullPath, syscall.MS_RDONLY); err != nil {
 				return err
 			}
@@ -340,10 +351,4 @@ func hideProcFiles(procAccessible []string, paths *Paths) error {
 		}
 	}
 	return nil
-}
-
-var digitsRegex = regexp.MustCompile(`^\d+$`)
-
-func allDigits(s string) bool {
-	return digitsRegex.MatchString(s)
 }
