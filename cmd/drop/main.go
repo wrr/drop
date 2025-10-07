@@ -74,7 +74,7 @@ func parentProcessEntry() (int, error) {
 	var networkMode string
 	var beRoot bool
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `drop limits programs abilities to read and write user's files
+		fmt.Fprintf(os.Stderr, `Drop limits programs abilities to read and write user's files
 Usage: drop [options] [command...]
 Options:
 `)
@@ -352,7 +352,7 @@ func childProcessEntry() (int, error) {
 
 	// Drop all the capabilities in the user namespace.
 	//
-	// CAP_SYS_ADMIN would allow the user to umount drop mounts and
+	// CAP_SYS_ADMIN would allow the user to umount Drop mounts and
 	// access the original directories (home dir, proc etc.)
 	if err := dropAllCaps(); err != nil {
 		return 1, err
@@ -404,7 +404,7 @@ func ensureCapSysAdmin() error {
 	}
 	if !hasCap {
 		return fmt.Errorf("not enough capabilities. Are Linux user namespaces enabled? " +
-			"Is drop allowed to use user namespaces via AppArmor profile?")
+			"Is Drop allowed to use user namespaces via AppArmor profile?")
 	}
 	return nil
 }

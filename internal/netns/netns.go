@@ -54,7 +54,7 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 	// TCP ports open in the namespace that are accessible from the host.
 	pastaArgs = append(pastaArgs, portMappingArgs("--tcp-ports", netConfig.TCPPortsToHost)...)
 	// TCP ports open on the host that are accessible from the namespace.
-	// This mapping is also needed to allow drop instances to connect
+	// This mapping is also needed to allow Drop instances to connect
 	// to one another (one instance exposes a port to host with
 	// --tcp-port and the other needs --tcp-ns to be able connect to
 	// this port.
@@ -67,7 +67,7 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 
 	pastaCmd := exec.Command("pasta", pastaArgs...)
 	pastaCmd.SysProcAttr = &syscall.SysProcAttr{
-		// Kill pasta when drop is killed.
+		// Kill pasta when Drop is killed.
 		Pdeathsig: syscall.SIGKILL,
 	}
 

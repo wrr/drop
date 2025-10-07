@@ -11,12 +11,12 @@ import (
 
 // Paths contains filesystem paths used to setup the jail.
 type Paths struct {
-	// Cwd is the directory where drop was started.
+	// Cwd is the directory where Drop was started.
 	Cwd string
-	// DotDir is the top-level directory where drop files are stored
+	// DotDir is the top-level directory where Drop files are stored
 	// (e.g. /home/alice/.drop).
 	DotDir string
-	// Config is the path to the drop configuration file.
+	// Config is the path to the Drop configuration file.
 	Config string
 	// Env is the entry point for all paths specific to the current
 	// environment. For example, if envId is 'project-foo', Env is

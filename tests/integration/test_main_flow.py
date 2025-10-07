@@ -136,7 +136,7 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual(uid, jail_uid)
         self.assertEqual(gid, jail_gid)
 
-        # In root mode (-r flag), drop should use UID/GID 0
+        # In root mode (-r flag), Drop should use UID/GID 0
         result = self.sandbox_run('bash -c "id -u; id -g"',
                                   drop_extra_args='-r')
         self.assertSuccess(result)
@@ -353,7 +353,7 @@ class TestMainFlow(unittest.TestCase):
 
     def test_open_fds_not_passed_to_sanbox(self):
         try:
-            # Start drop with many additional open file descriptors,
+            # Start Drop with many additional open file descriptors,
             # sandboxed process should not have access to these file
             # descriptors, but only to stdin, stdout and stderr.
             pass_fds = []
