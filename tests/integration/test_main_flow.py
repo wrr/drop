@@ -398,6 +398,32 @@ class TestMainFlow(unittest.TestCase):
                                    f"Expected failure for {tc['args']}")
                 self.assertIn(tc['expected'], result.stderr)
 
+    def test_proc_hide(self):
+        """Test that sensitive /proc entries are impossible to read"""
+        hidden_entries = [
+            "acpi",
+            "asound",
+            "kcore",
+            "keys",
+            "latency_stats",
+            "timer_list",
+            "scsi",
+            # not always present:
+            #"timer_stats",
+            #"sched_debug",
+        ]
+
+        for entry in hidden_entries:
+            proc_path = f"/proc/{entry}"
+            with self.subTest(proc_path=proc_path):
+                result = self.sandbox_run(f'cat {proc_path}')
+                self.assertEqual(1, result.returncode)
+                self.assertIn('Permission denied', result.stderr)
+
+                result = self.sandbox_run(f'chmod 644 {proc_path}')
+                self.assertEqual(1, result.returncode)
+                self.assertIn('Read-only file system', result.stderr)
+
 
 
 @contextmanager
