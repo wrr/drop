@@ -62,6 +62,10 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		}
 	}
 
+	if err := mountSys(paths, cfg); err != nil {
+		return err
+	}
+
 	if err := mountProc(paths); err != nil {
 		return err
 	}
@@ -349,6 +353,20 @@ func hideProcEntries(paths *Paths) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+func mountSys(paths *Paths, cfg *config.Config) error {
+	if cfg.Net.Mode == "unjailed" {
+		// Mounting /sys is allowed only within own network namespace
+		return nil
+	}
+
+	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV)
+	if err := syscall.Mount("sysfs", paths.FsRoot+"/sys", "sysfs",
+		flags, ""); err != nil {
+		return fmt.Errorf("mount /sys failed: %v", err)
 	}
 	return nil
 }
