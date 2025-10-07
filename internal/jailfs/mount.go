@@ -62,11 +62,15 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		}
 	}
 
+	if err := mountProc(paths); err != nil {
+		return err
+	}
+
 	if err := mountSys(paths, cfg); err != nil {
 		return err
 	}
 
-	if err := mountProc(paths); err != nil {
+	if err := mountVar(paths); err != nil {
 		return err
 	}
 
@@ -367,6 +371,14 @@ func mountSys(paths *Paths, cfg *config.Config) error {
 	if err := syscall.Mount("sysfs", paths.FsRoot+"/sys", "sysfs",
 		flags, ""); err != nil {
 		return fmt.Errorf("mount /sys failed: %v", err)
+	}
+	return nil
+}
+
+func mountVar(paths *Paths) error {
+	flags := uintptr(syscall.MS_NOSUID)
+	if err := bindDir(paths.Var, paths.FsRoot+"/var", flags); err != nil {
+		return fmt.Errorf("mount /var failed: %v", err)
 	}
 	return nil
 }

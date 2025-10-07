@@ -253,6 +253,29 @@ class TestMainFlow(unittest.TestCase):
             self.assertTrue(os.path.isdir(home_sub_path / 'foo'))
             self.assertTrue(os.path.isfile(home_sub_path / 'bar'))
 
+    def test_var(self):
+        # Test that /var directory is empty initially and files created
+        # in it are stored in the Drop env /var subdirectory
+
+        cmd = 'bash -c "ls -A /var | wc -l"'
+        result = self.sandbox_run(cmd)
+        self.assertSuccess(result)
+        line_count = int(result.stdout.strip())
+        self.assertEqual(0, line_count)
+
+        cmd = f'bash -c "echo hello > /var/foo"'
+        result = self.sandbox_run(cmd)
+        self.assertSuccess(result)
+
+        # Ensure the file was not created in the host /var, but in the
+        # Drop env /var dir.
+        host_var_file = Path(f'/var/foo')
+        self.assertFalse(host_var_file.exists())
+        jail_var_file = ENV_DIR / 'var' / 'foo'
+        self.assertTrue(jail_var_file.exists())
+
+        self.assertEqual('hello\n', read(jail_var_file))
+
     def test_env_expose(self):
         os.environ['FOO'] = 'bar'
 

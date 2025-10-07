@@ -33,6 +33,10 @@ type Paths struct {
 	// Etc is the directory mounted as read-only overlay over /etc in the jail
 	// (e.g. /home/alice/.drop/envs/project-foo/etc).
 	Etc string
+	// Var is the directory mounted as /var in the jail. The original
+	// /var is hidden
+	// (e.g. /home/alice/.drop/envs/project-foo/var).
+	Var string
 	// Tmp is the directory mounted as /tmp in the jail. It is placed as a
 	// subdir of the host $TMPDIR to allow standard cleanup mechanisms.
 	Tmp string
@@ -71,12 +75,13 @@ func NewPaths(envId string, hostHome string, configPath string, runDir string) (
 		HostHome:  hostHome,
 		Home:      filepath.Join(env, "home"),
 		Etc:       filepath.Join(env, "etc"),
+		Var:       filepath.Join(env, "var"),
 		Run:       runDir,
 		EmptyDir:  filepath.Join(internal, "emptyd"),
 		EmptyFile: filepath.Join(internal, "empty"),
 	}
 
-	toMkdir := []string{paths.FsRoot, paths.Home, paths.Etc}
+	toMkdir := []string{paths.FsRoot, paths.Home, paths.Etc, paths.Var}
 	for _, dir := range toMkdir {
 		if err := MkdirAll(dir); err != nil {
 			return nil, err
