@@ -61,6 +61,10 @@ func newPathsAndConfig(envId, homeDir, configPath, runDir string) (*jailfs.Paths
 }
 
 func parentProcessEntry() (int, error) {
+	if os.Geteuid() == 0 {
+		return 1, fmt.Errorf("drop should not be run as root")
+	}
+
 	var tcpPortsToHost []string
 	var tcpPortsFromHost []string
 	var udpPortsToHost []string
