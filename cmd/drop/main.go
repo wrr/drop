@@ -87,7 +87,7 @@ Options:
 	flag.Var((*stringSlice)(&udpPortsFromHost), "U", "Publish UDP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]")
 	flag.StringVar(&envId, "e", "", "Environment ID")
 	flag.StringVar(&configPath, "c", "", "Path to config file")
-	flag.StringVar(&networkMode, "n", "isolated", "Network mode: off, isolated, or unjailed")
+	flag.StringVar(&networkMode, "n", "", "Network mode: off, isolated, or unjailed")
 	flag.BoolVar(&beRoot, "r", false, "Be root (uid 0) in the jail. Useful for running installation scripts that\n"+
 		"require to be run as root. This option doesn't grant any additional privileges to the jailed\n"+
 		"processes. For convenience, the home dir of a root user is not set to /root, but\n"+
@@ -96,10 +96,6 @@ Options:
 	err := flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
 		return 1, fmt.Errorf("failed to parse command line: %v", err)
-	}
-
-	if networkMode != "off" && networkMode != "isolated" && networkMode != "unjailed" {
-		return 1, fmt.Errorf("invalid network mode '%s': must be 'off', 'isolated', or 'unjailed'", networkMode)
 	}
 
 	// Obtain home dir in the parent, because with -r option child we
@@ -131,11 +127,18 @@ Options:
 		return 1, err
 	}
 
+	if networkMode != "" {
+		if err := config.ValidateNetworkMode(networkMode); err != nil {
+			return 1, err
+		}
+		cfg.Net.Mode = networkMode
+	}
+
 	if (len(tcpPortsToHost) > 0 ||
 		len(tcpPortsFromHost) > 0 ||
 		len(udpPortsToHost) > 0 ||
 		len(udpPortsFromHost) > 0) &&
-		networkMode != "isolated" {
+		cfg.Net.Mode != "isolated" {
 		return 1, fmt.Errorf("port forwarding is only supported with isolated network mode (-n isolated)")
 	}
 	// Command line flags take priority over the config file.
@@ -186,7 +189,7 @@ Options:
 		syscall.CLONE_NEWIPC |
 		syscall.CLONE_NEWPID |
 		syscall.CLONE_NEWUSER)
-	if networkMode != "unjailed" {
+	if cfg.Net.Mode != "unjailed" {
 		cloneFlags |= syscall.CLONE_NEWNET
 	}
 	var containerUID, containerGID int
@@ -271,7 +274,7 @@ Options:
 
 	// Start pasta to provide network connectivity to the jailed process
 	// in isolated network mode
-	if networkMode == "isolated" {
+	if cfg.Net.Mode == "isolated" {
 		cleanup, err := netns.StartPasta(cmd.Process.Pid, cfg.Net, runDir)
 		if err != nil {
 			return 1, err
@@ -306,7 +309,7 @@ func childProcessEntry() (int, error) {
 	envId := os.Args[2]
 	configPath := os.Args[3]
 	runDir := os.Args[4]
-	// networkMode := os.Args[5]
+	networkMode := os.Args[5]
 	homeDir := os.Args[6]
 	progWithArgs := os.Args[7:]
 
@@ -327,6 +330,9 @@ func childProcessEntry() (int, error) {
 	paths, cfg, err := newPathsAndConfig(envId, homeDir, configPath, runDir)
 	if err != nil {
 		return 1, err
+	}
+	if networkMode != "" {
+		cfg.Net.Mode = networkMode
 	}
 
 	if err := jailfs.WriteEtcFiles(paths); err != nil {

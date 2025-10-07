@@ -12,6 +12,7 @@ import (
 )
 
 type Net struct {
+	Mode             string   `toml:"mode"`
 	TCPPortsToHost   []string `toml:"tcp_ports_to_host"`
 	TCPPortsFromHost []string `toml:"tcp_ports_from_host"`
 	UDPPortsToHost   []string `toml:"udp_ports_to_host"`
@@ -50,6 +51,13 @@ func Parse(configStr string) (*Config, error) {
 		return nil, err
 	}
 
+	if config.Net.Mode == "" {
+		config.Net.Mode = "isolated"
+	}
+	if err := ValidateNetworkMode(config.Net.Mode); err != nil {
+		return nil, err
+	}
+
 	if err := ValidatePortForward(config.Net.TCPPortsToHost); err != nil {
 		return nil, fmt.Errorf("invalid tcp_ports_to_host: %v", err)
 	}
@@ -67,6 +75,26 @@ func Parse(configStr string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+// validateEnvExpose check if all patterns in the env_expose list are valid glob patterns.
+func validateEnvExpose(patterns []string) error {
+	for _, pattern := range patterns {
+		if _, err := filepath.Match(pattern, "anything"); err != nil {
+			return fmt.Errorf("invalid env_expose pattern '%s': %v", pattern, err)
+		}
+	}
+	return nil
+}
+
+// ValidateNetworkMode validates that the network mode is one of the allowed values.
+func ValidateNetworkMode(mode string) error {
+	switch mode {
+	case "off", "isolated", "unjailed":
+		return nil
+	default:
+		return fmt.Errorf("invalid network mode '%s': must be 'off', 'isolated', or 'unjailed'", mode)
+	}
 }
 
 // ValidatePortForward validates Pasta-like port forwarding syntax.
@@ -140,16 +168,6 @@ func validatePort(s string) error {
 	}
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("port number out of range: %d", port)
-	}
-	return nil
-}
-
-// validateEnvExpose check if all patterns in the env_expose list are valid glob patterns.
-func validateEnvExpose(patterns []string) error {
-	for _, pattern := range patterns {
-		if _, err := filepath.Match(pattern, "anything"); err != nil {
-			return fmt.Errorf("invalid env_expose pattern '%s': %v", pattern, err)
-		}
 	}
 	return nil
 }

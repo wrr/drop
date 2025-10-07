@@ -161,6 +161,7 @@ func TestParseNetConfig(t *testing.T) {
 			name: "valid net config with all fields",
 			tomlStr: `
 [net]
+mode = "isolated"
 tcp_ports_to_host = ["auto"]
 tcp_ports_from_host = ["8080", "3000:3001"]
 udp_ports_to_host = ["5000"]
@@ -168,6 +169,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 `,
 			expected: Config{
 				Net: Net{
+					Mode:             "isolated",
 					TCPPortsToHost:   []string{"auto"},
 					TCPPortsFromHost: []string{"8080", "3000:3001"},
 					UDPPortsToHost:   []string{"5000"},
@@ -180,6 +182,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			name: "empty net config",
 			tomlStr: `
 [net]
+mode = "off"
 tcp_ports_to_host = []
 tcp_ports_from_host = []
 udp_ports_to_host = []
@@ -187,6 +190,7 @@ udp_ports_from_host = []
 `,
 			expected: Config{
 				Net: Net{
+					Mode:             "off",
 					TCPPortsToHost:   []string{},
 					TCPPortsFromHost: []string{},
 					UDPPortsToHost:   []string{},
@@ -200,6 +204,7 @@ udp_ports_from_host = []
 			tomlStr: ``,
 			expected: Config{
 				Net: Net{
+					Mode:             "isolated", // default
 					TCPPortsToHost:   nil,
 					TCPPortsFromHost: nil,
 					UDPPortsToHost:   nil,
@@ -236,6 +241,9 @@ udp_ports_from_host = []
 			}
 			got := result.Net
 			expected := tt.expected.Net
+			if got.Mode != expected.Mode {
+				t.Errorf("expected Mode '%s', got '%s'", expected.Mode, got.Mode)
+			}
 			expectListEquals(t, "TCPPortsToHost", got.TCPPortsToHost, expected.TCPPortsToHost)
 			expectListEquals(t, "TCPPortsFromHost", got.TCPPortsFromHost, expected.TCPPortsFromHost)
 			expectListEquals(t, "UDPPortsToHost", got.UDPPortsToHost, expected.UDPPortsToHost)
@@ -260,6 +268,7 @@ hide = ["/etc/shadow", "/root"]
 env_expose = ["HOME", "PATH", "LC_*"]
 
 [net]
+mode = "isolated"
 tcp_ports_to_host = ["8080", "3000:3001"]
 tcp_ports_from_host = ["auto"]
 udp_ports_to_host = ["5000"]
@@ -271,6 +280,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 				Hide:          []string{"/etc/shadow", "/root"},
 				EnvExpose:     []string{"HOME", "PATH", "LC_*"},
 				Net: Net{
+					Mode:             "isolated",
 					TCPPortsToHost:   []string{"8080", "3000:3001"},
 					TCPPortsFromHost: []string{"auto"},
 					UDPPortsToHost:   []string{"5000"},
@@ -288,6 +298,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 				Hide:          nil,
 				EnvExpose:     nil,
 				Net: Net{
+					Mode:             "isolated", // default
 					TCPPortsToHost:   nil,
 					TCPPortsFromHost: nil,
 					UDPPortsToHost:   nil,
@@ -348,6 +359,15 @@ udp_ports_from_host = ["invalid.ip/8080:80"]
 			expected: Config{},
 			error:    "invalid udp_ports_from_host: invalid port forwarding IP address: invalid.ip",
 		},
+		{
+			name: "invalid net mode",
+			tomlStr: `
+[net]
+mode = "foo"
+`,
+			expected: Config{},
+			error:    "invalid network mode 'foo': must be 'off', 'isolated', or 'unjailed'",
+		},
 	}
 
 	for _, tt := range tests {
@@ -380,11 +400,33 @@ udp_ports_from_host = ["invalid.ip/8080:80"]
 			expectListEquals(t, "Hide", result.Hide, tt.expected.Hide)
 			expectListEquals(t, "EnvExpose", result.EnvExpose, tt.expected.EnvExpose)
 
+			if result.Net.Mode != tt.expected.Net.Mode {
+				t.Errorf("expected Net.Mode '%s', got '%s'", tt.expected.Net.Mode, result.Net.Mode)
+			}
 			expectListEquals(t, "Net.TCPPortsToHost", result.Net.TCPPortsToHost, tt.expected.Net.TCPPortsToHost)
 			expectListEquals(t, "Net.TCPPortsFromHost", result.Net.TCPPortsFromHost, tt.expected.Net.TCPPortsFromHost)
 			expectListEquals(t, "Net.UDPPortsToHost", result.Net.UDPPortsToHost, tt.expected.Net.UDPPortsToHost)
 			expectListEquals(t, "Net.UDPPortsFromHost", result.Net.UDPPortsFromHost, tt.expected.Net.UDPPortsFromHost)
 		})
+	}
+}
+
+func TestValidateNetworkMode(t *testing.T) {
+	validModes := []string{"off", "isolated", "unjailed"}
+	for _, mode := range validModes {
+		if err := ValidateNetworkMode(mode); err != nil {
+			t.Errorf("expected no error for mode '%s', got: %v", mode, err)
+		}
+	}
+
+	invalidModes := []string{"invalid", "", "OFF"}
+	for _, mode := range invalidModes {
+		err := ValidateNetworkMode(mode)
+		if err == nil {
+			t.Errorf("expected error for mode '%s'", mode)
+		} else if !strings.Contains(err.Error(), "invalid network mode") {
+			t.Errorf("unexpected error for mode '%s': %s", mode, err.Error())
+		}
 	}
 }
 
