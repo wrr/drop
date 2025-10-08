@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"syscall"
 
@@ -59,6 +58,10 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	}
 
 	if err := mountVar(paths); err != nil {
+		return err
+	}
+
+	if err := blockFsRootEntries(paths, cfg.Blocked); err != nil {
 		return err
 	}
 
@@ -293,10 +296,10 @@ func mountProc(paths *Paths) error {
 	if err := syscall.Mount("proc", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
 		return fmt.Errorf("mount proc failed: %v", err)
 	}
-	return hideProcEntries(paths)
+	return blockProcEntries(paths)
 }
 
-// hideProcEntries hides the same /proc paths that runc default configuration
+// blockProcEntries hides the same /proc paths that runc default configuration
 // hides. In addition runc configures the following paths to be
 // read-only:
 // "/proc/bus",
@@ -307,46 +310,19 @@ func mountProc(paths *Paths) error {
 // We skip this step, because Linux already makes these paths
 // read-only, perhaps this is needed in case container is started as root,
 // which Drop doesn't allow.
-func hideProcEntries(paths *Paths) error {
+func blockProcEntries(paths *Paths) error {
 	hide := []string{
-		"acpi",
-		"asound",
-		"kcore",
-		"keys",
-		"latency_stats",
-		"timer_list",
-		"timer_stats",
-		"sched_debug",
-		"scsi",
+		"/proc/acpi",
+		"/proc/asound",
+		"/proc/kcore",
+		"/proc/keys",
+		"/proc/latency_stats",
+		"/proc/timer_list",
+		"/proc/timer_stats",
+		"/proc/sched_debug",
+		"/proc/scsi",
 	}
-
-	procRoot := paths.FsRoot + "/proc"
-	entries, err := os.ReadDir(procRoot)
-	if err != nil {
-		return fmt.Errorf("failed to read %v: %v", procRoot, err)
-	}
-
-	for _, entry := range entries {
-		name := entry.Name()
-		if !slices.Contains(hide, name) {
-			continue
-		}
-		info, err := entry.Info()
-		fullPath := filepath.Join(procRoot, name)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve file info for %s %v", fullPath, err)
-		}
-		if info.IsDir() {
-			if err := bindDir(paths.EmptyDir, fullPath, syscall.MS_RDONLY); err != nil {
-				return err
-			}
-		} else {
-			if err := bindFile(paths.EmptyFile, fullPath, syscall.MS_RDONLY); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return blockFsRootEntries(paths, hide)
 }
 
 func mountSys(paths *Paths, cfg *config.Config) error {
@@ -386,6 +362,33 @@ func mountEtc(paths *Paths) error {
 	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
 	if err := syscall.Mount("etc", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
 		return fmt.Errorf("mount /etc failed: %v", err)
+	}
+	return nil
+}
+
+// blockFsRootEntries blocks access to file system entries by bind
+// mounting empty files/directories over them.
+func blockFsRootEntries(paths *Paths, entries []string) error {
+	for _, blockedPath := range entries {
+		fullPath := filepath.Join(paths.FsRoot, blockedPath)
+		info, err := os.Stat(fullPath)
+		if os.IsNotExist(err) {
+			// Path doesn't exist, nothing to block
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("failed to stat %s: %v", fullPath, err)
+		}
+
+		if info.IsDir() {
+			if err := bindDir(paths.EmptyDir, fullPath, syscall.MS_RDONLY); err != nil {
+				return fmt.Errorf("failed to block directory %s: %v", blockedPath, err)
+			}
+		} else {
+			if err := bindFile(paths.EmptyFile, fullPath, syscall.MS_RDONLY); err != nil {
+				return fmt.Errorf("failed to block file %s: %v", blockedPath, err)
+			}
+		}
 	}
 	return nil
 }

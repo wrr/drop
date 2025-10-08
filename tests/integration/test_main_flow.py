@@ -26,7 +26,6 @@ class Config:
     def __init__(self, *,
                  home_visible: List[str] = None,
                  home_writeable: List[str] = None,
-                 proc_readable: List[str] = None,
                  blocked: List[str] = None,
                  env_expose: List[str] = None,
                  tcp_ports_to_host: List[str] = None,
@@ -35,7 +34,6 @@ class Config:
                  udp_ports_from_host: List[str] = None):
         self.home_visible = home_visible or []
         self.home_writeable = home_writeable or []
-        self.proc_readable = proc_readable or []
         self.blocked = blocked or []
         self.env_expose = env_expose or []
         self.tcp_ports_to_host = tcp_ports_to_host or []
@@ -48,7 +46,6 @@ class Config:
         toml_lines = [
             f'home_visible = {str(self.home_visible)}',
             f'home_writeable = {str(self.home_writeable)}',
-            f'proc_readable = {str(self.proc_readable)}',
             f'blocked = {str(self.blocked)}',
             f'env_expose = {str(self.env_expose)}',
             '',
@@ -281,6 +278,18 @@ class TestMainFlow(unittest.TestCase):
         result = self.sandbox_run(cmd)
         self.assertSuccess(result)
         self.assertIn('nameserver 10.0.2.3', result.stdout)
+
+    def test_blocked(self):
+        # Test that blocked paths are inaccessible
+        config = Config(blocked=['/mnt', '/etc/passwd'])
+
+        result = self.sandbox_run('ls /mnt', config=config)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('Permission denied', result.stderr)
+
+        result = self.sandbox_run('cat /etc/passwd', config=config)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('Permission denied', result.stderr)
 
     def test_env_expose(self):
         os.environ['FOO'] = 'bar'
