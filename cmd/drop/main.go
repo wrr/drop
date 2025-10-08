@@ -385,16 +385,11 @@ func childProcessEntry() (int, error) {
 	if err := AllFdsCloseOnExec(); err != nil {
 		return 1, fmt.Errorf("failed to set open file descriptors to close: %v", err)
 	}
-	coverdir := os.Getenv("GOCOVERDIR")
-	if coverdir != "" {
-		// Since the current process is replaced with Exec, we need
-		// to write coverage data manually, Go hooks will not execute.
-		if err := coverage.WriteMetaDir(coverdir); err != nil {
-			return 1, fmt.Errorf("failed to write coverage metadata: %v", err)
-		}
-		if err := coverage.WriteCountersDir(coverdir); err != nil {
-			return 1, fmt.Errorf("failed to write coverage counters: %v", err)
-		}
+
+	// Since the current process is replaced with Exec, we need
+	// to write coverage data manually, Go hooks will not execute.
+	if err := writeCoverage(); err != nil {
+		return 1, err
 	}
 
 	// Replace the current process
@@ -530,4 +525,13 @@ func currentUserHomeDir() (string, error) {
 // is executed.
 func AllFdsCloseOnExec() error {
 	return unix.CloseRange(3, math.MaxInt32, unix.CLOSE_RANGE_CLOEXEC)
+}
+
+func writeCoverage() error {
+	coverdir := os.Getenv("GOCOVERDIR")
+	if coverdir != "" {
+		coverage.WriteMetaDir(coverdir)
+		coverage.WriteCountersDir(coverdir)
+	}
+	return nil
 }
