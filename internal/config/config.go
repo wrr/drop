@@ -22,7 +22,7 @@ type Net struct {
 type Config struct {
 	HomeVisible   []string `toml:"home_visible"`
 	HomeWriteable []string `toml:"home_writeable"`
-	Hide          []string `toml:"hide"`
+	Blocked       []string `toml:"blocked"`
 	EnvExpose     []string `toml:"env_expose"`
 	Net           Net      `toml:"net"`
 }

@@ -27,7 +27,7 @@ class Config:
                  home_visible: List[str] = None,
                  home_writeable: List[str] = None,
                  proc_readable: List[str] = None,
-                 hide: List[str] = None,
+                 blocked: List[str] = None,
                  env_expose: List[str] = None,
                  tcp_ports_to_host: List[str] = None,
                  tcp_ports_from_host: List[str] = None,
@@ -36,7 +36,7 @@ class Config:
         self.home_visible = home_visible or []
         self.home_writeable = home_writeable or []
         self.proc_readable = proc_readable or []
-        self.hide = hide or []
+        self.blocked = blocked or []
         self.env_expose = env_expose or []
         self.tcp_ports_to_host = tcp_ports_to_host or []
         self.tcp_ports_from_host = tcp_ports_from_host or []
@@ -49,7 +49,7 @@ class Config:
             f'home_visible = {str(self.home_visible)}',
             f'home_writeable = {str(self.home_writeable)}',
             f'proc_readable = {str(self.proc_readable)}',
-            f'hide = {str(self.hide)}',
+            f'blocked = {str(self.blocked)}',
             f'env_expose = {str(self.env_expose)}',
             '',
             '[net]',

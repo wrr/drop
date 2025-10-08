@@ -264,7 +264,7 @@ func TestParse(t *testing.T) {
 			tomlStr: `
 home_visible = ["/home/user/docs", "/tmp"]
 home_writeable = ["/home/user/work"]
-hide = ["/etc/shadow", "/root"]
+blocked = ["/mnt", "/root"]
 env_expose = ["HOME", "PATH", "LC_*"]
 
 [net]
@@ -277,7 +277,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			expected: Config{
 				HomeVisible:   []string{"/home/user/docs", "/tmp"},
 				HomeWriteable: []string{"/home/user/work"},
-				Hide:          []string{"/etc/shadow", "/root"},
+				Blocked:       []string{"/mnt", "/root"},
 				EnvExpose:     []string{"HOME", "PATH", "LC_*"},
 				Net: Net{
 					Mode:             "isolated",
@@ -295,7 +295,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			expected: Config{
 				HomeVisible:   nil,
 				HomeWriteable: nil,
-				Hide:          nil,
+				Blocked:       nil,
 				EnvExpose:     nil,
 				Net: Net{
 					Mode:             "isolated", // default
@@ -397,7 +397,7 @@ mode = "foo"
 
 			expectListEquals(t, "HomeVisible", result.HomeVisible, tt.expected.HomeVisible)
 			expectListEquals(t, "HomeWriteable", result.HomeWriteable, tt.expected.HomeWriteable)
-			expectListEquals(t, "Hide", result.Hide, tt.expected.Hide)
+			expectListEquals(t, "Blocked", result.Blocked, tt.expected.Blocked)
 			expectListEquals(t, "EnvExpose", result.EnvExpose, tt.expected.EnvExpose)
 
 			if result.Net.Mode != tt.expected.Net.Mode {
