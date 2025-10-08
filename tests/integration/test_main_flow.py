@@ -361,8 +361,10 @@ class TestMainFlow(unittest.TestCase):
 
     def test_pasta_not_found_error(self):
         # Ensure a helpful error message is shown when pasta binary is
-        # not found. Clear the PATH to make pasta unavailable
-        result = self.sandbox_run('ls', env={'PATH': ''})
+        # not found. Clear the PATH to make pasta unavailable.
+        env = os.environ.copy()
+        env['PATH'] = ''
+        result = self.sandbox_run('ls', env=env)
         self.assertEqual(1, result.returncode)
         self.assertIn(
             'pasta binary for isolated networking not found', result.stderr)
