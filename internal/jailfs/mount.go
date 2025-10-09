@@ -178,6 +178,7 @@ func createMountPoints(srcDir, dstDir string, entries []string) error {
 }
 
 func mountEtc(paths *Paths) error {
+	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_RDONLY)
 	// For DNS to work in the container /etc/resolv.conf needs to be
 	// overwritten. We use overlayfs for this instead of bind mounting
 	// /etc/resolv.conf. On Ubuntu /etc/resolv.conf is a symlink to
@@ -190,14 +191,15 @@ func mountEtc(paths *Paths) error {
 	//
 	// Readonly overlayfs does not require upperdir= and workdir= params.
 	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
-	if err := syscall.Mount("etc", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
+	if err := syscall.Mount("etc", paths.FsRoot+"/etc", "overlay", flags, opts); err != nil {
 		return fmt.Errorf("mount /etc failed: %v", err)
 	}
 	return nil
 }
 
 func mountRun(paths *Paths) error {
-	if err := syscall.Mount("run", paths.FsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
+	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV)
+	if err := syscall.Mount("run", paths.FsRoot+"/run", "tmpfs", flags, "mode=700"); err != nil {
 		return fmt.Errorf("mount /run failed: %v", err)
 	}
 	return nil
@@ -301,7 +303,8 @@ func doBind(src, dst string, mountflags uintptr) error {
 	// mount and remount is needed for RDONLY to work:
 	// https://github.com/opencontainers/runc/blob/675292473b3ad4c131b900806077148a556d78c9/libcontainer/rootfs_linux.go#L581
 	if mountflags&syscall.MS_RDONLY != 0 {
-		if err := syscall.Mount(dst, dst, "", syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_BIND, ""); err != nil {
+		remountflags := uintptr(syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_BIND)
+		if err := syscall.Mount(dst, dst, "", remountflags, ""); err != nil {
 			return fmt.Errorf("readonly re-mount of %s failed: %v", dst, err)
 		}
 	}
@@ -358,7 +361,6 @@ func mountSys(paths *Paths, cfg *config.Config) error {
 		// Mounting /sys is allowed only within own network namespace
 		return nil
 	}
-
 	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV)
 	if err := syscall.Mount("sysfs", paths.FsRoot+"/sys", "sysfs",
 		flags, ""); err != nil {
