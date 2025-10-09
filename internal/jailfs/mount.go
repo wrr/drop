@@ -40,11 +40,7 @@ var alwaysBlocked = []string{
 	"/sys/firmware",
 }
 
-// ArrangeFilesystem sets up the jail filesystem chierarchy.  It mounts
-// root as read only, mounts a dedicated home directory with only some
-// entries from the host home dir exposed. Creates overlay for /etc,
-// sets up tmpfs for /run and /dev, exposes some device files from the
-// host, sets up /proc, and hides most of the proc entries.
+// ArrangeFilesystem sets up the jail filesystem chierarchy.
 func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	if err := bindDir("/", paths.FsRoot, syscall.MS_NOSUID|syscall.MS_REC|syscall.MS_RDONLY); err != nil {
 		return err
@@ -57,8 +53,8 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	if err := syscall.Mount("run", paths.FsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
-		return fmt.Errorf("mount /run failed: %v", err)
+	if err := mountRun(paths); err != nil {
+		return err
 	}
 
 	if err := mountDev(paths); err != nil {
@@ -177,6 +173,32 @@ func createMountPoints(srcDir, dstDir string, entries []string) error {
 		}
 		// Do nothing: if file/directory doesn't exist in the srcDir, it cannot be
 		// exposed with bind mount.
+	}
+	return nil
+}
+
+func mountEtc(paths *Paths) error {
+	// For DNS to work in the container /etc/resolv.conf needs to be
+	// overwritten. We use overlayfs for this instead of bind mounting
+	// /etc/resolv.conf. On Ubuntu /etc/resolv.conf is a symlink to
+	// ../run/systemd/resolve/stub-resolv.conf. It is not possible for a
+	// bind mount to replace a symlink, so our resolv.conf would still
+	// need to be at ../run/systemd/resolve/stub-resolv.conf. Having
+	// read-only overlayfs with our /etc/resolv.conf in a top level hides
+	// the symlink, so is more elegant and also allows to easily replace more
+	// config files as needed.
+	//
+	// Readonly overlayfs does not require upperdir= and workdir= params.
+	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
+	if err := syscall.Mount("etc", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
+		return fmt.Errorf("mount /etc failed: %v", err)
+	}
+	return nil
+}
+
+func mountRun(paths *Paths) error {
+	if err := syscall.Mount("run", paths.FsRoot+"/run", "tmpfs", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
+		return fmt.Errorf("mount /run failed: %v", err)
 	}
 	return nil
 }
@@ -349,25 +371,6 @@ func mountVar(paths *Paths) error {
 	flags := uintptr(syscall.MS_NOSUID)
 	if err := bindDir(paths.Var, paths.FsRoot+"/var", flags); err != nil {
 		return fmt.Errorf("mount /var failed: %v", err)
-	}
-	return nil
-}
-
-func mountEtc(paths *Paths) error {
-	// For DNS to work in the container /etc/resolv.conf needs to be
-	// overwritten. We use overlayfs for this instead of bind mounting
-	// /etc/resolv.conf. On Ubuntu /etc/resolv.conf is a symlink to
-	// ../run/systemd/resolve/stub-resolv.conf. It is not possible for a
-	// bind mount to replace a symlink, so our resolv.conf would still
-	// need to be at ../run/systemd/resolve/stub-resolv.conf. Having
-	// read-only overlayfs with our /etc/resolv.conf in a top level hides
-	// the symlink, so is more elegant and also allows to easily replace more
-	// config files as needed.
-	//
-	// Readonly overlayfs does not require upperdir= and workdir= params.
-	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
-	if err := syscall.Mount("etc", paths.FsRoot+"/etc", "overlay", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_RDONLY, opts); err != nil {
-		return fmt.Errorf("mount /etc failed: %v", err)
 	}
 	return nil
 }
