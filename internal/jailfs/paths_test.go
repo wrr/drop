@@ -179,3 +179,12 @@ func TestPathToEnvId(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultConfigPath(t *testing.T) {
+	homeDir := "/home/alice"
+	result := DefaultConfigPath(homeDir)
+	expected := "/home/alice/.drop/config"
+	if result != expected {
+		t.Errorf("DefaultConfigPath(%q) = %q", homeDir, result)
+	}
+}

@@ -16,8 +16,6 @@ type Paths struct {
 	// DotDir is the top-level directory where Drop files are stored
 	// (e.g. /home/alice/.drop).
 	DotDir string
-	// Config is the path to the Drop configuration file.
-	Config string
 	// Env is the entry point for all paths specific to the current
 	// environment. For example, if envId is 'project-foo', Env is
 	// /home/alice/.drop/envs/project-foo.
@@ -52,7 +50,7 @@ type Paths struct {
 
 // NewPaths creates Paths object with the relevant paths for the
 // current environment and creates missing dir and files.
-func NewPaths(envId string, hostHome string, configPath string, runDir string) (*Paths, error) {
+func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -60,16 +58,11 @@ func NewPaths(envId string, hostHome string, configPath string, runDir string) (
 
 	dotDir := filepath.Join(hostHome, ".drop")
 	env := filepath.Join(dotDir, "envs", envId)
-
-	if configPath == "" {
-		configPath = filepath.Join(dotDir, "config")
-	}
 	internal := filepath.Join(dotDir, "internal")
 
 	paths := Paths{
 		Cwd:       cwd,
 		DotDir:    dotDir,
-		Config:    configPath,
 		Env:       env,
 		FsRoot:    filepath.Join(runDir, "root"),
 		HostHome:  hostHome,
@@ -118,6 +111,10 @@ func NewRunDir(homeDir string, envId string) (string, error) {
 		return "", fmt.Errorf("failed to create run sub-directory: %v", err)
 	}
 	return path, nil
+}
+
+func DefaultConfigPath(hostHome string) string {
+	return filepath.Join(hostHome, ".drop", "config")
 }
 
 // ClearRunDir removes the jail instance specific runtime files, no longer

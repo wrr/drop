@@ -48,12 +48,12 @@ func main() {
 }
 
 func newPathsAndConfig(envId, homeDir, configPath, runDir string) (*jailfs.Paths, *config.Config, error) {
-	paths, err := jailfs.NewPaths(envId, homeDir, configPath, runDir)
+	paths, err := jailfs.NewPaths(envId, homeDir, runDir)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	cfg, err := config.Read(paths.Config)
+	cfg, err := config.Read(configPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -66,12 +66,18 @@ func parentProcessEntry() (int, error) {
 		return 1, fmt.Errorf("drop should not be run as root")
 	}
 
+	// Obtain home dir in the parent, because with -r option child we
+	// be run as root, but we don't want to use /root as the home dir.
+	homeDir, err := currentUserHomeDir()
+	if err != nil {
+		return 1, err
+	}
+	configPath := jailfs.DefaultConfigPath(homeDir)
 	var tcpPortsToHost []string
 	var tcpPortsFromHost []string
 	var udpPortsToHost []string
 	var udpPortsFromHost []string
 	var envId string
-	var configPath string
 	var networkMode string
 	var beRoot bool
 	flag.Usage = func() {
@@ -87,23 +93,16 @@ Options:
 	flag.Var((*stringSlice)(&udpPortsToHost), "u", "Publish UDP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]")
 	flag.Var((*stringSlice)(&udpPortsFromHost), "U", "Publish UDP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]")
 	flag.StringVar(&envId, "e", "", "Environment ID")
-	flag.StringVar(&configPath, "c", "", "Path to config file")
+	flag.StringVar(&configPath, "c", configPath, "Path to config file")
 	flag.StringVar(&networkMode, "n", "", "Network mode: off, isolated, or unjailed")
 	flag.BoolVar(&beRoot, "r", false, "Be root (uid 0) in the jail. Useful for running installation scripts that\n"+
 		"require to be run as root. This option doesn't grant any additional privileges to the jailed\n"+
 		"processes. For convenience, the home dir of a root user is not set to /root, but\n"+
 		"kept as the original home dir.")
 
-	err := flag.CommandLine.Parse(os.Args[1:])
+	err = flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
 		return 1, fmt.Errorf("failed to parse command line: %v", err)
-	}
-
-	// Obtain home dir in the parent, because with -r option child we
-	// be run as root, but we don't want to use /root as the home dir.
-	homeDir, err := currentUserHomeDir()
-	if err != nil {
-		return 1, err
 	}
 
 	if envId == "" {
