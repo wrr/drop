@@ -10,6 +10,36 @@ import (
 	"github.com/wrr/drop/internal/config"
 )
 
+// alwaysBlocked contains paths that are always blocked regardless of
+// user configuration. We block the same paths that runc default
+// configuration blocks.
+//
+// In addition runc default configuration sets
+// the following paths to be read-only:
+// "/proc/bus",
+// "/proc/fs",
+// "/proc/irq",
+// "/proc/sys",
+// "/proc/sysrq-trigger"
+// We skip this step, because Linux already makes these paths
+// read-only, perhaps this is needed in case container is started as root,
+// which Drop doesn't allow.
+//
+// The motivation for blocking /sys/firmware is here:
+// https://github.com/moby/moby/pull/26618
+var alwaysBlocked = []string{
+	"/proc/acpi",
+	"/proc/asound",
+	"/proc/kcore",
+	"/proc/keys",
+	"/proc/latency_stats",
+	"/proc/timer_list",
+	"/proc/timer_stats",
+	"/proc/sched_debug",
+	"/proc/scsi",
+	"/sys/firmware",
+}
+
 // ArrangeFilesystem sets up the jail filesystem chierarchy.  It mounts
 // root as read only, mounts a dedicated home directory with only some
 // entries from the host home dir exposed. Creates overlay for /etc,
@@ -61,7 +91,9 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	if err := blockFsRootEntries(paths, cfg.Blocked); err != nil {
+	// Combine always blocked paths with user-configured blocked paths
+	blockedPaths := append(alwaysBlocked, cfg.Blocked...)
+	if err := blockFsRootEntries(paths, blockedPaths); err != nil {
 		return err
 	}
 
@@ -296,33 +328,7 @@ func mountProc(paths *Paths) error {
 	if err := syscall.Mount("proc", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
 		return fmt.Errorf("mount proc failed: %v", err)
 	}
-	return blockProcEntries(paths)
-}
-
-// blockProcEntries hides the same /proc paths that runc default configuration
-// hides. In addition runc configures the following paths to be
-// read-only:
-// "/proc/bus",
-// "/proc/fs",
-// "/proc/irq",
-// "/proc/sys",
-// "/proc/sysrq-trigger"
-// We skip this step, because Linux already makes these paths
-// read-only, perhaps this is needed in case container is started as root,
-// which Drop doesn't allow.
-func blockProcEntries(paths *Paths) error {
-	hide := []string{
-		"/proc/acpi",
-		"/proc/asound",
-		"/proc/kcore",
-		"/proc/keys",
-		"/proc/latency_stats",
-		"/proc/timer_list",
-		"/proc/timer_stats",
-		"/proc/sched_debug",
-		"/proc/scsi",
-	}
-	return blockFsRootEntries(paths, hide)
+	return nil
 }
 
 func mountSys(paths *Paths, cfg *config.Config) error {
