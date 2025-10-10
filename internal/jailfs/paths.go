@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+
+	"github.com/wrr/drop/internal/osutil"
 )
 
 // Paths contains filesystem paths used to setup the jail.
@@ -76,7 +78,7 @@ func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 
 	toMkdir := []string{paths.FsRoot, paths.Home, paths.Etc, paths.Var}
 	for _, dir := range toMkdir {
-		if err := MkdirAll(dir); err != nil {
+		if err := osutil.MkdirAll(dir); err != nil {
 			return nil, err
 		}
 	}
@@ -103,7 +105,7 @@ func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 func NewRunDir(homeDir string, envId string) (string, error) {
 	parent := filepath.Join(homeDir, ".drop", "internal", "run")
 
-	if err := MkdirAll(parent); err != nil {
+	if err := osutil.MkdirAll(parent); err != nil {
 		return "", err
 	}
 	path, err := os.MkdirTemp(parent, fmt.Sprintf("%s-", envId))
@@ -121,16 +123,6 @@ func DefaultConfigPath(hostHome string) string {
 // needed when jail is exited.
 func CleanRunDir(path string) error {
 	return os.RemoveAll(path)
-}
-
-// MkdirAll is a simple wrapper over os.MkdirAll. It always uses
-// permissions 0700 and returns verbose error which can be propagated
-// up without adding an aditional context.
-func MkdirAll(path string) error {
-	if err := os.MkdirAll(path, 0700); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", path, err)
-	}
-	return nil
 }
 
 var envIdChars = `a-zA-Z0-9-_\.`

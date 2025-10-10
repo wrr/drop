@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/wrr/drop/internal/config"
+	"github.com/wrr/drop/internal/osutil"
 )
 
 // alwaysBlocked contains paths that are always blocked regardless of
@@ -111,11 +112,11 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 // jailed home are written to the overlayfs upper layer.
 func mountHome(paths *Paths, cfg *config.Config) error {
 	homeLower := filepath.Join(paths.Run, "home-lower")
-	if err := MkdirAll(homeLower); err != nil {
+	if err := osutil.MkdirAll(homeLower); err != nil {
 		return err
 	}
 	homeWork := filepath.Join(paths.Run, "home-work")
-	if err := MkdirAll(homeWork); err != nil {
+	if err := osutil.MkdirAll(homeWork); err != nil {
 		return err
 	}
 
@@ -162,7 +163,7 @@ func createMountPoints(srcDir, dstDir string, entries []string) error {
 		if info, err := os.Stat(src); err == nil {
 			// No error
 			if info.IsDir() {
-				if err := MkdirAll(dst); err != nil {
+				if err := osutil.MkdirAll(dst); err != nil {
 					return err
 				}
 			} else {
@@ -289,7 +290,7 @@ func bindFile(src, dst string, mountflags uintptr) error {
 }
 
 func bindDir(src, dst string, mountflags uintptr) error {
-	if err := MkdirAll(dst); err != nil {
+	if err := osutil.MkdirAll(dst); err != nil {
 		return err
 	}
 	return doBind(src, dst, mountflags)
@@ -314,7 +315,7 @@ func doBind(src, dst string, mountflags uintptr) error {
 // createEmptyFile creates an empty file and all its missing parent directories
 func createEmptyFile(path string) error {
 	parent := filepath.Dir(path)
-	if err := MkdirAll(parent); err != nil {
+	if err := osutil.MkdirAll(parent); err != nil {
 		return err
 	}
 
