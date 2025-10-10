@@ -19,6 +19,7 @@ import (
 	"github.com/wrr/drop/internal/env"
 	"github.com/wrr/drop/internal/jailfs"
 	"github.com/wrr/drop/internal/netns"
+	"github.com/wrr/drop/internal/osutil"
 )
 
 // stringSlice implements flag.Value interface for repeated string flags
@@ -45,20 +46,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 	}
 	os.Exit(exitCode)
-}
-
-func newPathsAndConfig(envId, homeDir, configPath, runDir string) (*jailfs.Paths, *config.Config, error) {
-	paths, err := jailfs.NewPaths(envId, homeDir, runDir)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	cfg, err := config.Read(configPath)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return paths, cfg, nil
 }
 
 func parentProcessEntry() (int, error) {
@@ -122,7 +109,14 @@ Options:
 	}
 	defer jailfs.CleanRunDir(runDir)
 
-	_, cfg, err := newPathsAndConfig(envId, homeDir, configPath, runDir)
+	if configPath == jailfs.DefaultConfigPath(homeDir) && !osutil.Exists(configPath) {
+		if err := config.WriteDefault(configPath, homeDir); err != nil {
+			return 1, fmt.Errorf("failed to create default config at %v: %v", configPath, err)
+		}
+		fmt.Fprintf(os.Stderr, "Wrote default Drop config to %s\n", configPath)
+	}
+
+	cfg, err := config.Read(configPath)
 	if err != nil {
 		return 1, err
 	}
@@ -327,10 +321,16 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	paths, cfg, err := newPathsAndConfig(envId, homeDir, configPath, runDir)
+	paths, err := jailfs.NewPaths(envId, homeDir, runDir)
 	if err != nil {
 		return 1, err
 	}
+
+	cfg, err := config.Read(configPath)
+	if err != nil {
+		return 1, err
+	}
+
 	if networkMode != "" {
 		cfg.Net.Mode = networkMode
 	}
