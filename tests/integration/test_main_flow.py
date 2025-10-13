@@ -277,7 +277,7 @@ class TestMainFlow(unittest.TestCase):
         cmd = 'cat /etc/resolv.conf'
         result = self.sandbox_run(cmd)
         self.assertSuccess(result)
-        self.assertIn('nameserver 10.0.2.3', result.stdout)
+        self.assertIn('nameserver 169.254.1.1', result.stdout)
 
     def test_blocked(self):
         # Test that blocked paths are inaccessible

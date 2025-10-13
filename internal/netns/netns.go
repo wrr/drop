@@ -45,7 +45,7 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 		"--config-net",
 		// Address to be used in the namespace as DNS. Pasta forwards DNS
 		// requests to this address to the actual host DNS.
-		"--dns-forward", "10.0.2.3",
+		"--dns-forward", "169.254.1.1",
 		"--pid", pidPath,
 		"--no-map-gw",
 		"--log-file", logPath,

@@ -35,6 +35,7 @@ func fileExists(path string) (bool, error) {
 }
 
 func writeResolvConf(path string) error {
-	content := "nameserver 10.0.2.3"
+	// Use the same address as podman with pasta
+	content := "nameserver 169.254.1.1"
 	return os.WriteFile(path, []byte(content), 0600)
 }
