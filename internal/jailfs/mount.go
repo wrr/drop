@@ -140,7 +140,14 @@ func mountHome(paths *Paths, cfg *config.Config) error {
 	// Mount home dir as overlayfs, lowerdir holds only mount points,
 	// upperdir is where the actual files are stored.
 	homeDst := filepath.Join(paths.FsRoot, paths.HostHome)
-	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", homeLower, paths.Home, homeWork)
+	// xino=off to disable Ubuntu 24.04 dmesg warning 'overlayfs: fs on
+	// '/home/...' does not support file handles, falling back to
+	// xino=off'. It is very unlikely for home dir overlayfs layers to be on
+	// different filesystems (~/.drop dir would need to be placed by the
+	// user on a different filesystem), when layers are on the same fs
+	// xino=on option has no effect.
+	// https://docs.kernel.org/filesystems/overlayfs.html
+	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,xino=off", homeLower, paths.Home, homeWork)
 	if err := syscall.Mount("home", homeDst, "overlay", syscall.MS_NOSUID, opts); err != nil {
 		return fmt.Errorf("mount home to %s failed: %v", homeDst, err)
 	}
