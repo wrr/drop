@@ -43,9 +43,10 @@ var alwaysBlocked = []string{
 
 // ArrangeFilesystem sets up the jail filesystem chierarchy.
 func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
-	if err := bindDir("/", paths.FsRoot, syscall.MS_NOSUID|syscall.MS_REC|syscall.MS_RDONLY); err != nil {
+	if err := mountRoot(paths); err != nil {
 		return err
 	}
+
 	if err := mountHome(paths, cfg); err != nil {
 		return err
 	}
@@ -94,6 +95,20 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
+	return nil
+}
+
+func mountRoot(paths *Paths) error {
+	// If there are any submounts MS_REC looks to be required in the
+	// usernamespace (mount fails without it). The reasoning could be
+	// that if a host is configured to hide some dirs content by
+	// mounting over these dirs, all these mounts need to be still
+	// available in the usernamespace, droping them by doing bind mount
+	// without MS_REC would allow to expose the hidden content.
+	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY)
+	if err := bindDir("/", paths.FsRoot, flags); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -270,7 +285,7 @@ func bindAll(srcDir, dstDir string, entries []string, readonly bool) error {
 
 		if info, err := os.Stat(src); err == nil {
 			if info.IsDir() {
-				if err := bindDir(src, dst, flags|syscall.MS_REC); err != nil {
+				if err := bindDir(src, dst, flags); err != nil {
 					return err
 				}
 			} else {
@@ -309,7 +324,7 @@ func doBind(src, dst string, mountflags uintptr) error {
 		return fmt.Errorf("mount %s to %s failed: %v", src, dst, err)
 	}
 	// mount and remount is needed for RDONLY to work:
-	// https://github.com/opencontainers/runc/blob/675292473b3ad4c131b900806077148a556d78c9/libcontainer/rootfs_linux.go#L581
+	// https://github.com/containerd/containerd/issues/1368
 	if mountflags&syscall.MS_RDONLY != 0 {
 		remountflags := uintptr(syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_BIND)
 		if err := syscall.Mount(dst, dst, "", remountflags, ""); err != nil {
