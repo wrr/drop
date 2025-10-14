@@ -99,12 +99,12 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 }
 
 func mountRoot(paths *Paths) error {
-	// If there are any submounts MS_REC looks to be required in the
-	// usernamespace (mount fails without it). The reasoning could be
-	// that if a host is configured to hide some dirs content by
-	// mounting over these dirs, all these mounts need to be still
-	// available in the usernamespace, droping them by doing bind mount
-	// without MS_REC would allow to expose the hidden content.
+	// If there are any submounts MS_REC is required in the
+	// usernamespace (mount fails without it). This is because if the
+	// host hides some dir content by mounting over it, all these mounts
+	// need to be still available in the user namespace.  If droping
+	// mounts by not using MS_REC option was possible, it would enable
+	// exposing of the hidden content (See man mount_namespaces).
 	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY)
 	if err := bindDir("/", paths.FsRoot, flags); err != nil {
 		return err
