@@ -202,7 +202,7 @@ Options:
 		// Code running in a user namespace just after clone() and before
 		// execve() system calls has all capabilities in this namespace.
 		// This allows such code to setup the namespace with mount()
-		// and chroot() calls.
+		// and pivot_root() calls.
 		// Unfortunately, GO doesn't allow to execute any user provided
 		// code between clone() and execve()
 		// (https://github.com/golang/go/issues/12125)
@@ -211,16 +211,15 @@ Options:
 		// longer has any capabilities in the namespace (unless it has
 		// root uid, but we don't want this). We need to pass required
 		// capabilities to this process, so the process can call mount()
-		// and chroot(), and then we drop these capabilities. For the
+		// and pivot_root(), and then we drop these capabilities. For the
 		// detailed description of how capabilities are propagated
 		// in the user namespace see: man 7 user_namespaces
 		//
 		// CAP_DAC_OVERRIDE and CAP_FOWNER are needed to mount overlayfs
 		//
-		// CAP_NET_ADMIN is needed to setup firewall with iptables
+		// CAP_NET_ADMIN is needed to setup firewall
 		AmbientCaps: []uintptr{
 			unix.CAP_SYS_ADMIN,
-			unix.CAP_SYS_CHROOT,
 			unix.CAP_DAC_OVERRIDE,
 			unix.CAP_FOWNER,
 			unix.CAP_NET_ADMIN,
@@ -339,19 +338,12 @@ func childProcessEntry() (int, error) {
 		return 1, fmt.Errorf("failed to write /etc files: %v", err)
 	}
 
-	if err := syscall.Chdir("/"); err != nil {
-		return 1, fmt.Errorf("chdir to / failed: %v", err)
-	}
-
 	if err := jailfs.ArrangeFilesystem(paths, cfg); err != nil {
 		return 1, err
 	}
 
-	if err := syscall.Chroot(paths.FsRoot); err != nil {
-		return 1, fmt.Errorf("chroot to %s failed: %v", paths.FsRoot, err)
-	}
-
-	// Change working directory to what it was originally
+	// Change working directory to what it was originally, but on the
+	// new filesystem root.
 	if err := syscall.Chdir(paths.Cwd); err != nil {
 		return 1, fmt.Errorf("chdir to %s failed: %v", paths.Cwd, err)
 	}

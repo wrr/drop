@@ -41,9 +41,27 @@ var alwaysBlocked = []string{
 	"/sys/firmware",
 }
 
-// ArrangeFilesystem sets up the jail filesystem chierarchy.
+// ArrangeFilesystem sets up the jail filesystem hierarchy.
 func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
-	if err := mountRoot(paths); err != nil {
+	// Change all mounts propagation to PRIVATE (default is SHARED). See man
+	// mount_namespaces and man 1 unshare.
+	//
+	// The important effect of this is that mounts done on the host
+	// while Drop instance is running are not accessible to this
+	// instance (Permission denied during access), they require Drop
+	// restart to become accessible. For example, if the user exposes
+	// /media as read-only to Drop, starts Drop and then mounts USB
+	// memory device to /media/usb, this memory device is not accessible
+	// within the running Drop instance. This is desirable, because Drop
+	// cannot force new mounts to be read-only, it can only set
+	// read-only flag for mounts existing while it is starting, so if
+	// such mounted USB was exposed by MS_SHARED mode, it would be
+	// writable from within Drop.
+	if err := mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); err != nil {
+		return fmt.Errorf("failed to remount / as private")
+	}
+
+	if err := mountRootSubDir(paths); err != nil {
 		return err
 	}
 
@@ -95,20 +113,73 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	return nil
+	return pivotRoot(paths)
 }
 
-func mountRoot(paths *Paths) error {
-	// If there are any submounts MS_REC is required in the
-	// usernamespace (mount fails without it). This is because if the
-	// host hides some dir content by mounting over it, all these mounts
-	// need to be still available in the user namespace.  If droping
-	// mounts by not using MS_REC option was possible, it would enable
-	// exposing of the hidden content (See man mount_namespaces).
-	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY)
-	if err := bindDir("/", paths.FsRoot, flags); err != nil {
+// mount is a simple wrapper over Mount which makes sure that target
+// directory exists. It creates target dir with permissions 0700 if it
+// is missing.
+func mount(source string, target string, fstype string, flags uintptr, data string) (err error) {
+	if err := osutil.MkdirAll(target); err != nil {
 		return err
 	}
+	return syscall.Mount(source, target, fstype, flags, data)
+}
+
+// mountRootSubDir bind mounts all exposed sub-dirs of /.
+func mountRootSubDir(paths *Paths) error {
+	// The initial approach was just to mount / into paths.fsRoot and
+	// then block paths configured to be not accessible. This had a nice
+	// property that / automatically had identical content to the host
+	// root (with some directories not accessible, but all directories
+	// present). The drawback was that all the original submounts of /
+	// become visible in Drop via /proc/mounts, and Linux does not allow
+	// to unmount them. For example, /snap dir has a ton of application
+	// specific mounts and mounting / makes all of them visible in Drop.
+	//
+	// If there are any submounts MS_REC is required in the
+	// user namespace (mount fails without it). This is because if the
+	// host hides some dir content by mounting over it, all these mounts
+	// need to be still available in the user namespace.  If dropping
+	// mounts by not using MS_REC option was possible, it would enable
+	// exposing of the hidden content (See man mount_namespaces).
+	//
+	// Unfortunately, submounts will not be set to read-only, so we need
+	// to iterate all the mounts and set read-only flag for them (TODO).
+	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY | syscall.MS_PRIVATE)
+	dirs := []string{"/usr", "/bin", "/lib", "/lib32", "/lib64", "/sbin",}
+
+	for _, src := range dirs {
+		info, err := os.Lstat(src)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("failed to stat %s: %v", src, err)
+		}
+
+		dst := filepath.Join(paths.FsRoot, src)
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			// src is a symbolic link, copy it (on many distros /bin /sbin
+			// /lib* are just links to sub dirs of /usr)
+			target, err := os.Readlink(src)
+			if err != nil {
+				return fmt.Errorf("failed to read symlink %s: %v", src, err)
+			}
+			if err := os.Symlink(target, dst); err != nil {
+				return fmt.Errorf("failed to create symlink %s -> %s: %v", dst, target, err)
+			}
+		} else if info.IsDir() {
+			// src is a directory, bind mount it
+			if err := bindDir(src, dst, flags); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("%s is neither a directory nor a symbolic link", src)
+		}
+	}
+
 	return nil
 }
 
@@ -163,7 +234,7 @@ func mountHome(paths *Paths, cfg *config.Config) error {
 	// xino=on option has no effect.
 	// https://docs.kernel.org/filesystems/overlayfs.html
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,xino=off", homeLower, paths.Home, homeWork)
-	if err := syscall.Mount("home", homeDst, "overlay", syscall.MS_NOSUID, opts); err != nil {
+	if err := mount("home", homeDst, "overlay", syscall.MS_NOSUID, opts); err != nil {
 		return fmt.Errorf("mount home to %s failed: %v", homeDst, err)
 	}
 
@@ -214,7 +285,7 @@ func mountEtc(paths *Paths) error {
 	//
 	// Readonly overlayfs does not require upperdir= and workdir= params.
 	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
-	if err := syscall.Mount("etc", paths.FsRoot+"/etc", "overlay", flags, opts); err != nil {
+	if err := mount("etc", paths.FsRoot+"/etc", "overlay", flags, opts); err != nil {
 		return fmt.Errorf("mount /etc failed: %v", err)
 	}
 	return nil
@@ -222,21 +293,19 @@ func mountEtc(paths *Paths) error {
 
 func mountRun(paths *Paths) error {
 	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV)
-	if err := syscall.Mount("run", paths.FsRoot+"/run", "tmpfs", flags, "mode=700"); err != nil {
+	if err := mount("run", paths.FsRoot+"/run", "tmpfs", flags, "mode=700"); err != nil {
 		return fmt.Errorf("mount /run failed: %v", err)
 	}
 	return nil
 }
 
 func mountDev(paths *Paths) error {
+	devDst := paths.FsRoot + "/dev"
 	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID)
-	if err := syscall.Mount("dev", paths.FsRoot+"/dev", "tmpfs", flags, "mode=700"); err != nil {
+	if err := mount("dev", devDst, "tmpfs", flags, "mode=700"); err != nil {
 		return fmt.Errorf("mount /dev failed: %v", err)
 	}
-	if err := os.Mkdir(paths.FsRoot+"/dev/shm", 0700); err != nil {
-		return err
-	}
-	if err := syscall.Mount("dev-shm", paths.FsRoot+"/dev/shm", "tmpfs", flags|syscall.MS_NODEV, "mode=1700"); err != nil {
+	if err := mount("dev-shm", devDst+"/shm", "tmpfs", flags|syscall.MS_NODEV, "mode=1700"); err != nil {
 		return fmt.Errorf("mount /dev/shm failed: %v", err)
 	}
 
@@ -244,15 +313,12 @@ func mountDev(paths *Paths) error {
 	// even if unix.CAP_MKNOD is passed, so we map some host devices to
 	// the container /dev instead.
 	devices := []string{"null", "zero", "full", "random", "urandom"}
-	if err := bindAll("/dev", paths.FsRoot+"/dev", devices, false); err != nil {
+	if err := bindAll("/dev", devDst, devices, false); err != nil {
 		return err
 	}
 
-	if err := os.Mkdir(paths.FsRoot+"/dev/pts", 0700); err != nil {
-		return err
-	}
 	opts := "mode=600,newinstance,ptmxmode=600"
-	if err := syscall.Mount("dev-pts", paths.FsRoot+"/dev/pts", "devpts", flags, opts); err != nil {
+	if err := mount("dev-pts", devDst+"/pts", "devpts", flags, opts); err != nil {
 		return fmt.Errorf("mount /dev/pts failed: %v", err)
 	}
 
@@ -265,7 +331,7 @@ func mountDev(paths *Paths) error {
 		"core":   "/proc/kcore",
 	}
 	for name, target := range symlinks {
-		if err := os.Symlink(target, paths.FsRoot+"/dev/"+name); err != nil {
+		if err := os.Symlink(target, devDst+"/"+name); err != nil {
 			return fmt.Errorf("failed to create %s symlink: %v", name, err)
 		}
 	}
@@ -373,7 +439,7 @@ func cleanDir(dir string) string {
 }
 
 func mountProc(paths *Paths) error {
-	if err := syscall.Mount("proc", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
+	if err := mount("proc", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
 		return fmt.Errorf("mount proc failed: %v", err)
 	}
 	return nil
@@ -385,7 +451,7 @@ func mountSys(paths *Paths, cfg *config.Config) error {
 		return nil
 	}
 	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV)
-	if err := syscall.Mount("sysfs", paths.FsRoot+"/sys", "sysfs",
+	if err := mount("sysfs", paths.FsRoot+"/sys", "sysfs",
 		flags, ""); err != nil {
 		return fmt.Errorf("mount /sys failed: %v", err)
 	}
@@ -424,5 +490,31 @@ func blockFsRootEntries(paths *Paths, entries []string) error {
 			}
 		}
 	}
+	return nil
+}
+
+// pivotRoot changes root to be paths.FsRoot and unmount the original
+// mount tree.
+func pivotRoot(paths *Paths) error {
+	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY | syscall.MS_PRIVATE)
+	// Pivot root new root dir must be a mount point, but paths.FsRoot
+	// is a normal dir, so bind mount it to itself. This also makes
+	// it read-only, which is preferred.
+	if err := bindDir(paths.FsRoot, paths.FsRoot, flags); err != nil {
+		return fmt.Errorf("failed to mount %s: %v", paths.FsRoot, err)
+	}
+
+	tmpDir := os.TempDir()
+	oldRoot := filepath.Join(paths.FsRoot, tmpDir)
+	// tmp dir will point to the old root, and then the old root is unmounted.
+	if err := syscall.PivotRoot(paths.FsRoot, oldRoot); err != nil {
+		return fmt.Errorf("pivot root to %s failed: %v", paths.FsRoot, err)
+	}
+	// Unmounting of the whole root is allowed, only unmounting
+	// individual submounts is not permitted.
+	if err := syscall.Unmount(tmpDir, syscall.MNT_DETACH); err != nil {
+		return fmt.Errorf("unmounting root filesystem failed: %v", err)
+	}
+
 	return nil
 }

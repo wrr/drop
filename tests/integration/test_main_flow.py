@@ -281,9 +281,9 @@ class TestMainFlow(unittest.TestCase):
 
     def test_blocked(self):
         # Test that blocked paths are inaccessible
-        config = Config(blocked=['/mnt', '/etc/passwd'])
+        config = Config(blocked=['/var', '/etc/passwd'])
 
-        result = self.sandbox_run('ls /mnt', config=config)
+        result = self.sandbox_run('ls /var', config=config)
         self.assertNotEqual(0, result.returncode)
         self.assertIn('Permission denied', result.stderr)
 
