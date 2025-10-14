@@ -385,7 +385,7 @@ class TestMainFlow(unittest.TestCase):
         # expose TCP port 20112 from the sandbox to the host
         process = self.sandbox_run_background(
             'bash -c "echo -n "hello" | nc -4 -l -p 20112"',
-            config=Config(tcp_ports_to_host=["20112"]),
+            config=Config(tcp_ports_to_host=['20112']),
         )
 
         response = loopback_read_tcp(20112)
@@ -395,7 +395,7 @@ class TestMainFlow(unittest.TestCase):
         # expose UDP port 20112 from the sandbox to the host
         process = self.sandbox_run_background(
             'bash -c "echo -n "hello" | nc -4 -W 1 -u -l -p 20112"',
-            config=Config(udp_ports_to_host=["20112"]),
+            config=Config(udp_ports_to_host=['20112']),
         )
 
         response = loopback_read_udp(20112)
@@ -452,17 +452,17 @@ class TestMainFlow(unittest.TestCase):
     def test_blocked_fs_entries(self):
         """Test that sensitive entries are not readable"""
         blocked_entries = [
-            "/proc/acpi",
-            "/proc/asound",
-            "/proc/kcore",
-            "/proc/keys",
-            "/proc/latency_stats",
-            "/proc/timer_list",
-            "/proc/scsi",
+            '/proc/acpi',
+            '/proc/asound',
+            '/proc/kcore',
+            '/proc/keys',
+            '/proc/latency_stats',
+            '/proc/timer_list',
+            '/proc/scsi',
             # not always present:
-            #"timer_stats",
-            #"sched_debug",
-            "/sys/firmware/",
+            #'timer_stats',
+            #'sched_debug',
+            '/sys/firmware/',
         ]
 
         for path in blocked_entries:
@@ -476,6 +476,27 @@ class TestMainFlow(unittest.TestCase):
                 result = self.sandbox_run(f'chmod 644 {path}')
                 self.assertEqual(1, result.returncode)
                 self.assertIn('Read-only file system', result.stderr)
+
+    def test_not_exposed_root_sub_dirs(self):
+        # These dirs are not exposed to Drop by default
+        not_exposed_dirs = ['/root', '/boot', '/snap']
+
+        for path in not_exposed_dirs:
+            with self.subTest(path=path):
+                result = self.sandbox_run(f'ls {path}')
+                self.assertEqual(2, result.returncode)
+                self.assertIn('No such file or directory', result.stderr)
+
+    def test_snap_mounts_hidden(self):
+        """Test that not needed host mounts are not visible in sandbox"""
+        result = self.sandbox_run('cat /proc/self/mounts')
+        self.assertSuccess(result)
+
+        mount_lines = result.stdout.strip().split('\n')
+        snap_mounts = [line for line in mount_lines if ' /snap/' in line]
+
+        self.assertEqual(0, len(snap_mounts),
+                         f'Unexpected /snap/ mounts in sandbox: {snap_mounts}')
 
 
 

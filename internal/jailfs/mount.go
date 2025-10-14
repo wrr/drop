@@ -147,7 +147,7 @@ func mountRootSubDir(paths *Paths) error {
 	// Unfortunately, submounts will not be set to read-only, so we need
 	// to iterate all the mounts and set read-only flag for them (TODO).
 	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY | syscall.MS_PRIVATE)
-	dirs := []string{"/usr", "/bin", "/lib", "/lib32", "/lib64", "/sbin",}
+	dirs := []string{"/usr", "/bin", "/lib", "/lib32", "/lib64", "/sbin"}
 
 	for _, src := range dirs {
 		info, err := os.Lstat(src)
