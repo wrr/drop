@@ -41,93 +41,89 @@ var alwaysBlocked = []string{
 	"/sys/firmware",
 }
 
-// ArrangeFilesystem sets up the jail filesystem hierarchy.
-func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
-	// Change all mounts propagation to PRIVATE (default is SHARED). See man
-	// mount_namespaces and man 1 unshare.
-	//
-	// The important effect of this is that mounts done on the host
-	// while Drop instance is running are not accessible to this
-	// instance (Permission denied during access), they require Drop
-	// restart to become accessible. For example, if the user exposes
-	// /media as read-only to Drop, starts Drop and then mounts USB
-	// memory device to /media/usb, this memory device is not accessible
-	// within the running Drop instance. This is desirable, because Drop
-	// cannot force new mounts to be read-only, it can only set
-	// read-only flag for mounts existing while it is starting, so if
-	// such mounted USB was exposed by MS_SHARED mode, it would be
-	// writable from within Drop.
-	if err := mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); err != nil {
-		return fmt.Errorf("failed to remount / as private")
-	}
+// root holds new root filesystem mounting state and provides
+// operations to assemble the new root filesystem.  All mounting
+// operations targets are relative to the fsRoot (new root).
+type root struct {
+	// Path where new root filesystem is assembled. Once assembled,
+	// pivot() switches root.
+	fsRoot string
+}
 
-	if err := mountRootSubDir(paths); err != nil {
-		return err
-	}
-
-	if err := mountHome(paths, cfg); err != nil {
-		return err
-	}
-
-	if err := mountEtc(paths); err != nil {
-		return err
-	}
-
-	if err := mountRun(paths); err != nil {
-		return err
-	}
-
-	if err := mountDev(paths); err != nil {
-		return err
-	}
-
-	tmpDst := filepath.Join(paths.FsRoot, os.TempDir())
-	if err := bindDir(paths.Tmp, tmpDst, 0); err != nil {
-		return err
-	}
-
-	// Mount current working directory and it's subdirs as readable and
-	// writable, but only if Cwd is not the home directory or a parent of it,
-	// to avoid exposing the original home directory.
-	if !isSubDirOrSame(paths.Cwd, paths.HostHome) {
-		if err := bindDir(paths.Cwd, filepath.Join(paths.FsRoot, paths.Cwd), 0); err != nil {
+// mount is a wrapper over syscall.mount.
+// target argument is relative to FsRoot. mount ensures that trg
+// exists, if it is missing creates directory with permissions 0700 at the target.
+func (rt *root) mount(src, trg, fstype string, flags uintptr, data string) (err error) {
+	absTrg := filepath.Join(rt.fsRoot, trg)
+	if !osutil.Exists(absTrg) {
+		if err := osutil.MkdirAll(absTrg); err != nil {
 			return err
 		}
 	}
-
-	if err := mountProc(paths); err != nil {
-		return err
+	if err := syscall.Mount(src, absTrg, fstype, flags, data); err != nil {
+		return fmt.Errorf("mount %v failed: %v", trg, err)
 	}
-
-	if err := mountSys(paths, cfg); err != nil {
-		return err
-	}
-
-	if err := mountVar(paths); err != nil {
-		return err
-	}
-
-	// Combine always blocked paths with user-configured blocked paths
-	blockedPaths := append(alwaysBlocked, cfg.Blocked...)
-	if err := blockFsRootEntries(paths, blockedPaths); err != nil {
-		return err
-	}
-
-	return pivotRoot(paths)
+	return nil
 }
 
-// mount is a simple wrapper over Mount which makes sure that target
-// directory exists. It creates target dir with permissions 0700 if it
-// is missing.
-func mount(source string, target string, fstype string, flags uintptr, data string) (err error) {
-	if err := osutil.MkdirAll(target); err != nil {
-		return err
+func (rt *root) bindFile(src, trg string, mountflags uintptr) error {
+	absTrg := filepath.Join(rt.fsRoot, trg)
+	// Mount destination must exist, create an empty file to be the
+	// destination mount point
+	if _, err := os.Stat(absTrg); os.IsNotExist(err) {
+		if err := createEmptyFile(absTrg); err != nil {
+			return err
+		}
 	}
-	return syscall.Mount(source, target, fstype, flags, data)
+	return rt.bind(src, trg, mountflags)
+}
+
+func (rt *root) bind(src, trg string, mountflags uintptr) error {
+	mountflags |= syscall.MS_BIND
+	if err := rt.mount(src, trg, "", mountflags, ""); err != nil {
+		return fmt.Errorf("mount %s to %s failed: %v", src, trg, err)
+	}
+	absTrg := filepath.Join(rt.fsRoot, trg)
+	// mount and remount is needed for RDONLY to work:
+	// https://github.com/containerd/containerd/issues/1368
+	if mountflags&syscall.MS_RDONLY != 0 {
+		remountflags := uintptr(syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_BIND)
+		if err := syscall.Mount(absTrg, absTrg, "", remountflags, ""); err != nil {
+			return fmt.Errorf("readonly re-mount of %s failed: %v", trg, err)
+		}
+	}
+	return nil
+}
+
+func (rt *root) bindAll(srcDir, trgDir string, entries []string, readonly bool) error {
+	flags := uintptr(0)
+	if readonly {
+		flags |= syscall.MS_RDONLY
+	}
+
+	for _, entry := range entries {
+		src := filepath.Join(srcDir, entry)
+		trg := filepath.Join(trgDir, entry)
+
+		if info, err := os.Stat(src); err == nil {
+			if info.IsDir() {
+				if err := rt.bind(src, trg, flags); err != nil {
+					return err
+				}
+			} else {
+				if err := rt.bindFile(src, trg, flags); err != nil {
+					return err
+				}
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "Not mounting %s, no such file or directory\n", src)
+		}
+	}
+	return nil
 }
 
 // mountRootSubDir bind mounts all exposed sub-dirs of /.
-func mountRootSubDir(paths *Paths) error {
+func (rt *root) mountRootSubDir() error {
 	// The initial approach was just to mount / into paths.fsRoot and
 	// then block paths configured to be not accessible. This had a nice
 	// property that / automatically had identical content to the host
@@ -145,38 +141,38 @@ func mountRootSubDir(paths *Paths) error {
 	// exposing of the hidden content (See man mount_namespaces).
 	//
 	// Unfortunately, submounts will not be set to read-only, so we need
-	// to iterate all the mounts and set read-only flag for them (TODO).
+	// to iterate all the mounts to detect submount and set read-only
+	// flag for them (TODO).
 	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY | syscall.MS_PRIVATE)
 	dirs := []string{"/usr", "/bin", "/lib", "/lib32", "/lib64", "/sbin"}
 
-	for _, src := range dirs {
-		info, err := os.Lstat(src)
+	for _, dir := range dirs {
+		info, err := os.Lstat(dir)
 		if os.IsNotExist(err) {
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("failed to stat %s: %v", src, err)
+			return fmt.Errorf("failed to stat %s: %v", dir, err)
 		}
 
-		dst := filepath.Join(paths.FsRoot, src)
+		dstDir := filepath.Join(rt.fsRoot, dir)
 
 		if info.Mode()&os.ModeSymlink != 0 {
-			// src is a symbolic link, copy it (on many distros /bin /sbin
+			// dir is a symbolic link, copy it (on many distros /bin /sbin
 			// /lib* are just links to sub dirs of /usr)
-			target, err := os.Readlink(src)
+			target, err := os.Readlink(dir)
 			if err != nil {
-				return fmt.Errorf("failed to read symlink %s: %v", src, err)
+				return fmt.Errorf("failed to read symlink %s: %v", dir, err)
 			}
-			if err := os.Symlink(target, dst); err != nil {
-				return fmt.Errorf("failed to create symlink %s -> %s: %v", dst, target, err)
+			if err := os.Symlink(target, dstDir); err != nil {
+				return fmt.Errorf("failed to create symlink %s -> %s: %v", dstDir, target, err)
 			}
 		} else if info.IsDir() {
-			// src is a directory, bind mount it
-			if err := bindDir(src, dst, flags); err != nil {
+			if err := rt.bind(dir, dir, flags); err != nil {
 				return err
 			}
 		} else {
-			return fmt.Errorf("%s is neither a directory nor a symbolic link", src)
+			return fmt.Errorf("%s is neither a directory nor a symbolic link", dir)
 		}
 	}
 
@@ -196,7 +192,7 @@ func mountRootSubDir(paths *Paths) error {
 // lowerdir of the overlayfs (kept in the jails's 'run' dir), which is
 // removed when the jail terminates. The actual files created in the
 // jailed home are written to the overlayfs upper layer.
-func mountHome(paths *Paths, cfg *config.Config) error {
+func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
 	homeLower := filepath.Join(paths.Run, "home-lower")
 	if err := osutil.MkdirAll(homeLower); err != nil {
 		return err
@@ -205,12 +201,12 @@ func mountHome(paths *Paths, cfg *config.Config) error {
 	if err := osutil.MkdirAll(homeWork); err != nil {
 		return err
 	}
-
+	hostHome := paths.HostHome
 	mountPoints := append(cfg.HomeVisible, cfg.HomeWriteable...)
-	if isSubDir(paths.HostHome, paths.Cwd) {
+	if isSubDir(hostHome, paths.Cwd) {
 		// If CWD is a subdir of home, a mountpoint for it is also needed,
 		// as CWD is mounted read-write.
-		cwdRelPath, err := filepath.Rel(paths.HostHome, paths.Cwd)
+		cwdRelPath, err := filepath.Rel(hostHome, paths.Cwd)
 		if err != nil {
 			return err
 		}
@@ -219,13 +215,12 @@ func mountHome(paths *Paths, cfg *config.Config) error {
 
 	// Create empty files and dirs to be mount point in the overlayfs
 	// lower dir.
-	if err := createMountPoints(paths.HostHome, homeLower, mountPoints); err != nil {
+	if err := createMountPoints(hostHome, homeLower, mountPoints); err != nil {
 		return err
 	}
 
 	// Mount home dir as overlayfs, lowerdir holds only mount points,
 	// upperdir is where the actual files are stored.
-	homeDst := filepath.Join(paths.FsRoot, paths.HostHome)
 	// xino=off to disable Ubuntu 24.04 dmesg warning 'overlayfs: fs on
 	// '/home/...' does not support file handles, falling back to
 	// xino=off'. It is very unlikely for home dir overlayfs layers to be on
@@ -234,44 +229,21 @@ func mountHome(paths *Paths, cfg *config.Config) error {
 	// xino=on option has no effect.
 	// https://docs.kernel.org/filesystems/overlayfs.html
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,xino=off", homeLower, paths.Home, homeWork)
-	if err := mount("home", homeDst, "overlay", syscall.MS_NOSUID, opts); err != nil {
-		return fmt.Errorf("mount home to %s failed: %v", homeDst, err)
-	}
-
-	if err := bindAll(paths.HostHome, homeDst, cfg.HomeVisible, true); err != nil {
+	if err := rt.mount("home", hostHome, "overlay", syscall.MS_NOSUID, opts); err != nil {
 		return err
 	}
-	if err := bindAll(paths.HostHome, homeDst, cfg.HomeWriteable, false); err != nil {
+
+	if err := rt.bindAll(hostHome, hostHome, cfg.HomeVisible, true); err != nil {
+		return err
+	}
+	if err := rt.bindAll(hostHome, hostHome, cfg.HomeWriteable, false); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func createMountPoints(srcDir, dstDir string, entries []string) error {
-	for _, entry := range entries {
-		src := filepath.Join(srcDir, entry)
-		dst := filepath.Join(dstDir, entry)
-
-		if info, err := os.Stat(src); err == nil {
-			// No error
-			if info.IsDir() {
-				if err := osutil.MkdirAll(dst); err != nil {
-					return err
-				}
-			} else {
-				if err := createEmptyFile(dst); err != nil {
-					return err
-				}
-			}
-		}
-		// Do nothing: if file/directory doesn't exist in the srcDir, it cannot be
-		// exposed with bind mount.
-	}
-	return nil
-}
-
-func mountEtc(paths *Paths) error {
+func (rt *root) mountEtc(paths *Paths) error {
 	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_RDONLY)
 	// For DNS to work in the container /etc/resolv.conf needs to be
 	// overwritten. We use overlayfs for this instead of bind mounting
@@ -285,41 +257,40 @@ func mountEtc(paths *Paths) error {
 	//
 	// Readonly overlayfs does not require upperdir= and workdir= params.
 	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
-	if err := mount("etc", paths.FsRoot+"/etc", "overlay", flags, opts); err != nil {
-		return fmt.Errorf("mount /etc failed: %v", err)
+	if err := rt.mount("etc", "/etc", "overlay", flags, opts); err != nil {
+		return err
 	}
 	return nil
 }
 
-func mountRun(paths *Paths) error {
+func (rt *root) mountRun() error {
 	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV)
-	if err := mount("run", paths.FsRoot+"/run", "tmpfs", flags, "mode=700"); err != nil {
-		return fmt.Errorf("mount /run failed: %v", err)
+	if err := rt.mount("run", "/run", "tmpfs", flags, "mode=700"); err != nil {
+		return err
 	}
 	return nil
 }
 
-func mountDev(paths *Paths) error {
-	devDst := paths.FsRoot + "/dev"
+func (rt *root) mountDev() error {
 	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID)
-	if err := mount("dev", devDst, "tmpfs", flags, "mode=700"); err != nil {
-		return fmt.Errorf("mount /dev failed: %v", err)
+	if err := rt.mount("dev", "/dev", "tmpfs", flags, "mode=700"); err != nil {
+		return err
 	}
-	if err := mount("dev-shm", devDst+"/shm", "tmpfs", flags|syscall.MS_NODEV, "mode=1700"); err != nil {
-		return fmt.Errorf("mount /dev/shm failed: %v", err)
+	if err := rt.mount("dev-shm", "/dev/shm", "tmpfs", flags|syscall.MS_NODEV, "mode=1700"); err != nil {
+		return err
 	}
 
 	// mkdev is not allowed in the container when running as a user,
 	// even if unix.CAP_MKNOD is passed, so we map some host devices to
 	// the container /dev instead.
 	devices := []string{"null", "zero", "full", "random", "urandom"}
-	if err := bindAll("/dev", devDst, devices, false); err != nil {
+	if err := rt.bindAll("/dev", "/dev", devices, false); err != nil {
 		return err
 	}
 
 	opts := "mode=600,newinstance,ptmxmode=600"
-	if err := mount("dev-pts", devDst+"/pts", "devpts", flags, opts); err != nil {
-		return fmt.Errorf("mount /dev/pts failed: %v", err)
+	if err := rt.mount("dev-pts", "/dev/pts", "devpts", flags, opts); err != nil {
+		return err
 	}
 
 	symlinks := map[string]string{
@@ -330,8 +301,9 @@ func mountDev(paths *Paths) error {
 		"fd":     "/proc/self/fd",
 		"core":   "/proc/kcore",
 	}
+	devTrg := filepath.Join(rt.fsRoot, "/dev")
 	for name, target := range symlinks {
-		if err := os.Symlink(target, devDst+"/"+name); err != nil {
+		if err := os.Symlink(target, devTrg+"/"+name); err != nil {
 			return fmt.Errorf("failed to create %s symlink: %v", name, err)
 		}
 	}
@@ -339,63 +311,183 @@ func mountDev(paths *Paths) error {
 	return nil
 }
 
-func bindAll(srcDir, dstDir string, entries []string, readonly bool) error {
-	flags := uintptr(0)
-	if readonly {
-		flags |= syscall.MS_RDONLY
+func (rt *root) mountProc() error {
+	if err := rt.mount("proc", "/proc", "proc", 0, ""); err != nil {
+		return err
 	}
+	return nil
+}
 
-	for _, entry := range entries {
-		src := filepath.Join(srcDir, entry)
-		dst := filepath.Join(dstDir, entry)
+func (rt *root) mountSys(cfg *config.Config) error {
+	if cfg.Net.Mode == "unjailed" {
+		// Mounting /sys is allowed only within own network namespace
+		return nil
+	}
+	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV)
+	if err := rt.mount("sysfs", "/sys", "sysfs",
+		flags, ""); err != nil {
+		return err
+	}
+	return nil
+}
 
-		if info, err := os.Stat(src); err == nil {
-			if info.IsDir() {
-				if err := bindDir(src, dst, flags); err != nil {
-					return err
-				}
-			} else {
-				if err := bindFile(src, dst, flags); err != nil {
-					return err
-				}
+func (rt *root) mountVar(paths *Paths) error {
+	flags := uintptr(syscall.MS_NOSUID)
+	if err := rt.bind(paths.Var, "/var", flags); err != nil {
+		return err
+	}
+	return nil
+}
+
+// blockEntries blocks access to file system entries by bind
+// mounting empty files/directories over them.
+func (rt *root) blockEntries(paths *Paths, entries []string) error {
+	for _, blockedPath := range entries {
+		fullPath := filepath.Join(paths.FsRoot, blockedPath)
+		info, err := os.Stat(fullPath)
+		if os.IsNotExist(err) {
+			// Path doesn't exist, nothing to block
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("failed to stat %s: %v", fullPath, err)
+		}
+
+		if info.IsDir() {
+			if err := rt.bind(paths.EmptyDir, blockedPath, syscall.MS_RDONLY); err != nil {
+				return fmt.Errorf("failed to block directory %s: %v", blockedPath, err)
 			}
 		} else {
-			fmt.Fprintf(os.Stderr, "Not mounting %s, no such file or directory\n", src)
+			if err := rt.bindFile(paths.EmptyFile, blockedPath, syscall.MS_RDONLY); err != nil {
+				return fmt.Errorf("failed to block file %s: %v", blockedPath, err)
+			}
 		}
 	}
 	return nil
 }
 
-func bindFile(src, dst string, mountflags uintptr) error {
-	// Mount destination must exist, create an empty file to be the
-	// destination mount point
-	if _, err := os.Stat(dst); os.IsNotExist(err) {
-		if err := createEmptyFile(dst); err != nil {
+// pivot changes root to be paths.FsRoot and unmounts the original
+// mount tree.
+func (rt *root) pivot() error {
+	newRoot := rt.fsRoot
+	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY | syscall.MS_PRIVATE)
+	// Pivot root new root dir must be a mount point, but paths.FsRoot
+	// is a normal dir, so bind mount it to itself. This also makes
+	// it read-only, which is preferred.
+	if err := rt.bind(newRoot, "/", flags); err != nil {
+		return err
+	}
+
+	tmpDir := os.TempDir()
+	oldRoot := filepath.Join(newRoot, tmpDir)
+	// tmp dir will point to the old root, and then the old root is unmounted.
+	if err := syscall.PivotRoot(newRoot, oldRoot); err != nil {
+		return fmt.Errorf("pivot root to %s failed: %v", newRoot, err)
+	}
+	// Unmounting of the whole root is allowed, only unmounting
+	// individual submounts is not permitted.
+	if err := syscall.Unmount(tmpDir, syscall.MNT_DETACH); err != nil {
+		return fmt.Errorf("unmounting root filesystem failed: %v", err)
+	}
+
+	return nil
+}
+
+// ArrangeFilesystem sets up the jail filesystem hierarchy.
+func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
+	// Change all mounts propagation to PRIVATE (default is SHARED). See man
+	// mount_namespaces and man 1 unshare.
+	//
+	// The important effect of this is that mounts done on the host
+	// while Drop instance is running are not accessible to this
+	// instance (Permission denied during access), they require Drop
+	// restart to become accessible. For example, if the user exposes
+	// /media as read-only to Drop, starts Drop and then mounts USB
+	// memory device to /media/usb, this memory device is not accessible
+	// within the running Drop instance. This is desirable, because Drop
+	// cannot force new mounts to be read-only, it can only set
+	// read-only flag for mounts existing while it is starting, so if
+	// such mounted USB was exposed by MS_SHARED mode, it would be
+	// writable from within Drop.
+	if err := syscall.Mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); err != nil {
+		return fmt.Errorf("failed to remount / as private")
+	}
+
+	rt := &root{fsRoot: paths.FsRoot}
+
+	if err := rt.mountRootSubDir(); err != nil {
+		return err
+	}
+
+	if err := rt.mountHome(paths, cfg); err != nil {
+		return err
+	}
+
+	if err := rt.mountEtc(paths); err != nil {
+		return err
+	}
+
+	if err := rt.mountRun(); err != nil {
+		return err
+	}
+
+	if err := rt.mountDev(); err != nil {
+		return err
+	}
+
+	if err := rt.bind(paths.Tmp, os.TempDir(), 0); err != nil {
+		return err
+	}
+
+	// Mount current working directory and it's subdirs as readable and
+	// writable, but only if Cwd is not the home directory or a parent of it,
+	// to avoid exposing the original home directory.
+	if !isSubDirOrSame(paths.Cwd, paths.HostHome) {
+		if err := rt.bind(paths.Cwd, paths.Cwd, 0); err != nil {
 			return err
 		}
 	}
-	return doBind(src, dst, mountflags)
-}
 
-func bindDir(src, dst string, mountflags uintptr) error {
-	if err := osutil.MkdirAll(dst); err != nil {
+	if err := rt.mountProc(); err != nil {
 		return err
 	}
-	return doBind(src, dst, mountflags)
+
+	if err := rt.mountSys(cfg); err != nil {
+		return err
+	}
+
+	if err := rt.mountVar(paths); err != nil {
+		return err
+	}
+
+	// Combine always blocked paths with user-configured blocked paths
+	blockedPaths := append(alwaysBlocked, cfg.Blocked...)
+	if err := rt.blockEntries(paths, blockedPaths); err != nil {
+		return err
+	}
+
+	return rt.pivot()
 }
 
-func doBind(src, dst string, mountflags uintptr) error {
-	mountflags |= syscall.MS_BIND
-	if err := syscall.Mount(src, dst, "", mountflags, ""); err != nil {
-		return fmt.Errorf("mount %s to %s failed: %v", src, dst, err)
-	}
-	// mount and remount is needed for RDONLY to work:
-	// https://github.com/containerd/containerd/issues/1368
-	if mountflags&syscall.MS_RDONLY != 0 {
-		remountflags := uintptr(syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_BIND)
-		if err := syscall.Mount(dst, dst, "", remountflags, ""); err != nil {
-			return fmt.Errorf("readonly re-mount of %s failed: %v", dst, err)
+func createMountPoints(srcDir, trgDir string, entries []string) error {
+	for _, entry := range entries {
+		src := filepath.Join(srcDir, entry)
+		trg := filepath.Join(trgDir, entry)
+
+		if info, err := os.Stat(src); err == nil {
+			// No error
+			if info.IsDir() {
+				if err := osutil.MkdirAll(trg); err != nil {
+					return err
+				}
+			} else {
+				if err := createEmptyFile(trg); err != nil {
+					return err
+				}
+			}
 		}
+		// Do nothing: if file/directory doesn't exist in the srcDir, it cannot be
+		// exposed with bind mount.
 	}
 	return nil
 }
@@ -436,85 +528,4 @@ func cleanDir(dir string) string {
 		dir += sep
 	}
 	return dir
-}
-
-func mountProc(paths *Paths) error {
-	if err := mount("proc", paths.FsRoot+"/proc", "proc", 0, ""); err != nil {
-		return fmt.Errorf("mount proc failed: %v", err)
-	}
-	return nil
-}
-
-func mountSys(paths *Paths, cfg *config.Config) error {
-	if cfg.Net.Mode == "unjailed" {
-		// Mounting /sys is allowed only within own network namespace
-		return nil
-	}
-	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV)
-	if err := mount("sysfs", paths.FsRoot+"/sys", "sysfs",
-		flags, ""); err != nil {
-		return fmt.Errorf("mount /sys failed: %v", err)
-	}
-	return nil
-}
-
-func mountVar(paths *Paths) error {
-	flags := uintptr(syscall.MS_NOSUID)
-	if err := bindDir(paths.Var, paths.FsRoot+"/var", flags); err != nil {
-		return fmt.Errorf("mount /var failed: %v", err)
-	}
-	return nil
-}
-
-// blockFsRootEntries blocks access to file system entries by bind
-// mounting empty files/directories over them.
-func blockFsRootEntries(paths *Paths, entries []string) error {
-	for _, blockedPath := range entries {
-		fullPath := filepath.Join(paths.FsRoot, blockedPath)
-		info, err := os.Stat(fullPath)
-		if os.IsNotExist(err) {
-			// Path doesn't exist, nothing to block
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("failed to stat %s: %v", fullPath, err)
-		}
-
-		if info.IsDir() {
-			if err := bindDir(paths.EmptyDir, fullPath, syscall.MS_RDONLY); err != nil {
-				return fmt.Errorf("failed to block directory %s: %v", blockedPath, err)
-			}
-		} else {
-			if err := bindFile(paths.EmptyFile, fullPath, syscall.MS_RDONLY); err != nil {
-				return fmt.Errorf("failed to block file %s: %v", blockedPath, err)
-			}
-		}
-	}
-	return nil
-}
-
-// pivotRoot changes root to be paths.FsRoot and unmount the original
-// mount tree.
-func pivotRoot(paths *Paths) error {
-	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY | syscall.MS_PRIVATE)
-	// Pivot root new root dir must be a mount point, but paths.FsRoot
-	// is a normal dir, so bind mount it to itself. This also makes
-	// it read-only, which is preferred.
-	if err := bindDir(paths.FsRoot, paths.FsRoot, flags); err != nil {
-		return fmt.Errorf("failed to mount %s: %v", paths.FsRoot, err)
-	}
-
-	tmpDir := os.TempDir()
-	oldRoot := filepath.Join(paths.FsRoot, tmpDir)
-	// tmp dir will point to the old root, and then the old root is unmounted.
-	if err := syscall.PivotRoot(paths.FsRoot, oldRoot); err != nil {
-		return fmt.Errorf("pivot root to %s failed: %v", paths.FsRoot, err)
-	}
-	// Unmounting of the whole root is allowed, only unmounting
-	// individual submounts is not permitted.
-	if err := syscall.Unmount(tmpDir, syscall.MNT_DETACH); err != nil {
-		return fmt.Errorf("unmounting root filesystem failed: %v", err)
-	}
-
-	return nil
 }
