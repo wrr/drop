@@ -51,9 +51,10 @@ type root struct {
 	fsRoot string
 }
 
-// mount is a wrapper over unix.mount.
-// target argument is relative to FsRoot. mount ensures that trg
-// exists, if it is missing creates directory with permissions 0700 at the target.
+// mount is the entry point for all mount calls that assemble the root
+// filesystem. target argument is relative to FsRoot. mount ensures
+// that trg exists, if it is missing creates directory with
+// permissions 0700 at the target.
 func (rt *root) mount(src, trg, fstype string, flags uintptr, data string) (err error) {
 	absTrg := filepath.Join(rt.fsRoot, trg)
 	if !osutil.Exists(absTrg) {
@@ -79,6 +80,10 @@ func (rt *root) bindFile(src, trg string, mountflags uintptr) error {
 	return rt.bind(src, trg, mountflags)
 }
 
+// Bind binds src dir (absolute host path) to trg dir (path relative
+// to fsRoot or absolute guest path).
+// If mount flags includes MS_RDONLY, bind ensures the trg entry and
+// all its submounts are read-only.
 func (rt *root) bind(src, trg string, mountflags uintptr) error {
 	mountflags |= unix.MS_BIND
 	if err := rt.mount(src, trg, "", mountflags, ""); err != nil {
@@ -87,10 +92,15 @@ func (rt *root) bind(src, trg string, mountflags uintptr) error {
 	absTrg := filepath.Join(rt.fsRoot, trg)
 	// mount and remount is needed for RDONLY to work:
 	// https://github.com/containerd/containerd/issues/1368
+	// but even then RDONLY applies only to the top level mount.
+	// We use setaatr instead to apply RDONLY recursievly to all submounts.
+	// (requires kernel >= 5.12)
 	if mountflags&unix.MS_RDONLY != 0 {
-		remountflags := uintptr(unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_BIND)
-		if err := unix.Mount(absTrg, absTrg, "", remountflags, ""); err != nil {
-			return fmt.Errorf("readonly re-mount of %s failed: %v", trg, err)
+		attr := &unix.MountAttr{
+			Attr_set: unix.MOUNT_ATTR_RDONLY,
+		}
+		if err := unix.MountSetattr(-1, absTrg, unix.AT_RECURSIVE, attr); err != nil {
+			return fmt.Errorf("setting mount %s readonly failed: %v", trg, err)
 		}
 	}
 	return nil
@@ -140,10 +150,6 @@ func (rt *root) mountRootSubDir() error {
 	// need to be still available in the user namespace.  If dropping
 	// mounts by not using MS_REC option was possible, it would enable
 	// exposing of the hidden content (See man mount_namespaces).
-	//
-	// Unfortunately, submounts will not be set to read-only, so we need
-	// to iterate all the mounts to detect submount and set read-only
-	// flag for them (TODO).
 	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_RDONLY | unix.MS_PRIVATE)
 	dirs := []string{"/usr", "/bin", "/lib", "/lib32", "/lib64", "/sbin"}
 
@@ -227,7 +233,7 @@ func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
 	// xino=off'. It is very unlikely for home dir overlayfs layers to be on
 	// different filesystems (~/.drop dir would need to be placed by the
 	// user on a different filesystem), when layers are on the same fs
-	// xino=on option has no effect.
+	// xino=on option does nothing.
 	// https://docs.kernel.org/filesystems/overlayfs.html
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,xino=off", homeLower, paths.Home, homeWork)
 	if err := rt.mount("home", hostHome, "overlay", unix.MS_NOSUID, opts); err != nil {
@@ -371,11 +377,15 @@ func (rt *root) blockEntries(paths *Paths, entries []string) error {
 // mount tree.
 func (rt *root) pivot() error {
 	newRoot := rt.fsRoot
-	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_RDONLY | unix.MS_PRIVATE)
+	flags := uintptr(unix.MS_BIND | unix.MS_NOSUID | unix.MS_REC | unix.MS_RDONLY | unix.MS_PRIVATE)
 	// Pivot root new root dir must be a mount point, but paths.FsRoot
 	// is a normal dir, so bind mount it to itself. This also makes
 	// it read-only, which is preferred.
-	if err := rt.bind(newRoot, "/", flags); err != nil {
+	//
+	// We use rt.mount() directly instead of rt.bind(), because this is
+	// the only case where we want the MS_RDONLY flag to apply only to
+	// the root mount, not its submounts.
+	if err := rt.mount(newRoot, "/", "", flags, ""); err != nil {
 		return err
 	}
 
@@ -410,9 +420,13 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	// read-only flag for mounts existing while it is starting, so if
 	// such mounted USB was exposed by MS_SHARED mode, it would be
 	// writable from within Drop.
-	if err := unix.Mount("", "/", "", unix.MS_PRIVATE|unix.MS_REC, ""); err != nil {
-		return fmt.Errorf("failed to remount / as private")
+	attr := &unix.MountAttr{
+		Propagation: unix.MS_PRIVATE,
 	}
+	if err := unix.MountSetattr(-1, "/", unix.AT_RECURSIVE, attr); err != nil {
+		return fmt.Errorf("failed to set root filesystem propagation to private")
+	}
+	// Alternatively: unix.Mount("", "/", "", unix.MS_PRIVATE|unix.MS_REC, "");
 
 	rt := &root{fsRoot: paths.FsRoot}
 
