@@ -5,7 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/wrr/drop/internal/config"
 	"github.com/wrr/drop/internal/osutil"
@@ -41,16 +42,16 @@ var alwaysBlocked = []string{
 	"/sys/firmware",
 }
 
-// root holds new root filesystem mounting state and provides
-// operations to assemble the new root filesystem.  All mounting
-// operations targets are relative to the fsRoot (new root).
+// root provides operations to assemble the new root filesystem.
+// All mounting operations targets are relative to the fsRoot (new
+// root).
 type root struct {
 	// Path where new root filesystem is assembled. Once assembled,
 	// pivot() switches root.
 	fsRoot string
 }
 
-// mount is a wrapper over syscall.mount.
+// mount is a wrapper over unix.mount.
 // target argument is relative to FsRoot. mount ensures that trg
 // exists, if it is missing creates directory with permissions 0700 at the target.
 func (rt *root) mount(src, trg, fstype string, flags uintptr, data string) (err error) {
@@ -60,7 +61,7 @@ func (rt *root) mount(src, trg, fstype string, flags uintptr, data string) (err 
 			return err
 		}
 	}
-	if err := syscall.Mount(src, absTrg, fstype, flags, data); err != nil {
+	if err := unix.Mount(src, absTrg, fstype, flags, data); err != nil {
 		return fmt.Errorf("mount %v failed: %v", trg, err)
 	}
 	return nil
@@ -79,16 +80,16 @@ func (rt *root) bindFile(src, trg string, mountflags uintptr) error {
 }
 
 func (rt *root) bind(src, trg string, mountflags uintptr) error {
-	mountflags |= syscall.MS_BIND
+	mountflags |= unix.MS_BIND
 	if err := rt.mount(src, trg, "", mountflags, ""); err != nil {
 		return fmt.Errorf("mount %s to %s failed: %v", src, trg, err)
 	}
 	absTrg := filepath.Join(rt.fsRoot, trg)
 	// mount and remount is needed for RDONLY to work:
 	// https://github.com/containerd/containerd/issues/1368
-	if mountflags&syscall.MS_RDONLY != 0 {
-		remountflags := uintptr(syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_BIND)
-		if err := syscall.Mount(absTrg, absTrg, "", remountflags, ""); err != nil {
+	if mountflags&unix.MS_RDONLY != 0 {
+		remountflags := uintptr(unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_BIND)
+		if err := unix.Mount(absTrg, absTrg, "", remountflags, ""); err != nil {
 			return fmt.Errorf("readonly re-mount of %s failed: %v", trg, err)
 		}
 	}
@@ -98,7 +99,7 @@ func (rt *root) bind(src, trg string, mountflags uintptr) error {
 func (rt *root) bindAll(srcDir, trgDir string, entries []string, readonly bool) error {
 	flags := uintptr(0)
 	if readonly {
-		flags |= syscall.MS_RDONLY
+		flags |= unix.MS_RDONLY
 	}
 
 	for _, entry := range entries {
@@ -143,7 +144,7 @@ func (rt *root) mountRootSubDir() error {
 	// Unfortunately, submounts will not be set to read-only, so we need
 	// to iterate all the mounts to detect submount and set read-only
 	// flag for them (TODO).
-	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY | syscall.MS_PRIVATE)
+	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_RDONLY | unix.MS_PRIVATE)
 	dirs := []string{"/usr", "/bin", "/lib", "/lib32", "/lib64", "/sbin"}
 
 	for _, dir := range dirs {
@@ -229,7 +230,7 @@ func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
 	// xino=on option has no effect.
 	// https://docs.kernel.org/filesystems/overlayfs.html
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,xino=off", homeLower, paths.Home, homeWork)
-	if err := rt.mount("home", hostHome, "overlay", syscall.MS_NOSUID, opts); err != nil {
+	if err := rt.mount("home", hostHome, "overlay", unix.MS_NOSUID, opts); err != nil {
 		return err
 	}
 
@@ -244,7 +245,7 @@ func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
 }
 
 func (rt *root) mountEtc(paths *Paths) error {
-	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_RDONLY)
+	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV | unix.MS_RDONLY)
 	// For DNS to work in the container /etc/resolv.conf needs to be
 	// overwritten. We use overlayfs for this instead of bind mounting
 	// /etc/resolv.conf. On Ubuntu /etc/resolv.conf is a symlink to
@@ -264,7 +265,7 @@ func (rt *root) mountEtc(paths *Paths) error {
 }
 
 func (rt *root) mountRun() error {
-	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV)
+	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV)
 	if err := rt.mount("run", "/run", "tmpfs", flags, "mode=700"); err != nil {
 		return err
 	}
@@ -272,11 +273,11 @@ func (rt *root) mountRun() error {
 }
 
 func (rt *root) mountDev() error {
-	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID)
+	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID)
 	if err := rt.mount("dev", "/dev", "tmpfs", flags, "mode=700"); err != nil {
 		return err
 	}
-	if err := rt.mount("dev-shm", "/dev/shm", "tmpfs", flags|syscall.MS_NODEV, "mode=1700"); err != nil {
+	if err := rt.mount("dev-shm", "/dev/shm", "tmpfs", flags|unix.MS_NODEV, "mode=1700"); err != nil {
 		return err
 	}
 
@@ -323,7 +324,7 @@ func (rt *root) mountSys(cfg *config.Config) error {
 		// Mounting /sys is allowed only within own network namespace
 		return nil
 	}
-	flags := uintptr(syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV)
+	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV)
 	if err := rt.mount("sysfs", "/sys", "sysfs",
 		flags, ""); err != nil {
 		return err
@@ -332,7 +333,7 @@ func (rt *root) mountSys(cfg *config.Config) error {
 }
 
 func (rt *root) mountVar(paths *Paths) error {
-	flags := uintptr(syscall.MS_NOSUID)
+	flags := uintptr(unix.MS_NOSUID)
 	if err := rt.bind(paths.Var, "/var", flags); err != nil {
 		return err
 	}
@@ -354,11 +355,11 @@ func (rt *root) blockEntries(paths *Paths, entries []string) error {
 		}
 
 		if info.IsDir() {
-			if err := rt.bind(paths.EmptyDir, blockedPath, syscall.MS_RDONLY); err != nil {
+			if err := rt.bind(paths.EmptyDir, blockedPath, unix.MS_RDONLY); err != nil {
 				return fmt.Errorf("failed to block directory %s: %v", blockedPath, err)
 			}
 		} else {
-			if err := rt.bindFile(paths.EmptyFile, blockedPath, syscall.MS_RDONLY); err != nil {
+			if err := rt.bindFile(paths.EmptyFile, blockedPath, unix.MS_RDONLY); err != nil {
 				return fmt.Errorf("failed to block file %s: %v", blockedPath, err)
 			}
 		}
@@ -370,7 +371,7 @@ func (rt *root) blockEntries(paths *Paths, entries []string) error {
 // mount tree.
 func (rt *root) pivot() error {
 	newRoot := rt.fsRoot
-	flags := uintptr(syscall.MS_NOSUID | syscall.MS_REC | syscall.MS_RDONLY | syscall.MS_PRIVATE)
+	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_RDONLY | unix.MS_PRIVATE)
 	// Pivot root new root dir must be a mount point, but paths.FsRoot
 	// is a normal dir, so bind mount it to itself. This also makes
 	// it read-only, which is preferred.
@@ -381,12 +382,12 @@ func (rt *root) pivot() error {
 	tmpDir := os.TempDir()
 	oldRoot := filepath.Join(newRoot, tmpDir)
 	// tmp dir will point to the old root, and then the old root is unmounted.
-	if err := syscall.PivotRoot(newRoot, oldRoot); err != nil {
+	if err := unix.PivotRoot(newRoot, oldRoot); err != nil {
 		return fmt.Errorf("pivot root to %s failed: %v", newRoot, err)
 	}
 	// Unmounting of the whole root is allowed, only unmounting
 	// individual submounts is not permitted.
-	if err := syscall.Unmount(tmpDir, syscall.MNT_DETACH); err != nil {
+	if err := unix.Unmount(tmpDir, unix.MNT_DETACH); err != nil {
 		return fmt.Errorf("unmounting root filesystem failed: %v", err)
 	}
 
@@ -409,7 +410,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	// read-only flag for mounts existing while it is starting, so if
 	// such mounted USB was exposed by MS_SHARED mode, it would be
 	// writable from within Drop.
-	if err := syscall.Mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); err != nil {
+	if err := unix.Mount("", "/", "", unix.MS_PRIVATE|unix.MS_REC, ""); err != nil {
 		return fmt.Errorf("failed to remount / as private")
 	}
 

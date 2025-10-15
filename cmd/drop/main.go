@@ -344,7 +344,7 @@ func childProcessEntry() (int, error) {
 
 	// Change working directory to what it was originally, but on the
 	// new filesystem root.
-	if err := syscall.Chdir(paths.Cwd); err != nil {
+	if err := unix.Chdir(paths.Cwd); err != nil {
 		return 1, fmt.Errorf("chdir to %s failed: %v", paths.Cwd, err)
 	}
 
@@ -384,7 +384,7 @@ func childProcessEntry() (int, error) {
 	}
 
 	// Replace the current process
-	if err := syscall.Exec(prog, progWithArgs, envVars); err != nil {
+	if err := unix.Exec(prog, progWithArgs, envVars); err != nil {
 		return 1, fmt.Errorf("exec %s failed: %v", progWithArgs[0], err)
 	}
 
