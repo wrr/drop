@@ -272,6 +272,14 @@ class TestMainFlow(unittest.TestCase):
 
         self.assertEqual('hello\n', read(jail_var_file))
 
+    def test_run(self):
+        # Test that /run directory is empty
+        cmd = 'bash -c "ls -A /run | wc -l"'
+        result = self.sandbox_run(cmd)
+        self.assertSuccess(result)
+        line_count = int(result.stdout.strip())
+        self.assertEqual(0, line_count)
+
     def test_etc(self):
         # Test that /etc/resolv.conf contains the expected DNS configuration
         cmd = 'cat /etc/resolv.conf'
