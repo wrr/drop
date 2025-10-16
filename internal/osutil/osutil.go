@@ -19,3 +19,9 @@ func Exists(path string) bool {
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
 }
+
+// IsDebianBased returns true if the system is Debian-based by checking
+// for the presence of /etc/debian_version file.
+func IsDebianBased() bool {
+	return Exists("/etc/debian_version")
+}
