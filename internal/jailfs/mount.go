@@ -23,9 +23,9 @@ import (
 // "/proc/irq",
 // "/proc/sys",
 // "/proc/sysrq-trigger"
-// We skip this step, because we mount /proc readonly and Linux also
-// already makes these paths read-only, perhaps this is needed in case
-// container is started as root, which Drop doesn't allow.
+// We skip this step, Linux already makes these paths writable by root
+// only, perhaps this is needed in case container is started as root,
+// which Drop doesn't allow.
 //
 // The motivation for blocking /sys/firmware is here:
 // https://github.com/moby/moby/pull/26618
@@ -106,12 +106,7 @@ func (rt *root) bind(src, trg string, mountflags uintptr) error {
 	return nil
 }
 
-func (rt *root) bindAll(srcDir, trgDir string, entries []string, readonly bool) error {
-	flags := uintptr(0)
-	if readonly {
-		flags |= unix.MS_RDONLY
-	}
-
+func (rt *root) bindAll(srcDir, trgDir string, entries []string, flags uintptr) error {
 	for _, entry := range entries {
 		src := filepath.Join(srcDir, entry)
 		trg := filepath.Join(trgDir, entry)
@@ -236,14 +231,15 @@ func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
 	// xino=on option does nothing.
 	// https://docs.kernel.org/filesystems/overlayfs.html
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,xino=off", homeLower, paths.Home, homeWork)
-	if err := rt.mount("home", hostHome, "overlay", unix.MS_NOSUID, opts); err != nil {
+	flags := uintptr(unix.MS_NOSUID)
+	if err := rt.mount("home", hostHome, "overlay", flags, opts); err != nil {
 		return err
 	}
 
-	if err := rt.bindAll(hostHome, hostHome, cfg.HomeVisible, true); err != nil {
+	if err := rt.bindAll(hostHome, hostHome, cfg.HomeVisible, flags|unix.MS_RDONLY); err != nil {
 		return err
 	}
-	if err := rt.bindAll(hostHome, hostHome, cfg.HomeWriteable, false); err != nil {
+	if err := rt.bindAll(hostHome, hostHome, cfg.HomeWriteable, flags); err != nil {
 		return err
 	}
 
@@ -273,11 +269,11 @@ func (rt *root) mountRun() error {
 }
 
 func (rt *root) mountDev() error {
-	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID)
-	if err := rt.mount("dev", "/dev", "tmpfs", flags, "mode=700"); err != nil {
+	if err := rt.mount("dev", "/dev", "tmpfs", unix.MS_NOSUID, "mode=700"); err != nil {
 		return err
 	}
-	if err := rt.mount("dev-shm", "/dev/shm", "tmpfs", flags|unix.MS_NODEV, "mode=1700"); err != nil {
+	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV)
+	if err := rt.mount("shm", "/dev/shm", "tmpfs", flags, "mode=1700"); err != nil {
 		return err
 	}
 
@@ -285,12 +281,14 @@ func (rt *root) mountDev() error {
 	// even if unix.CAP_MKNOD is passed, so we map some host devices to
 	// the container /dev instead.
 	devices := []string{"null", "zero", "full", "random", "urandom"}
-	if err := rt.bindAll("/dev", "/dev", devices, false); err != nil {
+	flags = uintptr(unix.MS_NOEXEC | unix.MS_NOSUID)
+	if err := rt.bindAll("/dev", "/dev", devices, flags); err != nil {
 		return err
 	}
 
-	opts := "mode=600,newinstance,ptmxmode=600"
-	if err := rt.mount("dev-pts", "/dev/pts", "devpts", flags, opts); err != nil {
+	opts := "mode=600,newinstance,ptmxmode=666"
+	flags = uintptr(unix.MS_NOEXEC | unix.MS_NOSUID)
+	if err := rt.mount("devpts", "/dev/pts", "devpts", flags, opts); err != nil {
 		return err
 	}
 
@@ -317,7 +315,8 @@ func (rt *root) mountTmp(paths *Paths) error {
 }
 
 func (rt *root) mountProc() error {
-	return rt.mount("proc", "/proc", "proc", unix.MS_RDONLY, "")
+	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV)
+	return rt.mount("proc", "/proc", "proc", flags, "")
 }
 
 func (rt *root) mountSys(cfg *config.Config) error {
@@ -329,7 +328,7 @@ func (rt *root) mountSys(cfg *config.Config) error {
 	if err := rt.mount("sysfs", "/sys", "sysfs", flags, ""); err != nil {
 		return err
 	}
-	if err := rt.mount("cgroup2", "/sys/fs/cgroup", "cgroup2", flags, ""); err != nil {
+	if err := rt.mount("cgroup", "/sys/fs/cgroup", "cgroup2", flags, ""); err != nil {
 		return err
 	}
 	return nil
@@ -353,13 +352,13 @@ func (rt *root) blockEntries(paths *Paths, entries []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to stat %s: %v", fullPath, err)
 		}
-
+		flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_RDONLY)
 		if info.IsDir() {
-			if err := rt.bind(paths.EmptyDir, blockedPath, unix.MS_RDONLY); err != nil {
+			if err := rt.bind(paths.EmptyDir, blockedPath, flags); err != nil {
 				return fmt.Errorf("failed to block directory %s: %v", blockedPath, err)
 			}
 		} else {
-			if err := rt.bindFile(paths.EmptyFile, blockedPath, unix.MS_RDONLY); err != nil {
+			if err := rt.bindFile(paths.EmptyFile, blockedPath, flags); err != nil {
 				return fmt.Errorf("failed to block file %s: %v", blockedPath, err)
 			}
 		}
