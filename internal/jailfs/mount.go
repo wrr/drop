@@ -264,18 +264,12 @@ func (rt *root) mountEtc(paths *Paths) error {
 	//
 	// Readonly overlayfs does not require upperdir= and workdir= params.
 	opts := fmt.Sprintf("lowerdir=%s:/etc", paths.Etc)
-	if err := rt.mount("etc", "/etc", "overlay", flags, opts); err != nil {
-		return err
-	}
-	return nil
+	return rt.mount("etc", "/etc", "overlay", flags, opts)
 }
 
 func (rt *root) mountRun() error {
 	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV)
-	if err := rt.mount("run", "/run", "tmpfs", flags, "mode=700"); err != nil {
-		return err
-	}
-	return nil
+	return rt.mount("run", "/run", "tmpfs", flags, "mode=700")
 }
 
 func (rt *root) mountDev() error {
@@ -318,11 +312,12 @@ func (rt *root) mountDev() error {
 	return nil
 }
 
+func (rt *root) mountTmp(paths *Paths) error {
+	return rt.bind(paths.Tmp, os.TempDir(), 0)
+}
+
 func (rt *root) mountProc() error {
-	if err := rt.mount("proc", "/proc", "proc", unix.MS_RDONLY, ""); err != nil {
-		return err
-	}
-	return nil
+	return rt.mount("proc", "/proc", "proc", unix.MS_RDONLY, "")
 }
 
 func (rt *root) mountSys(cfg *config.Config) error {
@@ -330,20 +325,16 @@ func (rt *root) mountSys(cfg *config.Config) error {
 		// Mounting /sys is allowed only within own network namespace
 		return nil
 	}
-	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV)
-	if err := rt.mount("sysfs", "/sys", "sysfs",
-		flags, ""); err != nil {
+	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV | unix.MS_RDONLY)
+	if err := rt.mount("sysfs", "/sys", "sysfs", flags, ""); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (rt *root) mountVar(paths *Paths) error {
-	flags := uintptr(unix.MS_NOSUID)
-	if err := rt.bind(paths.Var, "/var", flags); err != nil {
-		return err
-	}
-	return nil
+	flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV)
+	return rt.bind(paths.Var, "/var", flags)
 }
 
 // blockEntries blocks access to file system entries by bind
@@ -450,7 +441,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	if err := rt.bind(paths.Tmp, os.TempDir(), 0); err != nil {
+	if err := rt.mountTmp(paths); err != nil {
 		return err
 	}
 
