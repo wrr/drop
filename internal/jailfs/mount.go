@@ -329,6 +329,9 @@ func (rt *root) mountSys(cfg *config.Config) error {
 	if err := rt.mount("sysfs", "/sys", "sysfs", flags, ""); err != nil {
 		return err
 	}
+	if err := rt.mount("cgroup2", "/sys/fs/cgroup", "cgroup2", flags, ""); err != nil {
+		return err
+	}
 	return nil
 }
 

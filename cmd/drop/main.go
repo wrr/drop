@@ -182,7 +182,8 @@ Options:
 	cloneFlags := uintptr(syscall.CLONE_NEWNS |
 		syscall.CLONE_NEWIPC |
 		syscall.CLONE_NEWPID |
-		syscall.CLONE_NEWUSER)
+		syscall.CLONE_NEWUSER |
+		syscall.CLONE_NEWCGROUP)
 	if cfg.Net.Mode != "unjailed" {
 		cloneFlags |= syscall.CLONE_NEWNET
 	}
