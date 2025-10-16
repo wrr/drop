@@ -23,9 +23,9 @@ import (
 // "/proc/irq",
 // "/proc/sys",
 // "/proc/sysrq-trigger"
-// We skip this step, because Linux already makes these paths
-// read-only, perhaps this is needed in case container is started as root,
-// which Drop doesn't allow.
+// We skip this step, because we mount /proc readonly and Linux also
+// already makes these paths read-only, perhaps this is needed in case
+// container is started as root, which Drop doesn't allow.
 //
 // The motivation for blocking /sys/firmware is here:
 // https://github.com/moby/moby/pull/26618
@@ -319,7 +319,7 @@ func (rt *root) mountDev() error {
 }
 
 func (rt *root) mountProc() error {
-	if err := rt.mount("proc", "/proc", "proc", 0, ""); err != nil {
+	if err := rt.mount("proc", "/proc", "proc", unix.MS_RDONLY, ""); err != nil {
 		return err
 	}
 	return nil
