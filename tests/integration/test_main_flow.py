@@ -317,6 +317,15 @@ class TestMainFlow(unittest.TestCase):
         finally:
             del os.environ['FOO']
 
+    def test_drop_env_set(self):
+        """Test that DROP_ENV is set correctly"""
+        cmd = 'bash -c "echo $DROP_ENV"'
+        result = self.sandbox_run(cmd)
+        self.assertSuccess(result)
+
+        drop_env = result.stdout.strip()
+        self.assertEqual(ENV_ID, drop_env)
+
     def test_devices(self):
         # Ensure /dev/null can be written to but its size remains 0
         cmd = 'bash -c "echo foo > /dev/null && stat -c %s /dev/null"'

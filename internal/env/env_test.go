@@ -87,3 +87,73 @@ func TestFilter(t *testing.T) {
 		})
 	}
 }
+
+func TestSetDropVars(t *testing.T) {
+	tests := []struct {
+		name            string
+		envIn           []string
+		setDebianChroot bool
+		envId           string
+		envOut          []string
+	}{
+		{
+			name: "both variables set",
+			envIn: []string{
+				"PATH=/usr/bin",
+				"USER=alice",
+			},
+			setDebianChroot: true,
+			envId:           "test-env-id",
+			envOut: []string{
+				"PATH=/usr/bin",
+				"USER=alice",
+				"debian_chroot=drop",
+				"DROP_ENV=test-env-id",
+			},
+		},
+		{
+			name: "only drop env set",
+			envIn: []string{
+				"PATH=/usr/bin",
+				"USER=alice",
+			},
+			setDebianChroot: false,
+			envId:           "foo",
+			envOut: []string{
+				"PATH=/usr/bin",
+				"USER=alice",
+				"DROP_ENV=foo",
+			},
+		},
+		{
+			name: "overwrite existing variables",
+			envIn: []string{
+				"PATH=/usr/bin",
+				"DROP_ENV=old-env-id",
+				"debian_chroot=old-chroot",
+				"USER=alice",
+			},
+			setDebianChroot: true,
+			envId:           "new-env-id",
+			envOut: []string{
+				"PATH=/usr/bin",
+				"USER=alice",
+				"debian_chroot=drop",
+				"DROP_ENV=new-env-id",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SetDropVars(tt.envIn, tt.setDebianChroot, tt.envId)
+
+			sort.Strings(result)
+			sort.Strings(tt.envOut)
+
+			if !reflect.DeepEqual(result, tt.envOut) {
+				t.Errorf("SetDropVars() = %v, expected %v", result, tt.envOut)
+			}
+		})
+	}
+}
