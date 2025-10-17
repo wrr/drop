@@ -222,6 +222,73 @@ class TestMainFlow(unittest.TestCase):
             self.assertEqual(1, result.returncode)
             self.assertIn('Read-only file system', result.stderr)
 
+    def test_home_visible_target_is_file_not_a_dir(self):
+        exposed_dname = 'drop-test-data'
+        # Create an empty file in the env home dir that conflicts
+        # with the exposed directory
+        write('', ENV_DIR / 'home' / exposed_dname)
+
+        host_dir = HOME_DIR / exposed_dname
+        with scoped_dir(host_dir):
+            config = Config(home_visible=[exposed_dname])
+            # Should be the original file, not a dir
+            result = self.sandbox_run('bash -c "test -f ~/drop-test-data"',
+                                      config=config)
+            self.assertEqual(0, result.returncode)
+            expected_msg = (f"Drop: not mounting {host_dir}, target already "
+                            "exists but is a file not a directory")
+            self.assertIn(expected_msg, result.stderr)
+
+    def test_home_visible_target_is_dir_not_a_file(self):
+        exposed_fname = 'drop-test-data'
+        # Create a directory in the env home dir that conflicts
+        # with exposed file.
+        target_dir = ENV_DIR / 'home' / exposed_fname
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        host_file = HOME_DIR / exposed_fname
+        with scoped_empty_file(host_file):
+            config = Config(home_visible=[exposed_fname])
+            # Should be the original dir, not a file
+            result = self.sandbox_run('bash -c "test -d ~/drop-test-data"',
+                                      config=config)
+            self.assertEqual(0, result.returncode)
+            expected_msg = (f"Drop: not mounting {host_file}, target already "
+                            "exists but is a directory not a file")
+            self.assertIn(expected_msg, result.stderr)
+
+    def test_home_visible_target_is_link(self):
+        exposed_dname = 'drop-test-data'
+        # Create a symlink in the env home directory
+        target_link = ENV_DIR / 'home' / exposed_dname
+        target_link.parent.mkdir(parents=True, exist_ok=True)
+        target_link.symlink_to('/tmp')
+
+        host_dir = HOME_DIR / exposed_dname
+        with scoped_dir(host_dir):
+            config = Config(home_visible=[exposed_dname])
+            result = self.sandbox_run('bash -c "test -L ~/drop-test-data"',
+                                      config=config)
+            self.assertEqual(0, result.returncode)
+            expected_msg = (f"Drop: not mounting {host_dir}, target already "
+                            "exists but is a symbolic link")
+            self.assertIn(expected_msg, result.stderr)
+
+    def test_home_visible_source_is_missing(self):
+        exposed_dname = 'drop-test-data-missing'
+        host_dir = HOME_DIR / exposed_dname
+        if host_dir.exists():
+            shutil.rmtree(host_dir)
+
+        config = Config(home_visible=[exposed_dname])
+        result = self.sandbox_run('bash -c "test -e ~/drop-test-data-missing"',
+                                  config=config)
+        # Exit 1, file should not exist
+        self.assertEqual(1, result.returncode)
+        expected_msg = (f"Drop: not mounting {host_dir}, "
+                        "no such file or directory")
+        self.assertIn(expected_msg, result.stderr)
+
     def test_home_writeable(self):
         exposed_dname = 'drop-test-data'
         home_sub_path = HOME_DIR / exposed_dname
@@ -527,12 +594,23 @@ def scoped_dir(path):
         if path.exists():
             shutil.rmtree(path)
 
+@contextmanager
+def scoped_empty_file(path):
+    """Create an empty file and clean up afterwards."""
+    try:
+        write('', path)
+        yield path
+    finally:
+        if path.exists():
+            path.unlink()
+
 def rmdir(path):
     if os.path.exists(path):
         shutil.rmtree(path)
 
 def write(content, path: str) -> None:
-    """Write content to a file"""
+    """Write content to a file, ensure parent dir exists"""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, 'w') as f:
         f.write(content)
 

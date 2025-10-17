@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/wrr/drop/internal/config"
+	"github.com/wrr/drop/internal/log"
 	"github.com/wrr/drop/internal/osutil"
 )
 
@@ -63,7 +64,7 @@ func (rt *root) mount(src, trg, fstype string, flags uintptr, data string) (err 
 		}
 	}
 	if err := unix.Mount(src, absTrg, fstype, flags, data); err != nil {
-		return fmt.Errorf("mount %v failed: %v", trg, err)
+		return fmt.Errorf("mount %v to %v failed: %v", src, absTrg, err)
 	}
 	return nil
 }
@@ -87,7 +88,7 @@ func (rt *root) bindFile(src, trg string, mountflags uintptr) error {
 func (rt *root) bind(src, trg string, mountflags uintptr) error {
 	mountflags |= unix.MS_BIND
 	if err := rt.mount(src, trg, "", mountflags, ""); err != nil {
-		return fmt.Errorf("mount %s to %s failed: %v", src, trg, err)
+		return err
 	}
 	absTrg := filepath.Join(rt.fsRoot, trg)
 	// mount and remount is needed for RDONLY to work:
@@ -107,22 +108,38 @@ func (rt *root) bind(src, trg string, mountflags uintptr) error {
 }
 
 func (rt *root) bindAll(srcDir, trgDir string, entries []string, flags uintptr) error {
+	infoHeader := "not mounting %s, target already exists "
 	for _, entry := range entries {
 		src := filepath.Join(srcDir, entry)
 		trg := filepath.Join(trgDir, entry)
+		absTrg := filepath.Join(rt.fsRoot, trg)
 
-		if info, err := os.Stat(src); err == nil {
-			if info.IsDir() {
+		if srcInfo, err := os.Stat(src); err == nil {
+
+			trgInfo, _ := os.Lstat(absTrg)
+			if trgInfo != nil && trgInfo.Mode()&os.ModeSymlink != 0 {
+				log.Info(infoHeader+"but is a symbolic link", src)
+				continue
+			}
+			if srcInfo.IsDir() {
+				if trgInfo != nil && !trgInfo.IsDir() {
+					log.Info(infoHeader+"but is a file not a directory", src)
+					continue
+				}
 				if err := rt.bind(src, trg, flags); err != nil {
 					return err
 				}
 			} else {
+				if trgInfo != nil && !trgInfo.Mode().IsRegular() {
+					log.Info(infoHeader+"but is a directory not a file", src)
+					continue
+				}
 				if err := rt.bindFile(src, trg, flags); err != nil {
 					return err
 				}
 			}
 		} else {
-			fmt.Fprintf(os.Stderr, "Not mounting %s, no such file or directory\n", src)
+			log.Info("not mounting %s, no such file or directory", src)
 		}
 	}
 	return nil
