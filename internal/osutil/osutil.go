@@ -3,6 +3,8 @@ package osutil
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // MkdirAll is a simple wrapper over os.MkdirAll. It always uses
@@ -24,4 +26,13 @@ func Exists(path string) bool {
 // for the presence of /etc/debian_version file.
 func IsDebianBased() bool {
 	return Exists("/etc/debian_version")
+}
+
+// TildeToHomeDir replaces tilde in a path with the given
+// homeDir path. Does not handle tildes followed by username (~bob).
+func TildeToHomeDir(path string, homeDir string) string {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		return filepath.Join(homeDir, strings.TrimPrefix(path, "~"))
+	}
+	return path
 }

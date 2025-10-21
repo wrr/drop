@@ -45,8 +45,8 @@ func WriteDefault(path string, homeDir string) error {
 		{"/cdrom", ""},
 	}
 
-	pathsRODefault = keepExistingEntries(homeDir, pathsRODefault)
-	blockedDefault = keepExistingEntries("/", blockedDefault)
+	pathsRODefault = keepExistingEntries(pathsRODefault, homeDir)
+	blockedDefault = keepExistingEntries(blockedDefault, homeDir)
 
 	defaultConfig := fmt.Sprintf(`# Drop sandboxing configuration file
 
@@ -151,11 +151,11 @@ udp_ports_from_host = []
 	return nil
 }
 
-func keepExistingEntries(pathPrefix string, entries []configFileEntry) []configFileEntry {
+func keepExistingEntries(entries []configFileEntry, homeDir string) []configFileEntry {
 	var existing []configFileEntry
 	for _, entry := range entries {
-		fullPath := filepath.Join(pathPrefix, entry.path)
-		if osutil.Exists(fullPath) {
+		path := osutil.TildeToHomeDir(entry.path, homeDir)
+		if osutil.Exists(path) {
 			existing = append(existing, entry)
 		}
 	}

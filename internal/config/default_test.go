@@ -59,25 +59,25 @@ func TestWriteDefault(t *testing.T) {
 
 func TestFilterExistingEntries(t *testing.T) {
 	entries := []configFileEntry{
-		{"foo", ""},
-		{"bar", ""},
-		{"baz", ""},
+		{"~/foo", ""},
+		{"~/bar", ""},
+		{"~/baz", ""},
 	}
 
-	tempDir := t.TempDir()
+	homeDir := t.TempDir()
 
-	testFile1 := filepath.Join(tempDir, "bar")
+	testFile1 := filepath.Join(homeDir, "bar")
 	if err := os.WriteFile(testFile1, []byte(""), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	filtered := keepExistingEntries(tempDir, entries)
+	filtered := keepExistingEntries(entries, homeDir)
 
 	if len(filtered) != 1 {
 		t.Fatalf("Expected 1 filtered entry, got %d", len(filtered))
 	}
 
-	if filtered[0].path != "bar" {
+	if filtered[0].path != "~/bar" {
 		t.Errorf("Invalid filtered entry '%s'", filtered[0].path)
 	}
 }

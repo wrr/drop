@@ -202,58 +202,7 @@ func (rt *root) mountRootSubDirs() error {
 //
 // Jail hides the real user's home dir from the host. Home dirs are
 // shared by jails with the same environment id.
-//
-// Home dirs have PathsRO and PathsRW entries exposed from
-// the host home directory. To expose these entries we need to create
-// empty files and directories as mount points. In order not to polute
-// the jail home dir with these empty files and dirs, we use
-// overlayfs. Empty dirs and files are created in a disposable
-// lowerdir of the overlayfs (kept in the jails's 'run' dir), which is
-// removed when the jail terminates. The actual files created in the
-// jailed home are written to the overlayfs upper layer.
 func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
-	homeLower := filepath.Join(paths.Run, "home-lower")
-	if err := osutil.MkdirAll(homeLower); err != nil {
-		return err
-	}
-	homeWork := filepath.Join(paths.Run, "home-work")
-	if err := osutil.MkdirAll(homeWork); err != nil {
-		return err
-	}
-	hostHome := paths.HostHome
-
-	// TODO: this is only temporary, for now we only expose paths from
-	// home dir, and ignore all other.
-	var homeRO []string
-	for _, path := range cfg.PathsRO {
-		if strings.HasPrefix(path, "~/") {
-			homeRO = append(homeRO, strings.TrimPrefix(path, "~/"))
-		}
-	}
-	var homeRW []string
-	for _, path := range cfg.PathsRW {
-		if strings.HasPrefix(path, "~/") {
-			homeRW = append(homeRW, strings.TrimPrefix(path, "~/"))
-		}
-	}
-
-	mountPoints := append(homeRO, homeRW...)
-	if isSubDir(hostHome, paths.Cwd) {
-		// If CWD is a subdir of home, a mountpoint for it is also needed,
-		// as CWD is mounted read-write.
-		cwdRelPath, err := filepath.Rel(hostHome, paths.Cwd)
-		if err != nil {
-			return err
-		}
-		mountPoints = append(mountPoints, cwdRelPath)
-	}
-
-	// Create empty files and dirs to be mount point in the overlayfs
-	// lower dir.
-	if err := createMountPoints(hostHome, homeLower, mountPoints); err != nil {
-		return err
-	}
-
 	// Mount home dir as overlayfs, lowerdir holds only mount points,
 	// upperdir is where the actual files are stored.
 	// xino=off to disable Ubuntu 24.04 dmesg warning 'overlayfs: fs on
@@ -263,20 +212,9 @@ func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
 	// user on a different filesystem), when layers are on the same fs
 	// xino=on option does nothing.
 	// https://docs.kernel.org/filesystems/overlayfs.html
-	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,xino=off", homeLower, paths.Home, homeWork)
+	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,xino=off", paths.HomeLower, paths.Home, paths.HomeWork)
 	flags := uintptr(unix.MS_NOSUID)
-	if err := rt.mount("home", hostHome, "overlay", flags, opts); err != nil {
-		return err
-	}
-
-	if err := rt.bindAll(hostHome, hostHome, homeRO, flags|unix.MS_RDONLY); err != nil {
-		return err
-	}
-	if err := rt.bindAll(hostHome, hostHome, homeRW, flags); err != nil {
-		return err
-	}
-
-	return nil
+	return rt.mount("home", paths.HostHome, "overlay", flags, opts)
 }
 
 func (rt *root) mountEtc(paths *Paths) error {
@@ -460,14 +398,6 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	if err := rt.mountHome(paths, cfg); err != nil {
-		return err
-	}
-
-	if err := rt.mountEtc(paths); err != nil {
-		return err
-	}
-
 	if err := rt.mountRun(); err != nil {
 		return err
 	}
@@ -478,15 +408,6 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 
 	if err := rt.mountTmp(paths); err != nil {
 		return err
-	}
-
-	// Mount current working directory and it's subdirs as readable and
-	// writable, but only if Cwd is not the home directory or a parent of it,
-	// to avoid exposing the original home directory.
-	if !isSubDirOrSame(paths.Cwd, paths.HostHome) {
-		if err := rt.bind(paths.Cwd, paths.Cwd, 0); err != nil {
-			return err
-		}
 	}
 
 	if err := rt.mountProc(); err != nil {
@@ -501,6 +422,38 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
+	pathsRO := applyTildeToHomeDir(cfg.PathsRO, paths.HostHome)
+	pathsRW := applyTildeToHomeDir(cfg.PathsRW, paths.HostHome)
+
+	// Mount current working directory and it's subdirs as readable and
+	// writable, but only if Cwd is not the home directory or a parent of it
+	// to avoid exposing the original home directory.
+	if !isSubDirOrSame(paths.Cwd, paths.HostHome) {
+		pathsRW = append(pathsRW, paths.Cwd)
+	}
+
+	mountPoints := append(pathsRO, pathsRW...)
+
+	// This need to be done before overlayfs are mounted (/etc and user home).
+	if err := createOverlayFSMountPoints(mountPoints, paths); err != nil {
+		return err
+	}
+	if err := rt.mountHome(paths, cfg); err != nil {
+		return err
+	}
+
+	if err := rt.mountEtc(paths); err != nil {
+		return err
+	}
+
+	flags := uintptr(unix.MS_NOSUID)
+	if err := rt.bindAll("/", "/", pathsRO, flags|unix.MS_RDONLY); err != nil {
+		return err
+	}
+	if err := rt.bindAll("/", "/", pathsRW, flags); err != nil {
+		return err
+	}
+
 	// Combine always blocked paths with user-configured blocked paths
 	blockedPaths := append(alwaysBlocked, cfg.Blocked...)
 	if err := rt.blockEntries(paths, blockedPaths); err != nil {
@@ -510,25 +463,61 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	return rt.pivot()
 }
 
-func createMountPoints(srcDir, trgDir string, entries []string) error {
-	for _, entry := range entries {
-		src := filepath.Join(srcDir, entry)
-		trg := filepath.Join(trgDir, entry)
+// applyTildeToHomeDir replace ~/ with the homeDir path
+func applyTildeToHomeDir(paths []string, homeDir string) []string {
+	result := make([]string, len(paths))
+	for i, p := range paths {
+		result[i] = osutil.TildeToHomeDir(p, homeDir)
+	}
+	return result
+}
 
+// getOverlayFSMountPointPath returns a path where mount point for trg
+// should be created, but only if this mouint point is on overlayFS.
+// If the mount point is not on overlayFS, the functions returns "".
+func getOverlayFSMountPointPath(src string, paths *Paths) string {
+	homeRel, err := filepath.Rel(paths.HostHome, src)
+	if err != nil && !strings.HasPrefix(homeRel, "..") {
+		return filepath.Join(paths.HomeLower, homeRel)
+	}
+	etcRel, err := filepath.Rel("/etc", src)
+	if err != nil && !strings.HasPrefix(etcRel, "..") {
+		return filepath.Join(paths.Etc, etcRel)
+	}
+	return ""
+}
+
+// createOverlayFSMountPoints creates mount points on homedir and
+// /etc/ overlayfs layers before overlayfs are mounted.
+//
+// For /etc this is needed, because /etc upper layer (controlled by
+// the user) is mounted read only, so it is not possible to create
+// missing sub-mount after /etc is mounted.
+//
+// For homedir, this allows to create missing mount points in the
+// disposable lower dir, and do no pollute the actual Drop home dir
+// with mount points.
+//
+// The function is best-effort, all errors are ignored. If mount
+// points are not created, the actual mounting action will try to
+// create the endpoint again and will report the error.
+//
+// Note that created endpoints may not be actually used in case other
+// mounts shadow them.
+func createOverlayFSMountPoints(mountPoints []string, paths *Paths) error {
+	for _, src := range mountPoints {
+		ovrlTrg := getOverlayFSMountPointPath(src, paths)
+		if ovrlTrg == "" {
+			// Target not on overlayfs (or some error).
+			continue
+		}
 		if info, err := os.Stat(src); err == nil {
-			// No error
 			if info.IsDir() {
-				if err := osutil.MkdirAll(trg); err != nil {
-					return err
-				}
+				osutil.MkdirAll(ovrlTrg)
 			} else {
-				if err := createEmptyFile(trg); err != nil {
-					return err
-				}
+				createEmptyFile(ovrlTrg)
 			}
 		}
-		// Do nothing: if file/directory doesn't exist in the srcDir, it cannot be
-		// exposed with bind mount.
 	}
 	return nil
 }
