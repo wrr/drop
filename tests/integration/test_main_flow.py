@@ -24,7 +24,7 @@ ENV_DIR = env_dir(ENV_ID)
 
 class Config:
     def __init__(self, *,
-                 home_visible: List[str] = None,
+                 paths_ro: List[str] = None,
                  home_writeable: List[str] = None,
                  blocked: List[str] = None,
                  env_expose: List[str] = None,
@@ -32,7 +32,7 @@ class Config:
                  tcp_ports_from_host: List[str] = None,
                  udp_ports_to_host: List[str] = None,
                  udp_ports_from_host: List[str] = None):
-        self.home_visible = home_visible or []
+        self.paths_ro = paths_ro or []
         self.home_writeable = home_writeable or []
         self.blocked = blocked or []
         self.env_expose = env_expose or []
@@ -44,7 +44,7 @@ class Config:
     def toml(self) -> str:
         """Return configuration as TOML string"""
         toml_lines = [
-            f'home_visible = {str(self.home_visible)}',
+            f'paths_ro = {str(self.paths_ro)}',
             f'home_writeable = {str(self.home_writeable)}',
             f'blocked = {str(self.blocked)}',
             f'env_expose = {str(self.env_expose)}',
@@ -203,26 +203,26 @@ class TestMainFlow(unittest.TestCase):
 
         self.assertEqual('Hello world\n', read(jail_file))
 
-    def test_home_visible(self):
+    def test_paths_ro(self):
         exposed_dname = 'drop-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
             write('hello', hello_path)
-            config = Config(home_visible=[exposed_dname])
-            # Reading from files in home_visible dir is allowed
+            config = Config(paths_ro=[exposed_dname])
+            # Reading from files in paths_ro dir is allowed
             cmd = f'cat {hello_path}'
             result = self.sandbox_run(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('hello', result.stdout)
 
-            # Writing to files in home_visible dir is not allowed
+            # Writing to files in paths_ro dir is not allowed
             cmd = f'bash -c "cat foo > {hello_path}"'
             result = self.sandbox_run(cmd, config=config)
             self.assertEqual(1, result.returncode)
             self.assertIn('Read-only file system', result.stderr)
 
-    def test_home_visible_target_is_file_not_a_dir(self):
+    def test_paths_ro_target_is_file_not_a_dir(self):
         exposed_dname = 'drop-test-data'
         # Create an empty file in the env home dir that conflicts
         # with the exposed directory
@@ -230,7 +230,7 @@ class TestMainFlow(unittest.TestCase):
 
         host_dir = HOME_DIR / exposed_dname
         with scoped_dir(host_dir):
-            config = Config(home_visible=[exposed_dname])
+            config = Config(paths_ro=[exposed_dname])
             # Should be the original file, not a dir
             result = self.sandbox_run('bash -c "test -f ~/drop-test-data"',
                                       config=config)
@@ -239,7 +239,7 @@ class TestMainFlow(unittest.TestCase):
                             "exists but is a file not a directory")
             self.assertIn(expected_msg, result.stderr)
 
-    def test_home_visible_target_is_dir_not_a_file(self):
+    def test_paths_ro_target_is_dir_not_a_file(self):
         exposed_fname = 'drop-test-data'
         # Create a directory in the env home dir that conflicts
         # with exposed file.
@@ -248,7 +248,7 @@ class TestMainFlow(unittest.TestCase):
 
         host_file = HOME_DIR / exposed_fname
         with scoped_empty_file(host_file):
-            config = Config(home_visible=[exposed_fname])
+            config = Config(paths_ro=[exposed_fname])
             # Should be the original dir, not a file
             result = self.sandbox_run('bash -c "test -d ~/drop-test-data"',
                                       config=config)
@@ -257,7 +257,7 @@ class TestMainFlow(unittest.TestCase):
                             "exists but is a directory not a file")
             self.assertIn(expected_msg, result.stderr)
 
-    def test_home_visible_target_is_link(self):
+    def test_paths_ro_target_is_link(self):
         exposed_dname = 'drop-test-data'
         # Create a symlink in the env home directory
         target_link = ENV_DIR / 'home' / exposed_dname
@@ -266,7 +266,7 @@ class TestMainFlow(unittest.TestCase):
 
         host_dir = HOME_DIR / exposed_dname
         with scoped_dir(host_dir):
-            config = Config(home_visible=[exposed_dname])
+            config = Config(paths_ro=[exposed_dname])
             result = self.sandbox_run('bash -c "test -L ~/drop-test-data"',
                                       config=config)
             self.assertEqual(0, result.returncode)
@@ -274,13 +274,13 @@ class TestMainFlow(unittest.TestCase):
                             "exists but is a symbolic link")
             self.assertIn(expected_msg, result.stderr)
 
-    def test_home_visible_source_is_missing(self):
+    def test_paths_ro_source_is_missing(self):
         exposed_dname = 'drop-test-data-missing'
         host_dir = HOME_DIR / exposed_dname
         if host_dir.exists():
             shutil.rmtree(host_dir)
 
-        config = Config(home_visible=[exposed_dname])
+        config = Config(paths_ro=[exposed_dname])
         result = self.sandbox_run('bash -c "test -e ~/drop-test-data-missing"',
                                   config=config)
         # Exit 1, file should not exist

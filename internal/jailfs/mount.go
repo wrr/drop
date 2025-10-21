@@ -203,7 +203,7 @@ func (rt *root) mountRootSubDir() error {
 // Jail hides the real user's home dir from the host. Home dirs are
 // shared by jails with the same environment id.
 //
-// Home dirs have HomeVisible and HomeWriteable entries exposed from
+// Home dirs have PathsRO and HomeWriteable entries exposed from
 // the host home directory. To expose these entries we need to create
 // empty files and directories as mount points. In order not to polute
 // the jail home dir with these empty files and dirs, we use
@@ -221,7 +221,7 @@ func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 	hostHome := paths.HostHome
-	mountPoints := append(cfg.HomeVisible, cfg.HomeWriteable...)
+	mountPoints := append(cfg.PathsRO, cfg.HomeWriteable...)
 	if isSubDir(hostHome, paths.Cwd) {
 		// If CWD is a subdir of home, a mountpoint for it is also needed,
 		// as CWD is mounted read-write.
@@ -253,7 +253,7 @@ func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	if err := rt.bindAll(hostHome, hostHome, cfg.HomeVisible, flags|unix.MS_RDONLY); err != nil {
+	if err := rt.bindAll(hostHome, hostHome, cfg.PathsRO, flags|unix.MS_RDONLY); err != nil {
 		return err
 	}
 	if err := rt.bindAll(hostHome, hostHome, cfg.HomeWriteable, flags); err != nil {

@@ -262,7 +262,7 @@ func TestParse(t *testing.T) {
 		{
 			name: "complete valid config",
 			tomlStr: `
-home_visible = ["/home/user/docs", "/tmp"]
+paths_ro = ["/home/user/docs", "/tmp"]
 home_writeable = ["/home/user/work"]
 blocked = ["/mnt", "/root"]
 env_expose = ["HOME", "PATH", "LC_*"]
@@ -275,7 +275,7 @@ udp_ports_to_host = ["5000"]
 udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 `,
 			expected: Config{
-				HomeVisible:   []string{"/home/user/docs", "/tmp"},
+				PathsRO:       []string{"/home/user/docs", "/tmp"},
 				HomeWriteable: []string{"/home/user/work"},
 				Blocked:       []string{"/mnt", "/root"},
 				EnvExpose:     []string{"HOME", "PATH", "LC_*"},
@@ -293,7 +293,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			name:    "empty config",
 			tomlStr: ``,
 			expected: Config{
-				HomeVisible:   nil,
+				PathsRO:       nil,
 				HomeWriteable: nil,
 				Blocked:       nil,
 				EnvExpose:     nil,
@@ -395,7 +395,7 @@ mode = "foo"
 				return
 			}
 
-			expectListEquals(t, "HomeVisible", result.HomeVisible, tt.expected.HomeVisible)
+			expectListEquals(t, "PathsRO", result.PathsRO, tt.expected.PathsRO)
 			expectListEquals(t, "HomeWriteable", result.HomeWriteable, tt.expected.HomeWriteable)
 			expectListEquals(t, "Blocked", result.Blocked, tt.expected.Blocked)
 			expectListEquals(t, "EnvExpose", result.EnvExpose, tt.expected.EnvExpose)

@@ -29,8 +29,8 @@ func TestWriteDefault(t *testing.T) {
 		t.Fatalf("Failed to read created default config: %v", err)
 	}
 
-	if cfg.HomeVisible == nil {
-		t.Errorf("Expected home_visible to be not nil")
+	if cfg.PathsRO == nil {
+		t.Errorf("Expected paths_ro to be not nil")
 	}
 	expectEmptyList(t, "home_writeable", cfg.HomeWriteable)
 	if cfg.Blocked == nil {

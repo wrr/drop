@@ -16,10 +16,10 @@ type configFileEntry struct {
 
 // WriteDefault creates a default config in ~/.drop/config.
 func WriteDefault(path string, homeDir string) error {
-	// homeVisibleDefault contains files to expose from home dir, these
+	// pathsRODefault contains files to expose from home dir, these
 	// files are included in the generated default config only if they exist
 	// in the user's home.
-	homeVisibleDefault := []configFileEntry{
+	pathsRODefault := []configFileEntry{
 		{".ackrc", ""},
 		{".emacs", ""},
 		{".profile", ""},
@@ -45,7 +45,7 @@ func WriteDefault(path string, homeDir string) error {
 		{"/cdrom", ""},
 	}
 
-	homeVisibleDefault = keepExistingEntries(homeDir, homeVisibleDefault)
+	pathsRODefault = keepExistingEntries(homeDir, pathsRODefault)
 	blockedDefault = keepExistingEntries("/", blockedDefault)
 
 	defaultConfig := fmt.Sprintf(`# Drop sandboxing configuration file
@@ -55,7 +55,7 @@ func WriteDefault(path string, homeDir string) error {
 # Be sure not to expose files with keys or other sensitive data to the
 # sandbox. Configs without sensitive data are safe to expose and will ensure
 # the Drop environment doesn't impede work.
-home_visible = %s
+paths_ro = %s
 
 # Directories and files from the user home exposed to Drop in read-write mode.
 #
@@ -138,7 +138,7 @@ udp_ports_to_host = []
 
 # UDP ports exposed from the host to the Drop sandbox.
 udp_ports_from_host = []
-`, toTomlString(homeVisibleDefault), toTomlString(blockedDefault))
+`, toTomlString(pathsRODefault), toTomlString(blockedDefault))
 
 	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {
 		return err
