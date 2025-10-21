@@ -25,7 +25,7 @@ ENV_DIR = env_dir(ENV_ID)
 class Config:
     def __init__(self, *,
                  paths_ro: List[str] = None,
-                 home_writeable: List[str] = None,
+                 paths_rw: List[str] = None,
                  blocked: List[str] = None,
                  env_expose: List[str] = None,
                  tcp_ports_to_host: List[str] = None,
@@ -33,7 +33,7 @@ class Config:
                  udp_ports_to_host: List[str] = None,
                  udp_ports_from_host: List[str] = None):
         self.paths_ro = paths_ro or []
-        self.home_writeable = home_writeable or []
+        self.paths_rw = paths_rw or []
         self.blocked = blocked or []
         self.env_expose = env_expose or []
         self.tcp_ports_to_host = tcp_ports_to_host or []
@@ -45,7 +45,7 @@ class Config:
         """Return configuration as TOML string"""
         toml_lines = [
             f'paths_ro = {str(self.paths_ro)}',
-            f'home_writeable = {str(self.home_writeable)}',
+            f'paths_rw = {str(self.paths_rw)}',
             f'blocked = {str(self.blocked)}',
             f'env_expose = {str(self.env_expose)}',
             '',
@@ -152,8 +152,7 @@ class TestMainFlow(unittest.TestCase):
             # Expose the directory where test coverage data is stored,
             # otherwise the test fails in coverage gathering mode.
             cover_path = Path(os.getcwd()) /  'cover'
-            cover_path = cover_path.relative_to(Path.home())
-            config = Config(home_writeable=[str(cover_path)])
+            config = Config(paths_rw=[str(cover_path)])
             result = self.sandbox_run('ls', config=config, env_id=None,
                                       cwd=cwd)
             self.assertSuccess(result)
@@ -297,20 +296,20 @@ class TestMainFlow(unittest.TestCase):
             "Error: invalid paths_ro '/etc/../usr': path is not normalized\n",
             result.stderr)
 
-    def test_home_writeable(self):
+    def test_paths_rw(self):
         exposed_dname = 'drop-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
             write('hello', hello_path)
-            config = Config(home_writeable=[exposed_dname])
-            # Reading from files in home_writeable dir is allowed
+            config = Config(paths_rw=[f'~/{exposed_dname}'])
+            # Reading from files in paths_rw dir is allowed
             cmd = f'cat {hello_path}'
             result = self.sandbox_run(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('hello', result.stdout)
 
-            # Writing to files in home_writeable dir is allowed,
+            # Writing to files in paths_rw dir is allowed,
             # Creating new files and dirs is also allowed.
             cmd = (f'bash -c "'
                    f'echo world > {hello_path}; '

@@ -263,7 +263,7 @@ func TestParse(t *testing.T) {
 			name: "complete valid config",
 			tomlStr: `
 paths_ro = ["/home/user/docs", "/tmp"]
-home_writeable = ["/home/user/work"]
+paths_rw = ["/home/user/work"]
 blocked = ["/mnt", "/root"]
 env_expose = ["HOME", "PATH", "LC_*"]
 
@@ -275,10 +275,10 @@ udp_ports_to_host = ["5000"]
 udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 `,
 			expected: Config{
-				PathsRO:       []string{"/home/user/docs", "/tmp"},
-				HomeWriteable: []string{"/home/user/work"},
-				Blocked:       []string{"/mnt", "/root"},
-				EnvExpose:     []string{"HOME", "PATH", "LC_*"},
+				PathsRO:   []string{"/home/user/docs", "/tmp"},
+				PathsRW:   []string{"/home/user/work"},
+				Blocked:   []string{"/mnt", "/root"},
+				EnvExpose: []string{"HOME", "PATH", "LC_*"},
 				Net: Net{
 					Mode:             "isolated",
 					TCPPortsToHost:   []string{"8080", "3000:3001"},
@@ -293,10 +293,10 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			name:    "empty config",
 			tomlStr: ``,
 			expected: Config{
-				PathsRO:       nil,
-				HomeWriteable: nil,
-				Blocked:       nil,
-				EnvExpose:     nil,
+				PathsRO:   nil,
+				PathsRW:   nil,
+				Blocked:   nil,
+				EnvExpose: nil,
 				Net: Net{
 					Mode:             "isolated", // default
 					TCPPortsToHost:   nil,
@@ -384,6 +384,22 @@ paths_ro = ["relative/path"]
 			expected: Config{},
 			error:    "invalid paths_ro 'relative/path': path must start with / or ~/",
 		},
+		{
+			name: "invalid paths_rw",
+			tomlStr: `
+paths_rw = ["/home/../invalid"]
+`,
+			expected: Config{},
+			error:    "invalid paths_rw '/home/../invalid': path is not normalized",
+		},
+		{
+			name: "invalid paths_rw, relative path",
+			tomlStr: `
+paths_rw = ["relative/path"]
+`,
+			expected: Config{},
+			error:    "invalid paths_rw 'relative/path': path must start with / or ~/",
+		},
 	}
 
 	for _, tt := range tests {
@@ -412,7 +428,7 @@ paths_ro = ["relative/path"]
 			}
 
 			expectListEquals(t, "PathsRO", result.PathsRO, tt.expected.PathsRO)
-			expectListEquals(t, "HomeWriteable", result.HomeWriteable, tt.expected.HomeWriteable)
+			expectListEquals(t, "PathsRW", result.PathsRW, tt.expected.PathsRW)
 			expectListEquals(t, "Blocked", result.Blocked, tt.expected.Blocked)
 			expectListEquals(t, "EnvExpose", result.EnvExpose, tt.expected.EnvExpose)
 

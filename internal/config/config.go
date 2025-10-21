@@ -20,11 +20,11 @@ type Net struct {
 }
 
 type Config struct {
-	PathsRO       []string `toml:"paths_ro"`
-	HomeWriteable []string `toml:"home_writeable"`
-	Blocked       []string `toml:"blocked"`
-	EnvExpose     []string `toml:"env_expose"`
-	Net           Net      `toml:"net"`
+	PathsRO   []string `toml:"paths_ro"`
+	PathsRW   []string `toml:"paths_rw"`
+	Blocked   []string `toml:"blocked"`
+	EnvExpose []string `toml:"env_expose"`
+	Net       Net      `toml:"net"`
 }
 
 type PortForward struct {
@@ -48,6 +48,10 @@ func Parse(configStr string) (*Config, error) {
 	}
 
 	if err := validatePaths("paths_ro", config.PathsRO); err != nil {
+		return nil, err
+	}
+
+	if err := validatePaths("paths_rw", config.PathsRW); err != nil {
 		return nil, err
 	}
 

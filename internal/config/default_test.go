@@ -32,7 +32,7 @@ func TestWriteDefault(t *testing.T) {
 	if cfg.PathsRO == nil {
 		t.Errorf("Expected paths_ro to be not nil")
 	}
-	expectEmptyList(t, "home_writeable", cfg.HomeWriteable)
+	expectEmptyList(t, "paths_rw", cfg.PathsRW)
 	if cfg.Blocked == nil {
 		t.Errorf("Expected blocked to be not nil")
 	}

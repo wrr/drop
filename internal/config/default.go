@@ -64,7 +64,7 @@ paths_ro = %s
 # outside of the sandbox, so for sure do not expose dirs like bin or
 # shell config files in writable mode. Bash history should also not be
 # exposed, because items from the history can be executed.
-home_writeable = []
+paths_rw = []
 
 # Absolute paths to dirs or files to block access to.
 #
