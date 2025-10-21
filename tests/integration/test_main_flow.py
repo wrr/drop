@@ -209,7 +209,7 @@ class TestMainFlow(unittest.TestCase):
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
             write('hello', hello_path)
-            config = Config(paths_ro=[exposed_dname])
+            config = Config(paths_ro=[f'~/{exposed_dname}'])
             # Reading from files in paths_ro dir is allowed
             cmd = f'cat {hello_path}'
             result = self.sandbox_run(cmd, config=config)
@@ -230,7 +230,7 @@ class TestMainFlow(unittest.TestCase):
 
         host_dir = HOME_DIR / exposed_dname
         with scoped_dir(host_dir):
-            config = Config(paths_ro=[exposed_dname])
+            config = Config(paths_ro=[f'~/{exposed_dname}'])
             # Should be the original file, not a dir
             result = self.sandbox_run('bash -c "test -f ~/drop-test-data"',
                                       config=config)
@@ -248,7 +248,7 @@ class TestMainFlow(unittest.TestCase):
 
         host_file = HOME_DIR / exposed_fname
         with scoped_empty_file(host_file):
-            config = Config(paths_ro=[exposed_fname])
+            config = Config(paths_ro=[f'~/{exposed_fname}'])
             # Should be the original dir, not a file
             result = self.sandbox_run('bash -c "test -d ~/drop-test-data"',
                                       config=config)
@@ -266,7 +266,7 @@ class TestMainFlow(unittest.TestCase):
 
         host_dir = HOME_DIR / exposed_dname
         with scoped_dir(host_dir):
-            config = Config(paths_ro=[exposed_dname])
+            config = Config(paths_ro=[f'~/{exposed_dname}'])
             result = self.sandbox_run('bash -c "test -L ~/drop-test-data"',
                                       config=config)
             self.assertEqual(0, result.returncode)
@@ -280,7 +280,7 @@ class TestMainFlow(unittest.TestCase):
         if host_dir.exists():
             shutil.rmtree(host_dir)
 
-        config = Config(paths_ro=[exposed_dname])
+        config = Config(paths_ro=[f'~/{exposed_dname}'])
         result = self.sandbox_run('bash -c "test -e ~/drop-test-data-missing"',
                                   config=config)
         # Exit 1, file should not exist
@@ -288,6 +288,14 @@ class TestMainFlow(unittest.TestCase):
         expected_msg = (f"Drop: not mounting {host_dir}, "
                         "no such file or directory")
         self.assertIn(expected_msg, result.stderr)
+
+    def test_paths_ro_validation(self):
+        config = Config(paths_ro=['/etc/../usr'])
+        result = self.sandbox_run('ls', config=config)
+        self.assertEqual(1, result.returncode)
+        self.assertEqual(
+            "Error: invalid paths_ro '/etc/../usr': path is not normalized\n",
+            result.stderr)
 
     def test_home_writeable(self):
         exposed_dname = 'drop-test-data'

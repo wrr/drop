@@ -47,6 +47,10 @@ func Parse(configStr string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %v", err)
 	}
 
+	if err := validatePaths("paths_ro", config.PathsRO); err != nil {
+		return nil, err
+	}
+
 	if err := validateEnvExpose(config.EnvExpose); err != nil {
 		return nil, err
 	}
@@ -75,6 +79,40 @@ func Parse(configStr string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+// validatePaths checks if all paths are normalized and either absolute or start with '~/'.
+func validatePaths(prop_name string, paths []string) error {
+	for _, p := range paths {
+		if err := validatePathEntry(p); err != nil {
+			return fmt.Errorf("invalid %s '%s': %v", prop_name, p, err)
+		}
+	}
+	return nil
+}
+
+func validatePathEntry(path string) error {
+	if !strings.HasPrefix(path, "~/") && !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("path must start with / or ~/")
+	}
+	if path == "/" {
+		return fmt.Errorf("cannot expose the whole root directory")
+	}
+	if path == "~/" {
+		return fmt.Errorf("cannot expose the whole home directory")
+	}
+
+	// Remove ~ for validation with Clean()
+	path = strings.TrimPrefix(path, "~")
+
+	// filepath.Clean() removes trailing / from all paths except /.  We
+	// allow for trailing /, so we remove it before validation.
+	path = strings.TrimSuffix(path, "/")
+
+	if path != filepath.Clean(path) {
+		return fmt.Errorf("path is not normalized")
+	}
+	return nil
 }
 
 // validateEnvExpose check if all patterns in the env_expose list are valid glob patterns.

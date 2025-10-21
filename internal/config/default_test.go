@@ -96,30 +96,30 @@ func TestToTomlString(t *testing.T) {
 		{
 			name: "single entry without comment",
 			entries: []configFileEntry{
-				{".bashrc", ""},
+				{"~/.bashrc", ""},
 			},
 			expected: `[
-  ".bashrc",
+  "~/.bashrc",
 ]`,
 		},
 		{
 			name: "single entry with comment",
 			entries: []configFileEntry{
-				{".gitconfig", " # comment foo"},
+				{"~/.gitconfig", " # comment foo"},
 			},
 			expected: `[
-  ".gitconfig", # comment foo
+  "~/.gitconfig", # comment foo
 ]`,
 		},
 		{
 			name: "multiple entries",
 			entries: []configFileEntry{
-				{".bashrc", ""},
-				{".gitconfig", " # comment bar"},
+				{"~/.bashrc", ""},
+				{"~/.gitconfig", " # comment bar"},
 			},
 			expected: `[
-  ".bashrc",
-  ".gitconfig", # comment bar
+  "~/.bashrc",
+  "~/.gitconfig", # comment bar
 ]`,
 		},
 	}

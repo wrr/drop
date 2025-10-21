@@ -20,20 +20,20 @@ func WriteDefault(path string, homeDir string) error {
 	// files are included in the generated default config only if they exist
 	// in the user's home.
 	pathsRODefault := []configFileEntry{
-		{".ackrc", ""},
-		{".emacs", ""},
-		{".profile", ""},
-		{".gitconfig", " # Remove if you keep secrets in .gitconfig"},
-		{".nvm", ""},
-		{".screenrc", ""},
-		{".bashrc", " # Ensure there are no secrets in your shell config files"},
-		{".bash_logout", ""},
-		{".bash_profile", ""},
-		{".zshenv", ""},
-		{".zlogin", ""},
-		{".zprofile", ""},
-		{".zlogout", ""},
-		{".zshrc", ""},
+		{"~/.ackrc", ""},
+		{"~/.emacs", ""},
+		{"~/.profile", ""},
+		{"~/.gitconfig", " # Remove if you keep secrets in .gitconfig"},
+		{"~/.nvm", ""},
+		{"~/.screenrc", ""},
+		{"~/.bashrc", " # Ensure there are no secrets in your shell config files"},
+		{"~/.bash_logout", ""},
+		{"~/.bash_profile", ""},
+		{"~/.zshenv", ""},
+		{"~/.zlogin", ""},
+		{"~/.zprofile", ""},
+		{"~/.zlogout", ""},
+		{"~/.zshrc", ""},
 	}
 
 	// blockedDefault contains paths to block, also included only if

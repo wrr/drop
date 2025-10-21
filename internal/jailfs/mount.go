@@ -145,8 +145,8 @@ func (rt *root) bindAll(srcDir, trgDir string, entries []string, flags uintptr) 
 	return nil
 }
 
-// mountRootSubDir bind mounts all exposed sub-dirs of /.
-func (rt *root) mountRootSubDir() error {
+// mountRootSubDirs bind mounts all exposed sub-dirs of /.
+func (rt *root) mountRootSubDirs() error {
 	// The initial approach was just to mount / into paths.fsRoot and
 	// then block paths configured to be not accessible. This had a nice
 	// property that / automatically had identical content to the host
@@ -221,7 +221,16 @@ func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 	hostHome := paths.HostHome
-	mountPoints := append(cfg.PathsRO, cfg.HomeWriteable...)
+	// TODO: this is only temporary, for now we only expose paths from
+	// home dir, and ignore all other.
+	var homeRO []string
+	for _, path := range cfg.PathsRO {
+		if strings.HasPrefix(path, "~/") {
+			homeRO = append(homeRO, strings.TrimPrefix(path, "~/"))
+		}
+	}
+
+	mountPoints := append(homeRO, cfg.HomeWriteable...)
 	if isSubDir(hostHome, paths.Cwd) {
 		// If CWD is a subdir of home, a mountpoint for it is also needed,
 		// as CWD is mounted read-write.
@@ -253,7 +262,7 @@ func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	if err := rt.bindAll(hostHome, hostHome, cfg.PathsRO, flags|unix.MS_RDONLY); err != nil {
+	if err := rt.bindAll(hostHome, hostHome, homeRO, flags|unix.MS_RDONLY); err != nil {
 		return err
 	}
 	if err := rt.bindAll(hostHome, hostHome, cfg.HomeWriteable, flags); err != nil {
@@ -440,7 +449,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 
 	rt := &root{fsRoot: paths.FsRoot}
 
-	if err := rt.mountRootSubDir(); err != nil {
+	if err := rt.mountRootSubDirs(); err != nil {
 		return err
 	}
 

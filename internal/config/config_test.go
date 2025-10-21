@@ -133,7 +133,7 @@ func TestValidatePortForward(t *testing.T) {
 
 			if tt.error != "" {
 				if err == nil {
-					t.Errorf("expected error")
+					t.Errorf("expected error '%s', got nil", tt.error)
 					return
 				}
 				if !strings.Contains(err.Error(), tt.error) {
@@ -221,7 +221,7 @@ udp_ports_from_host = []
 
 			if tt.error != "" {
 				if err == nil {
-					t.Errorf("expected error")
+					t.Errorf("expected error '%s', got nil", tt.error)
 					return
 				}
 				if !strings.Contains(err.Error(), tt.error) {
@@ -368,6 +368,22 @@ mode = "foo"
 			expected: Config{},
 			error:    "invalid network mode 'foo': must be 'off', 'isolated', or 'unjailed'",
 		},
+		{
+			name: "invalid paths_ro",
+			tomlStr: `
+paths_ro = ["/home/../invalid"]
+`,
+			expected: Config{},
+			error:    "invalid paths_ro '/home/../invalid': path is not normalized",
+		},
+		{
+			name: "invalid paths_ro, relative path",
+			tomlStr: `
+paths_ro = ["relative/path"]
+`,
+			expected: Config{},
+			error:    "invalid paths_ro 'relative/path': path must start with / or ~/",
+		},
 	}
 
 	for _, tt := range tests {
@@ -376,7 +392,7 @@ mode = "foo"
 
 			if tt.error != "" {
 				if err == nil {
-					t.Errorf("expected error")
+					t.Errorf("expected error '%s', got nil", tt.error)
 					return
 				}
 				if !strings.Contains(err.Error(), tt.error) {
@@ -427,6 +443,160 @@ func TestValidateNetworkMode(t *testing.T) {
 		} else if !strings.Contains(err.Error(), "invalid network mode") {
 			t.Errorf("unexpected error for mode '%s': %s", mode, err.Error())
 		}
+	}
+}
+
+func TestValidatePaths(t *testing.T) {
+	tests := []struct {
+		name  string
+		paths []string
+		error string
+	}{
+		{
+			name:  "valid mixed paths",
+			paths: []string{"/home/user/docs", "~/.gitconfig", "/tmp"},
+			error: "",
+		},
+		{
+			name:  "empty paths list",
+			paths: []string{},
+			error: "",
+		},
+		{
+			name:  "invalid path in list",
+			paths: []string{"/valid/path", "foo", "~/valid"},
+			error: "invalid test_prop 'foo': path must start with / or ~/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePaths("test_prop", tt.paths)
+
+			if tt.error != "" {
+				if err == nil {
+					t.Errorf("expected error '%s', got nil", tt.error)
+					return
+				}
+				if !strings.Contains(err.Error(), tt.error) {
+					t.Errorf("expected error '%s', got '%s'", tt.error, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidatePathEntry(t *testing.T) {
+	tests := []struct {
+		name  string
+		path  string
+		error string
+	}{
+		{
+			name:  "absolute path",
+			path:  "/usr/local",
+			error: "",
+		},
+		{
+			name:  "absolute path with trailing /",
+			path:  "/usr/local/",
+			error: "",
+		},
+		{
+			name:  "home path",
+			path:  "~/tmp/docs",
+			error: "",
+		},
+		{
+			name:  "home path with trailing /",
+			path:  "~/tmp/docs/",
+			error: "",
+		},
+		{
+			name:  "home dot file",
+			path:  "~/.bashrc",
+			error: "",
+		},
+		{
+			name:  "empty path",
+			path:  "",
+			error: "path must start with / or ~/",
+		},
+		{
+			name:  "relative path without ~",
+			path:  "docs/file.txt",
+			error: "path must start with / or ~/",
+		},
+		{
+			name:  "path with ..",
+			path:  "/home/../etc/passwd",
+			error: "path is not normalized",
+		},
+		{
+			name:  "home path with ..",
+			path:  "~/../secrets",
+			error: "path is not normalized",
+		},
+		{
+			name:  "path with /./",
+			path:  "/home/./user",
+			error: "path is not normalized",
+		},
+		{
+			name:  "path ending with /.",
+			path:  "/home/user/.",
+			error: "path is not normalized",
+		},
+		{
+			name:  "path with double slashes",
+			path:  "/home//user",
+			error: "path is not normalized",
+		},
+		{
+			name:  "invalid ~",
+			path:  "~user",
+			error: "path must start with / or ~/",
+		},
+		{
+			name:  "tilde alone",
+			path:  "~",
+			error: "path must start with / or ~/",
+		},
+		{
+			name:  "root directory alone",
+			path:  "/",
+			error: "cannot expose the whole root directory",
+		},
+		{
+			name:  "home directory alone",
+			path:  "~/",
+			error: "cannot expose the whole home directory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePathEntry(tt.path)
+
+			if tt.error != "" {
+				if err == nil {
+					t.Errorf("expected error '%s', got nil", tt.error)
+					return
+				}
+				if !strings.Contains(err.Error(), tt.error) {
+					t.Errorf("expected error '%s', got '%s'", tt.error, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 
@@ -494,7 +664,7 @@ func TestValidateEnvExpose(t *testing.T) {
 
 			if tt.error != "" {
 				if err == nil {
-					t.Errorf("expected error '%s' but got none", tt.error)
+					t.Errorf("expected error '%s', got nil", tt.error)
 					return
 				}
 				if !strings.Contains(err.Error(), tt.error) {
