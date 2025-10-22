@@ -88,7 +88,7 @@ func (rt *root) bindFile(src, trg string, mountflags uintptr) error {
 func (rt *root) bind(src, trg string, mountflags uintptr) error {
 	mountflags |= unix.MS_BIND
 	if err := rt.mount(src, trg, "", mountflags, ""); err != nil {
-		return err
+		return fmt.Errorf("bind %v", err)
 	}
 	absTrg := filepath.Join(rt.fsRoot, trg)
 	// mount and remount is needed for RDONLY to work:
@@ -446,7 +446,8 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	flags := uintptr(unix.MS_NOSUID)
+	// MS_REC is required, see the comment in mountRootSubDirs
+	flags := uintptr(unix.MS_NOSUID | unix.MS_REC)
 	if err := rt.bindAll("/", "/", pathsRO, flags|unix.MS_RDONLY); err != nil {
 		return err
 	}
