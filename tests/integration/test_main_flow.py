@@ -221,6 +221,13 @@ class TestMainFlow(unittest.TestCase):
             self.assertEqual(1, result.returncode)
             self.assertIn('Read-only file system', result.stderr)
 
+    def test_paths_ro_from_root_dir(self):
+        # Expose a path outside of the home dir, normally not
+        # available within Drop.
+        config = Config(paths_ro=[f'/boot'])
+        result = self.sandbox_run('ls /boot/', config=config)
+        self.assertSuccess(result)
+
     def test_paths_ro_target_is_file_not_a_dir(self):
         exposed_dname = 'drop-test-data'
         # Create an empty file in the env home dir that conflicts
