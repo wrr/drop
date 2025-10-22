@@ -447,7 +447,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	}
 
 	// MS_REC is required, see the comment in mountRootSubDirs
-	flags := uintptr(unix.MS_NOSUID | unix.MS_REC)
+	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_PRIVATE)
 	if err := rt.bindAll("/", "/", pathsRO, flags|unix.MS_RDONLY); err != nil {
 		return err
 	}
