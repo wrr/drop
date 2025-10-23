@@ -42,38 +42,60 @@ type PortForward struct {
 
 // Custom toml.Unmarshaler for mount field which is of mixed type
 // (TOML 1.0 feature). In TOML mount entry can be either a single
-// string, like "~/go", which sets mount source and target to be the
-// same, or an array ["~/go", "~/host-go"], the first entry is a mount
-// source, the second is a target.
+// Docker-style mount string source:target:option (like
+// "~/go:~/host-go:ro"), or a more verbose TOML table {source =
+// "~/go", target = "~/host-go", rw = true, overlay = false}, where
+// target is optional and defaults to source if not specified.
 func (m *Mount) UnmarshalTOML(data any) error {
 	switch v := data.(type) {
 	case string:
-		// Single string: source and target are the same
-		m.Source = v
-		m.Target = v
-	case []any:
-		// Array of strings: 1 element (same source/target) or 2 elements (different)
-		if len(v) == 0 || len(v) > 2 {
-			return fmt.Errorf("path array must have 1 or 2 elements, got %d", len(v))
+		parsed, err := ParseMount(v)
+		if err != nil {
+			return err
+		}
+		*m = *parsed
+	case map[string]any:
+		source, ok := v["source"]
+		if !ok {
+			return fmt.Errorf("mount config must have 'source' field")
 		}
 
-		paths := make([]string, len(v))
-		for i, elem := range v {
-			str, ok := elem.(string)
+		sourceStr, ok := source.(string)
+		if !ok {
+			return fmt.Errorf("mount config 'source' must be a string")
+		}
+		m.Source = sourceStr
+
+		// Target is optional, defaults to source
+		if target, exists := v["target"]; exists {
+			targetStr, ok := target.(string)
 			if !ok {
-				return fmt.Errorf("path array element %d is not a string", i)
+				return fmt.Errorf("mount config 'target' must be a string")
 			}
-			paths[i] = str
+			m.Target = targetStr
+		} else {
+			m.Target = sourceStr
 		}
 
-		m.Source = paths[0]
-		if len(paths) == 1 {
-			m.Target = paths[0]
-		} else {
-			m.Target = paths[1]
+		// RW is optional, defaults to false
+		if rw, exists := v["rw"]; exists {
+			rwBool, ok := rw.(bool)
+			if !ok {
+				return fmt.Errorf("mount config 'rw' must be a boolean")
+			}
+			m.RW = rwBool
+		}
+
+		// Overlay is optional, defaults to false
+		if overlay, exists := v["overlay"]; exists {
+			overlayBool, ok := overlay.(bool)
+			if !ok {
+				return fmt.Errorf("mount config 'overlay' must be a boolean")
+			}
+			m.Overlay = overlayBool
 		}
 	default:
-		return fmt.Errorf("path should be a string or array of strings, got %T", data)
+		return fmt.Errorf("mount entry should be a string or an object, got %T", data)
 	}
 	return nil
 }

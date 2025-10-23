@@ -24,8 +24,8 @@ ENV_DIR = env_dir(ENV_ID)
 
 class Config:
     def __init__(self, *,
-                 paths_ro = None, # List where elements are strings or lists of strings.
-                 paths_rw = None, # List where elements are strings or lists of strings.
+                 paths_ro: List[str] = None,
+                 paths_rw: List[str] = None,
                  blocked: List[str] = None,
                  env_expose: List[str] = None,
                  tcp_ports_to_host: List[str] = None,
@@ -230,7 +230,7 @@ class TestMainFlow(unittest.TestCase):
 
     def test_paths_remaping(self):
         # Mount /boot from host into the user homedir.
-        config = Config(paths_ro=[['/boot', '~/boot']])
+        config = Config(paths_ro=['/boot:~/boot'])
         result = self.sandbox_run('ls /boot/', config=config)
         self.assertEqual(2, result.returncode)
         self.assertIn("cannot access '/boot/': No such file or directory",

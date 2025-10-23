@@ -27,11 +27,8 @@ func expectMountSlicesEqual(t *testing.T, fieldName string, actual, expected []M
 		return
 	}
 	for i, expectedItem := range expected {
-		if actual[i].Source != expectedItem.Source {
-			t.Errorf("expected %s[%d].Source %s, got %s", fieldName, i, expectedItem.Source, actual[i].Source)
-		}
-		if actual[i].Target != expectedItem.Target {
-			t.Errorf("expected %s[%d].Target %s, got %s", fieldName, i, expectedItem.Target, actual[i].Target)
+		if actual[i] != expectedItem {
+			t.Errorf("expected %s[%d] = %+v, got %+v", fieldName, i, expectedItem, actual[i])
 		}
 	}
 }
@@ -279,8 +276,8 @@ func TestParse(t *testing.T) {
 		{
 			name: "complete valid config",
 			tomlStr: `
-paths_ro = ["/home/user/docs", "/tmp"]
-paths_rw = ["/home/user/work", ["/media", "~/media"]]
+paths_ro = ["/home/user/docs", "/tmp:~/tmp:rw,overlay"]
+paths_rw = ["/home/user/work", {source = "/media", target = "~/media"}]
 blocked = ["/mnt", "/root"]
 env_expose = ["HOME", "PATH", "LC_*"]
 
@@ -294,7 +291,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			expected: Config{
 				MountsRO: []Mount{
 					{Source: "/home/user/docs", Target: "/home/user/docs"},
-					{Source: "/tmp", Target: "/tmp"},
+					{Source: "/tmp", Target: "~/tmp", RW: true, Overlay: true},
 				},
 				MountsRW: []Mount{
 					{Source: "/home/user/work", Target: "/home/user/work"},
@@ -619,31 +616,31 @@ func TestMountUnmarshalingAndValidation(t *testing.T) {
 		error    string
 	}{
 		{
-			name: "simple string paths",
+			name: "string mounts",
 			tomlStr: `
-paths_ro = ["~/.bashrc", "/etc/hosts"]
+paths_ro = ["~/.bashrc", "/etc/hosts:~/hosts:rw"]
 `,
 			expected: []Mount{
 				{Source: "~/.bashrc", Target: "~/.bashrc"},
-				{Source: "/etc/hosts", Target: "/etc/hosts"},
+				{Source: "/etc/hosts", Target: "~/hosts", RW: true},
 			},
 			error: "",
 		},
 		{
-			name: "one-element arrays",
+			name: "object with source only",
 			tomlStr: `
-paths_ro = [["~/.bashrc"], ["/etc/hosts"]]
+paths_ro = [{source = "~/.bashrc"}, {source = "/etc/hosts", overlay=true}]
 `,
 			expected: []Mount{
 				{Source: "~/.bashrc", Target: "~/.bashrc"},
-				{Source: "/etc/hosts", Target: "/etc/hosts"},
+				{Source: "/etc/hosts", Target: "/etc/hosts", Overlay: true},
 			},
 			error: "",
 		},
 		{
-			name: "two-element arrays",
+			name: "object with source and target",
 			tomlStr: `
-paths_ro = [["~/.gitconfig", "~/.gitconfig-host"], ["/boot", "/mnt/boot"]]
+paths_ro = [{source = "~/.gitconfig", target = "~/.gitconfig-host"}, {source = "/boot", target = "/mnt/boot"}]
 `,
 			expected: []Mount{
 				{Source: "~/.gitconfig", Target: "~/.gitconfig-host"},
@@ -652,9 +649,9 @@ paths_ro = [["~/.gitconfig", "~/.gitconfig-host"], ["/boot", "/mnt/boot"]]
 			error: "",
 		},
 		{
-			name: "mixed string and arrays",
+			name: "mixed string and objects",
 			tomlStr: `
-paths_ro = ["~/.bashrc", ["~/.gitconfig", "~/.gitconfig-host"], ["/etc/hosts"]]
+paths_ro = ["~/.bashrc", {source = "~/.gitconfig", target = "~/.gitconfig-host"}, {source = "/etc/hosts"}]
 `,
 			expected: []Mount{
 				{Source: "~/.bashrc", Target: "~/.bashrc"},
@@ -664,36 +661,72 @@ paths_ro = ["~/.bashrc", ["~/.gitconfig", "~/.gitconfig-host"], ["/etc/hosts"]]
 			error: "",
 		},
 		{
-			name: "empty array",
+			name: "object with rw and overlay options",
 			tomlStr: `
-paths_ro = [[]]
+paths_ro = [{source = "~/foo", rw = true, overlay = true}]
 `,
-			expected: []Mount{},
-			error:    "path array must have 1 or 2 elements, got 0",
+			expected: []Mount{
+				{Source: "~/foo", Target: "~/foo", RW: true, Overlay: true},
+			},
+			error: "",
 		},
 		{
-			name: "three-element array",
+			name: "object with false rw and overlay",
 			tomlStr: `
-paths_ro = [["~/.bashrc", "~/.bashrc2", "~/.bashrc3"]]
+paths_ro = [{source = "~/foo", rw = false, overlay = false}]
 `,
-			expected: []Mount{},
-			error:    "path array must have 1 or 2 elements, got 3",
+			expected: []Mount{
+				{Source: "~/foo", Target: "~/foo", RW: false, Overlay: false},
+			},
+			error: "",
 		},
 		{
-			name: "array with non-string",
+			name: "object without source field",
 			tomlStr: `
-paths_ro = [[123, "~/.bashrc"]]
+paths_ro = [{target = "~/foo"}]
 `,
 			expected: []Mount{},
-			error:    "path array element 0 is not a string",
+			error:    "mount config must have 'source' field",
 		},
 		{
-			name: "neither string nor array",
+			name: "object with non-string source",
+			tomlStr: `
+paths_ro = [{source = 123}]
+`,
+			expected: []Mount{},
+			error:    "mount config 'source' must be a string",
+		},
+		{
+			name: "object with non-string target",
+			tomlStr: `
+paths_ro = [{source = "~/.bashrc", target = 456}]
+`,
+			expected: []Mount{},
+			error:    "mount config 'target' must be a string",
+		},
+		{
+			name: "object with non-boolean rw",
+			tomlStr: `
+paths_ro = [{source = "~/.bashrc", rw = "true"}]
+`,
+			expected: []Mount{},
+			error:    "mount config 'rw' must be a boolean",
+		},
+		{
+			name: "object with non-boolean overlay",
+			tomlStr: `
+paths_ro = [{source = "~/.bashrc", overlay = 1}]
+`,
+			expected: []Mount{},
+			error:    "mount config 'overlay' must be a boolean",
+		},
+		{
+			name: "neither string nor object",
 			tomlStr: `
 paths_ro = [64]
 `,
 			expected: []Mount{},
-			error:    "path should be a string or array of strings, got int64",
+			error:    "mount entry should be a string or an object, got int64",
 		},
 		// MountPath validation:
 		{
@@ -715,7 +748,7 @@ paths_ro = ["~/.bashrc", "/etc/../hosts"]
 		{
 			name: "Invalid path, not absolute",
 			tomlStr: `
-paths_ro = ["~/.bashrc", ["/usr/bin", "bin"]]
+paths_ro = ["~/.bashrc", {source = "/usr/bin", target = "bin"}]
 `,
 			expected: []Mount{},
 			error:    "invalid paths_ro 'bin': path must start with / or ~/",
