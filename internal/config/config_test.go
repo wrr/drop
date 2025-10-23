@@ -485,6 +485,132 @@ func TestValidateNetworkMode(t *testing.T) {
 	}
 }
 
+func TestParseMount(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected Mount
+		error    string
+	}{
+		{
+			name:  "source only",
+			input: "~/foo",
+			expected: Mount{
+				Source:  "~/foo",
+				Target:  "~/foo",
+				RW:      false,
+				Overlay: false,
+			},
+		},
+		{
+			name:  "source and target",
+			input: "~/foo:~/bar",
+			expected: Mount{
+				Source:  "~/foo",
+				Target:  "~/bar",
+				RW:      false,
+				Overlay: false,
+			},
+		},
+		{
+			name:  "source with empty target",
+			input: "~/foo:",
+			expected: Mount{
+				Source:  "~/foo",
+				Target:  "~/foo",
+				RW:      false,
+				Overlay: false,
+			},
+		},
+		{
+			name:  "source, target, and rw option",
+			input: "~/foo:~/bar:rw",
+			expected: Mount{
+				Source:  "~/foo",
+				Target:  "~/bar",
+				RW:      true,
+				Overlay: false,
+			},
+		},
+		{
+			name:  "source, target, and overlay option",
+			input: "~/foo:~/bar:overlay",
+			expected: Mount{
+				Source:  "~/foo",
+				Target:  "~/bar",
+				RW:      false,
+				Overlay: true,
+			},
+		},
+		{
+			name:  "source, target, and multiple options",
+			input: "~/foo:~/bar:rw,overlay",
+			expected: Mount{
+				Source:  "~/foo",
+				Target:  "~/bar",
+				RW:      true,
+				Overlay: true,
+			},
+		},
+		{
+			name:  "source with empty target and options",
+			input: "~/foo::rw",
+			expected: Mount{
+				Source:  "~/foo",
+				Target:  "~/foo",
+				RW:      true,
+				Overlay: false,
+			},
+		},
+		{
+			name:  "too many parts",
+			input: "~/foo:~/bar:rw:extra",
+			error: "mount config has too many parts separated by ':', should have at most 3: ~/foo:~/bar:rw:extra",
+		},
+		{
+			name:  "invalid option",
+			input: "~/foo:~/bar:ro",
+			error: "not recognized mount option ro in ~/foo:~/bar:ro. Supported options are",
+		},
+		{
+			name:  "one valid and one invalid option",
+			input: "~/foo:~/bar:rw,bind",
+			error: "not recognized mount option bind in ~/foo:~/bar:rw,bind",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ParseMount(tt.input)
+
+			if tt.error != "" {
+				if err == nil {
+					t.Errorf("expected error containing '%s', got nil", tt.error)
+					return
+				}
+				if !strings.Contains(err.Error(), tt.error) {
+					t.Errorf("expected error containing '%s', got '%s'", tt.error, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if result == nil {
+				t.Errorf("expected result but got nil")
+				return
+			}
+
+			if *result != tt.expected {
+				t.Errorf("expected %+v, got %+v", tt.expected, *result)
+			}
+		})
+	}
+}
+
 func TestMountUnmarshalingAndValidation(t *testing.T) {
 	tests := []struct {
 		name     string

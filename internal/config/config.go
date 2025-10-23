@@ -20,8 +20,10 @@ type Net struct {
 }
 
 type Mount struct {
-	Source string
-	Target string
+	Source  string
+	Target  string
+	RW      bool
+	Overlay bool
 }
 
 type Config struct {
@@ -130,6 +132,40 @@ func Parse(configStr string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+// ParseMount parses mount configuration from a string of a form
+// source:target:options, where target and options are optional. If
+// target is not given or empty, it equals source.  Options are comma
+// separated and can be "rw" and "overlay". Valid strings: "~/go",
+// "~/go:~/host-go" "~/go:~/host-go:ro", "~/go::ro,overlay
+func ParseMount(str string) (*Mount, error) {
+	var m Mount
+	parts := strings.Split(str, ":")
+	parts_cnt := len(parts)
+	if parts_cnt > 3 {
+		return nil, fmt.Errorf("mount config has too many parts separated by ':', should have at most 3: %v", str)
+	}
+	m.Source = parts[0]
+	if parts_cnt > 1 && parts[1] != "" {
+		m.Target = parts[1]
+	} else {
+		m.Target = m.Source
+	}
+	if parts_cnt == 3 {
+		opts := strings.Split(parts[2], ",")
+		for _, opt := range opts {
+			switch opt {
+			case "rw":
+				m.RW = true
+			case "overlay":
+				m.Overlay = true
+			default:
+				return nil, fmt.Errorf("not recognized mount option %v in %v. Supported options are 'rw' and 'overlay'", opt, str)
+			}
+		}
+	}
+	return &m, nil
 }
 
 // validateMounts checks if all mount source and target paths are normalized and either absolute or start with '~/'.
