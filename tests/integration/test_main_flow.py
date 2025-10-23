@@ -24,16 +24,14 @@ ENV_DIR = env_dir(ENV_ID)
 
 class Config:
     def __init__(self, *,
-                 paths_ro: List[str] = None,
-                 paths_rw: List[str] = None,
+                 mounts: List[str] = None,
                  blocked: List[str] = None,
                  env_expose: List[str] = None,
                  tcp_ports_to_host: List[str] = None,
                  tcp_ports_from_host: List[str] = None,
                  udp_ports_to_host: List[str] = None,
                  udp_ports_from_host: List[str] = None):
-        self.paths_ro = paths_ro or []
-        self.paths_rw = paths_rw or []
+        self.mounts = mounts or []
         self.blocked = blocked or []
         self.env_expose = env_expose or []
         self.tcp_ports_to_host = tcp_ports_to_host or []
@@ -44,8 +42,7 @@ class Config:
     def toml(self) -> str:
         """Return configuration as TOML string"""
         toml_lines = [
-            f'paths_ro = {str(self.paths_ro)}',
-            f'paths_rw = {str(self.paths_rw)}',
+            f'mounts = {str(self.mounts)}',
             f'blocked = {str(self.blocked)}',
             f'env_expose = {str(self.env_expose)}',
             '',
@@ -152,7 +149,7 @@ class TestMainFlow(unittest.TestCase):
             # Expose the directory where test coverage data is stored,
             # otherwise the test fails in coverage gathering mode.
             cover_path = Path(os.getcwd()) /  'cover'
-            config = Config(paths_rw=[str(cover_path)])
+            config = Config(mounts=[str(cover_path) + "::rw"])
             result = self.sandbox_run('ls', config=config, env_id=None,
                                       cwd=cwd)
             self.assertSuccess(result)
@@ -202,35 +199,36 @@ class TestMainFlow(unittest.TestCase):
 
         self.assertEqual('Hello world\n', read(jail_file))
 
-    def test_paths_ro(self):
+    def test_mount_read_only(self):
         exposed_dname = 'drop-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
             write('hello', hello_path)
-            config = Config(paths_ro=[f'~/{exposed_dname}'])
-            # Reading from files in paths_ro dir is allowed
+            config = Config(mounts=[f'~/{exposed_dname}'])
+            # Reading from files in the dir exposed as readonly is
+            # allowed
             cmd = f'cat {hello_path}'
             result = self.sandbox_run(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('hello', result.stdout)
 
-            # Writing to files in paths_ro dir is not allowed
+            # Writing to files in is not allowed
             cmd = f'bash -c "cat foo > {hello_path}"'
             result = self.sandbox_run(cmd, config=config)
             self.assertEqual(1, result.returncode)
             self.assertIn('Read-only file system', result.stderr)
 
-    def test_paths_ro_from_root_dir(self):
+    def test_mounts_from_root_dir(self):
         # Expose a path outside of the home dir, normally not
         # available within Drop.
-        config = Config(paths_ro=['/boot'])
+        config = Config(mounts=['/boot'])
         result = self.sandbox_run('ls /boot/', config=config)
         self.assertSuccess(result)
 
     def test_paths_remaping(self):
         # Mount /boot from host into the user homedir.
-        config = Config(paths_ro=['/boot:~/boot'])
+        config = Config(mounts=['/boot:~/boot'])
         result = self.sandbox_run('ls /boot/', config=config)
         self.assertEqual(2, result.returncode)
         self.assertIn("cannot access '/boot/': No such file or directory",
@@ -238,7 +236,7 @@ class TestMainFlow(unittest.TestCase):
         result = self.sandbox_run(f'ls {HOME_DIR / 'boot'}', config=config)
         self.assertSuccess(result)
 
-    def test_paths_ro_target_is_file_not_a_dir(self):
+    def test_mounts_target_is_file_not_a_dir(self):
         exposed_dname = 'drop-test-data'
         # Create an empty file in the env home dir that conflicts
         # with the exposed directory
@@ -246,7 +244,7 @@ class TestMainFlow(unittest.TestCase):
 
         host_dir = HOME_DIR / exposed_dname
         with scoped_dir(host_dir):
-            config = Config(paths_ro=[f'~/{exposed_dname}'])
+            config = Config(mounts=[f'~/{exposed_dname}'])
             # Should be the original file, not a dir
             result = self.sandbox_run('bash -c "test -f ~/drop-test-data"',
                                       config=config)
@@ -255,7 +253,7 @@ class TestMainFlow(unittest.TestCase):
                             "exists but is a file not a directory")
             self.assertIn(expected_msg, result.stderr)
 
-    def test_paths_ro_target_is_dir_not_a_file(self):
+    def test_mounts_target_is_dir_not_a_file(self):
         exposed_fname = 'drop-test-data'
         # Create a directory in the env home dir that conflicts
         # with exposed file.
@@ -264,7 +262,7 @@ class TestMainFlow(unittest.TestCase):
 
         host_file = HOME_DIR / exposed_fname
         with scoped_empty_file(host_file):
-            config = Config(paths_ro=[f'~/{exposed_fname}'])
+            config = Config(mounts=[f'~/{exposed_fname}'])
             # Should be the original dir, not a file
             result = self.sandbox_run('bash -c "test -d ~/drop-test-data"',
                                       config=config)
@@ -273,7 +271,7 @@ class TestMainFlow(unittest.TestCase):
                             "exists but is a directory not a file")
             self.assertIn(expected_msg, result.stderr)
 
-    def test_paths_ro_target_is_link(self):
+    def test_mounts_target_is_link(self):
         exposed_dname = 'drop-test-data'
         # Create a symlink in the env home directory
         target_link = ENV_DIR / 'home' / exposed_dname
@@ -282,7 +280,7 @@ class TestMainFlow(unittest.TestCase):
 
         host_dir = HOME_DIR / exposed_dname
         with scoped_dir(host_dir):
-            config = Config(paths_ro=[f'~/{exposed_dname}'])
+            config = Config(mounts=[f'~/{exposed_dname}'])
             result = self.sandbox_run('bash -c "test -L ~/drop-test-data"',
                                       config=config)
             self.assertEqual(0, result.returncode)
@@ -290,13 +288,13 @@ class TestMainFlow(unittest.TestCase):
                             "exists but is a symbolic link")
             self.assertIn(expected_msg, result.stderr)
 
-    def test_paths_ro_source_is_missing(self):
+    def test_mounts_source_is_missing(self):
         exposed_dname = 'drop-test-data-missing'
         host_dir = HOME_DIR / exposed_dname
         if host_dir.exists():
             shutil.rmtree(host_dir)
 
-        config = Config(paths_ro=[f'~/{exposed_dname}'])
+        config = Config(mounts=[f'~/{exposed_dname}'])
         result = self.sandbox_run('bash -c "test -e ~/drop-test-data-missing"',
                                   config=config)
         # Exit 1, file should not exist
@@ -305,30 +303,31 @@ class TestMainFlow(unittest.TestCase):
                         "no such file or directory")
         self.assertIn(expected_msg, result.stderr)
 
-    def test_paths_ro_validation(self):
-        config = Config(paths_ro=['/etc/../usr'])
+    def test_mounts_validation(self):
+        config = Config(mounts=['/etc/../usr'])
         result = self.sandbox_run('ls', config=config)
         self.assertEqual(1, result.returncode)
         self.assertEqual(
             "Error: failed to parse config: "
-            "invalid paths_ro '/etc/../usr': path is not normalized\n",
+            "invalid mounts '/etc/../usr': path is not normalized\n",
             result.stderr)
 
-    def test_paths_rw(self):
+    def test_mount_read_write(self):
         exposed_dname = 'drop-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
             write('hello', hello_path)
-            config = Config(paths_rw=[f'~/{exposed_dname}'])
-            # Reading from files in paths_rw dir is allowed
+            config = Config(mounts=[f"~/{exposed_dname}::rw"])
+            # Reading from files in the dir exposed in readwrite mode
+            # is allowed
             cmd = f'cat {hello_path}'
             result = self.sandbox_run(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('hello', result.stdout)
 
-            # Writing to files in paths_rw dir is allowed,
-            # Creating new files and dirs is also allowed.
+            # Writing to files is allowed, creating new files and dirs
+            # is also allowed.
             cmd = (f'bash -c "'
                    f'echo world > {hello_path}; '
                    f'mkdir {home_sub_path}/foo; '

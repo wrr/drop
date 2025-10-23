@@ -276,8 +276,12 @@ func TestParse(t *testing.T) {
 		{
 			name: "complete valid config",
 			tomlStr: `
-paths_ro = ["/home/user/docs", "/tmp:~/tmp:rw,overlay"]
-paths_rw = ["/home/user/work", {source = "/media", target = "~/media"}]
+mounts = [
+  "/home/user/docs",
+  "/tmp:~/tmp:rw,overlay",
+  "/home/user/work::rw",
+  {source = "/media", target = "~/media", rw = true}
+]
 blocked = ["/mnt", "/root"]
 env_expose = ["HOME", "PATH", "LC_*"]
 
@@ -289,13 +293,11 @@ udp_ports_to_host = ["5000"]
 udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 `,
 			expected: Config{
-				MountsRO: []Mount{
+				Mounts: []Mount{
 					{Source: "/home/user/docs", Target: "/home/user/docs"},
 					{Source: "/tmp", Target: "~/tmp", RW: true, Overlay: true},
-				},
-				MountsRW: []Mount{
-					{Source: "/home/user/work", Target: "/home/user/work"},
-					{Source: "/media", Target: "~/media"},
+					{Source: "/home/user/work", Target: "/home/user/work", RW: true},
+					{Source: "/media", Target: "~/media", RW: true},
 				},
 				Blocked:   []string{"/mnt", "/root"},
 				EnvExpose: []string{"HOME", "PATH", "LC_*"},
@@ -313,8 +315,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			name:    "empty config",
 			tomlStr: ``,
 			expected: Config{
-				MountsRO:  nil,
-				MountsRW:  nil,
+				Mounts:    nil,
 				Blocked:   nil,
 				EnvExpose: nil,
 				Net: Net{
@@ -389,36 +390,20 @@ mode = "foo"
 			error:    "invalid network mode 'foo': must be 'off', 'isolated', or 'unjailed'",
 		},
 		{
-			name: "invalid paths_ro",
+			name: "invalid mounts",
 			tomlStr: `
-paths_ro = ["/home/../invalid"]
+mounts = ["/home/../invalid"]
 `,
 			expected: Config{},
-			error:    "invalid paths_ro '/home/../invalid': path is not normalized",
+			error:    "invalid mounts '/home/../invalid': path is not normalized",
 		},
 		{
-			name: "invalid paths_ro, relative path",
+			name: "invalid mounts, relative path",
 			tomlStr: `
-paths_ro = ["relative/path"]
+mounts = ["relative/path"]
 `,
 			expected: Config{},
-			error:    "invalid paths_ro 'relative/path': path must start with / or ~/",
-		},
-		{
-			name: "invalid paths_rw",
-			tomlStr: `
-paths_rw = ["/home/../invalid"]
-`,
-			expected: Config{},
-			error:    "invalid paths_rw '/home/../invalid': path is not normalized",
-		},
-		{
-			name: "invalid paths_rw, relative path",
-			tomlStr: `
-paths_rw = ["relative/path"]
-`,
-			expected: Config{},
-			error:    "invalid paths_rw 'relative/path': path must start with / or ~/",
+			error:    "invalid mounts 'relative/path': path must start with / or ~/",
 		},
 	}
 
@@ -447,8 +432,7 @@ paths_rw = ["relative/path"]
 				return
 			}
 
-			expectMountSlicesEqual(t, "PathsRO", result.MountsRO, tt.expected.MountsRO)
-			expectMountSlicesEqual(t, "PathsRW", result.MountsRW, tt.expected.MountsRW)
+			expectMountSlicesEqual(t, "Mounts", result.Mounts, tt.expected.Mounts)
 			expectStringSlicesEqual(t, "Blocked", result.Blocked, tt.expected.Blocked)
 			expectStringSlicesEqual(t, "EnvExpose", result.EnvExpose, tt.expected.EnvExpose)
 
@@ -618,7 +602,7 @@ func TestMountUnmarshalingAndValidation(t *testing.T) {
 		{
 			name: "string mounts",
 			tomlStr: `
-paths_ro = ["~/.bashrc", "/etc/hosts:~/hosts:rw"]
+mounts = ["~/.bashrc", "/etc/hosts:~/hosts:rw"]
 `,
 			expected: []Mount{
 				{Source: "~/.bashrc", Target: "~/.bashrc"},
@@ -629,7 +613,7 @@ paths_ro = ["~/.bashrc", "/etc/hosts:~/hosts:rw"]
 		{
 			name: "object with source only",
 			tomlStr: `
-paths_ro = [{source = "~/.bashrc"}, {source = "/etc/hosts", overlay=true}]
+mounts = [{source = "~/.bashrc"}, {source = "/etc/hosts", overlay=true}]
 `,
 			expected: []Mount{
 				{Source: "~/.bashrc", Target: "~/.bashrc"},
@@ -640,7 +624,7 @@ paths_ro = [{source = "~/.bashrc"}, {source = "/etc/hosts", overlay=true}]
 		{
 			name: "object with source and target",
 			tomlStr: `
-paths_ro = [{source = "~/.gitconfig", target = "~/.gitconfig-host"}, {source = "/boot", target = "/mnt/boot"}]
+mounts = [{source = "~/.gitconfig", target = "~/.gitconfig-host"}, {source = "/boot", target = "/mnt/boot"}]
 `,
 			expected: []Mount{
 				{Source: "~/.gitconfig", Target: "~/.gitconfig-host"},
@@ -651,7 +635,7 @@ paths_ro = [{source = "~/.gitconfig", target = "~/.gitconfig-host"}, {source = "
 		{
 			name: "mixed string and objects",
 			tomlStr: `
-paths_ro = ["~/.bashrc", {source = "~/.gitconfig", target = "~/.gitconfig-host"}, {source = "/etc/hosts"}]
+mounts = ["~/.bashrc", {source = "~/.gitconfig", target = "~/.gitconfig-host"}, {source = "/etc/hosts"}]
 `,
 			expected: []Mount{
 				{Source: "~/.bashrc", Target: "~/.bashrc"},
@@ -663,7 +647,7 @@ paths_ro = ["~/.bashrc", {source = "~/.gitconfig", target = "~/.gitconfig-host"}
 		{
 			name: "object with rw and overlay options",
 			tomlStr: `
-paths_ro = [{source = "~/foo", rw = true, overlay = true}]
+mounts = [{source = "~/foo", rw = true, overlay = true}]
 `,
 			expected: []Mount{
 				{Source: "~/foo", Target: "~/foo", RW: true, Overlay: true},
@@ -673,7 +657,7 @@ paths_ro = [{source = "~/foo", rw = true, overlay = true}]
 		{
 			name: "object with false rw and overlay",
 			tomlStr: `
-paths_ro = [{source = "~/foo", rw = false, overlay = false}]
+mounts = [{source = "~/foo", rw = false, overlay = false}]
 `,
 			expected: []Mount{
 				{Source: "~/foo", Target: "~/foo", RW: false, Overlay: false},
@@ -683,7 +667,7 @@ paths_ro = [{source = "~/foo", rw = false, overlay = false}]
 		{
 			name: "object without source field",
 			tomlStr: `
-paths_ro = [{target = "~/foo"}]
+mounts = [{target = "~/foo"}]
 `,
 			expected: []Mount{},
 			error:    "mount config must have 'source' field",
@@ -691,7 +675,7 @@ paths_ro = [{target = "~/foo"}]
 		{
 			name: "object with non-string source",
 			tomlStr: `
-paths_ro = [{source = 123}]
+mounts = [{source = 123}]
 `,
 			expected: []Mount{},
 			error:    "mount config 'source' must be a string",
@@ -699,7 +683,7 @@ paths_ro = [{source = 123}]
 		{
 			name: "object with non-string target",
 			tomlStr: `
-paths_ro = [{source = "~/.bashrc", target = 456}]
+mounts = [{source = "~/.bashrc", target = 456}]
 `,
 			expected: []Mount{},
 			error:    "mount config 'target' must be a string",
@@ -707,7 +691,7 @@ paths_ro = [{source = "~/.bashrc", target = 456}]
 		{
 			name: "object with non-boolean rw",
 			tomlStr: `
-paths_ro = [{source = "~/.bashrc", rw = "true"}]
+mounts = [{source = "~/.bashrc", rw = "true"}]
 `,
 			expected: []Mount{},
 			error:    "mount config 'rw' must be a boolean",
@@ -715,7 +699,7 @@ paths_ro = [{source = "~/.bashrc", rw = "true"}]
 		{
 			name: "object with non-boolean overlay",
 			tomlStr: `
-paths_ro = [{source = "~/.bashrc", overlay = 1}]
+mounts = [{source = "~/.bashrc", overlay = 1}]
 `,
 			expected: []Mount{},
 			error:    "mount config 'overlay' must be a boolean",
@@ -723,7 +707,7 @@ paths_ro = [{source = "~/.bashrc", overlay = 1}]
 		{
 			name: "neither string nor object",
 			tomlStr: `
-paths_ro = [64]
+mounts = [64]
 `,
 			expected: []Mount{},
 			error:    "mount entry should be a string or an object, got int64",
@@ -732,26 +716,26 @@ paths_ro = [64]
 		{
 			name: "Invalid path",
 			tomlStr: `
-paths_ro = ["~/.bashrc", "/etc/../hosts"]
+mounts = ["~/.bashrc", "/etc/../hosts"]
 `,
 			expected: []Mount{},
-			error:    "invalid paths_ro '/etc/../hosts': path is not normalized",
+			error:    "invalid mounts '/etc/../hosts': path is not normalized",
 		},
 		{
 			name: "Invalid path, not normalized",
 			tomlStr: `
-paths_ro = ["~/.bashrc", "/etc/../hosts"]
+mounts = ["~/.bashrc", "/etc/../hosts"]
 `,
 			expected: []Mount{},
-			error:    "invalid paths_ro '/etc/../hosts': path is not normalized",
+			error:    "invalid mounts '/etc/../hosts': path is not normalized",
 		},
 		{
 			name: "Invalid path, not absolute",
 			tomlStr: `
-paths_ro = ["~/.bashrc", {source = "/usr/bin", target = "bin"}]
+mounts = ["~/.bashrc", {source = "/usr/bin", target = "bin"}]
 `,
 			expected: []Mount{},
-			error:    "invalid paths_ro 'bin': path must start with / or ~/",
+			error:    "invalid mounts 'bin': path must start with / or ~/",
 		},
 	}
 
@@ -780,7 +764,7 @@ paths_ro = ["~/.bashrc", {source = "/usr/bin", target = "bin"}]
 				return
 			}
 
-			expectMountSlicesEqual(t, "PathsRO", result.MountsRO, tt.expected)
+			expectMountSlicesEqual(t, "Mounts", result.Mounts, tt.expected)
 		})
 	}
 }

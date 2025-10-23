@@ -29,14 +29,8 @@ func TestWriteDefault(t *testing.T) {
 		t.Fatalf("Failed to read created default config: %v", err)
 	}
 
-	if cfg.MountsRO == nil {
-		t.Errorf("Expected paths_ro to be not nil")
-	}
-
-	if cfg.MountsRW == nil {
-		t.Errorf("Expected paths_rw to be not nil")
-	} else if len(cfg.MountsRW) != 0 {
-		t.Errorf("Expected path_rw to be empty, got %v", cfg.MountsRW)
+	if cfg.Mounts == nil {
+		t.Errorf("Expected mounts to be not nil")
 	}
 
 	if cfg.Blocked == nil {

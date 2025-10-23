@@ -112,6 +112,10 @@ func (rt *root) bindAll(mounts []config.Mount, flags uintptr) error {
 	for _, m := range mounts {
 		src := m.Source
 		trg := m.Target
+		rdonly := uintptr(0)
+		if !m.RW {
+			rdonly |= unix.MS_RDONLY
+		}
 		hostTrg := filepath.Join(rt.fsRoot, trg)
 
 		if srcInfo, err := os.Stat(src); err == nil {
@@ -126,7 +130,7 @@ func (rt *root) bindAll(mounts []config.Mount, flags uintptr) error {
 					log.Info(infoHeader+"but is a file not a directory", src)
 					continue
 				}
-				if err := rt.bind(src, trg, flags); err != nil {
+				if err := rt.bind(src, trg, flags|rdonly); err != nil {
 					return err
 				}
 			} else {
@@ -134,7 +138,7 @@ func (rt *root) bindAll(mounts []config.Mount, flags uintptr) error {
 					log.Info(infoHeader+"but is a directory not a file", src)
 					continue
 				}
-				if err := rt.bindFile(src, trg, flags); err != nil {
+				if err := rt.bindFile(src, trg, flags|rdonly); err != nil {
 					return err
 				}
 			}
@@ -428,20 +432,17 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	mountsRO := resolveHomeDir(cfg.MountsRO, paths.HostHome)
-	mountsRW := resolveHomeDir(cfg.MountsRW, paths.HostHome)
-
+	// Resolve home directory in all mounts and separate by RW flag
+	mounts := resolveHomeDir(cfg.Mounts, paths.HostHome)
 	// Mount current working directory and it's subdirs as readable and
 	// writable, but only if Cwd is not the home directory or a parent of it
 	// to avoid exposing the original home directory.
 	if !isSubDirOrSame(paths.Cwd, paths.HostHome) {
-		mountsRW = append(mountsRW, config.Mount{Source: paths.Cwd, Target: paths.Cwd})
+		mounts = append(mounts, config.Mount{Source: paths.Cwd, Target: paths.Cwd, RW: true})
 	}
 
-	allMounts := append(mountsRO, mountsRW...)
-
 	// This need to be done before overlayfs are mounted (/etc and user home).
-	if err := createOverlayFSMountPoints(allMounts, paths); err != nil {
+	if err := createOverlayFSMountPoints(mounts, paths); err != nil {
 		return err
 	}
 	if err := rt.mountHome(paths); err != nil {
@@ -454,10 +455,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 
 	// MS_REC is required, see the comment in mountRootSubDirs
 	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_PRIVATE)
-	if err := rt.bindAll(mountsRO, flags|unix.MS_RDONLY); err != nil {
-		return err
-	}
-	if err := rt.bindAll(mountsRW, flags); err != nil {
+	if err := rt.bindAll(mounts, flags); err != nil {
 		return err
 	}
 
@@ -470,16 +468,16 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	return rt.pivot()
 }
 
-// resolveHomeDir replaces ~/ with the homeDir path in mounts Source and Target
+// resolveHomeDir returns a copy of mounts with ~/ in Source and
+// Target paths replaced with the homeDir.
 func resolveHomeDir(mounts []config.Mount, homeDir string) []config.Mount {
-	result := make([]config.Mount, len(mounts))
+	out := make([]config.Mount, len(mounts))
 	for i, m := range mounts {
-		result[i] = config.Mount{
-			Source: osutil.TildeToHomeDir(m.Source, homeDir),
-			Target: osutil.TildeToHomeDir(m.Target, homeDir),
-		}
+		out[i] = m
+		out[i].Source = osutil.TildeToHomeDir(m.Source, homeDir)
+		out[i].Target = osutil.TildeToHomeDir(m.Target, homeDir)
 	}
-	return result
+	return out
 }
 
 // getOverlayFSMountPointPath returns a path where mount point for trg

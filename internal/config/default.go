@@ -50,21 +50,38 @@ func WriteDefault(path string, homeDir string) error {
 
 	defaultConfig := fmt.Sprintf(`# Drop sandboxing configuration file
 
-# Directories and files from the user home exposed to Drop in read-only mode.
+# Directories and files exposed to Drop.
 #
-# Be sure not to expose files with keys or other sensitive data to the
-# sandbox. Configs without sensitive data are safe to expose and will ensure
-# the Drop environment doesn't impede work.
-paths_ro = %s
+# Entries can have a compact string syntax, like:
+#
+# "~/bin" - expose ~/bin directory as read-only. Directories are
+#           exposed with all content, including sub-directories.
+# "~/bin:~/host-bin" - expose ~/bin directory as read-only ~/host-bin.
+# "~/todo::rw" - expose ~/todo file as writable.
+# "~/todo:~/host-todo:rw" - expose ~/todo file as writable ~/host-todo.
+#
+# Alternatively, a verbose object syntax can be used; it allows to
+# handle paths with ':' characters. Equivalents of the examples above
+# with the verbose syntax are:
+#
+# {source="~/bin"}
+# {source="~/bin", target="~/host-bin"}
+# {source="~/todo", rw=true}
+# {source="~/todo", target="~/host-todo", rw=true}
+#
+# Be sure not to expose files with secrets or other sensitive
+# data. Configs without sensitive data are safe to expose as read-only
+# and will ensure the Drop environment doesn't impede work.
+#
+# Use files exposed as read-write carefully and sparingly - untrusted
+# programs should not be able to write files that are executed outside
+# the sandbox. Shell config scripts are executed, so it is safe to
+# expose them as read-only, but not as read-write.  Similarly, entries
+# from ~/.bash_history can be executed, so it is best not to expose
+# history, but allow shells in the Drop environment to create isolated
+# history files in each environment.
 
-# Directories and files from the user home exposed to Drop in read-write mode.
-#
-# Be careful, it is best to keep this list empty. Untrusted programs
-# in the sandbox should not be able to write any files that are executed
-# outside of the sandbox, so for sure do not expose dirs like bin or
-# shell config files in writable mode. Bash history should also not be
-# exposed, because items from the history can be executed.
-paths_rw = []
+mounts = %s
 
 # Absolute paths to dirs or files to block access to.
 #

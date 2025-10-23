@@ -27,8 +27,7 @@ type Mount struct {
 }
 
 type Config struct {
-	MountsRO  []Mount  `toml:"paths_ro"`
-	MountsRW  []Mount  `toml:"paths_rw"`
+	Mounts    []Mount  `toml:"mounts"`
 	Blocked   []string `toml:"blocked"`
 	EnvExpose []string `toml:"env_expose"`
 	Net       Net      `toml:"net"`
@@ -118,11 +117,7 @@ func Parse(configStr string) (*Config, error) {
 		return parseError(err)
 	}
 
-	if err := validateMounts("paths_ro", config.MountsRO); err != nil {
-		return parseError(err)
-	}
-
-	if err := validateMounts("paths_rw", config.MountsRW); err != nil {
+	if err := validateMounts("mounts", config.Mounts); err != nil {
 		return parseError(err)
 	}
 
