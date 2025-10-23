@@ -310,7 +310,8 @@ class TestMainFlow(unittest.TestCase):
         result = self.sandbox_run('ls', config=config)
         self.assertEqual(1, result.returncode)
         self.assertEqual(
-            "Error: invalid paths_ro '/etc/../usr': path is not normalized\n",
+            "Error: failed to parse config: "
+            "invalid paths_ro '/etc/../usr': path is not normalized\n",
             result.stderr)
 
     def test_paths_rw(self):

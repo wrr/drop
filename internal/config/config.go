@@ -84,45 +84,49 @@ func Read(path string) (*Config, error) {
 	return Parse(string(content))
 }
 
+func parseError(err error) (*Config, error) {
+	return nil, fmt.Errorf("failed to parse config: %v", err)
+}
+
 func Parse(configStr string) (*Config, error) {
 	var config Config
 	if _, err := toml.Decode(configStr, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %v", err)
+		return parseError(err)
 	}
 
 	if err := validateMounts("paths_ro", config.MountsRO); err != nil {
-		return nil, err
+		return parseError(err)
 	}
 
 	if err := validateMounts("paths_rw", config.MountsRW); err != nil {
-		return nil, err
+		return parseError(err)
 	}
 
 	if err := validateEnvExpose(config.EnvExpose); err != nil {
-		return nil, err
+		return parseError(err)
 	}
 
 	if config.Net.Mode == "" {
 		config.Net.Mode = "isolated"
 	}
 	if err := ValidateNetworkMode(config.Net.Mode); err != nil {
-		return nil, err
+		return parseError(err)
 	}
 
 	if err := ValidatePortForward(config.Net.TCPPortsToHost); err != nil {
-		return nil, fmt.Errorf("invalid tcp_ports_to_host: %v", err)
+		return parseError(fmt.Errorf("invalid tcp_ports_to_host: %v", err))
 	}
 
 	if err := ValidatePortForward(config.Net.TCPPortsFromHost); err != nil {
-		return nil, fmt.Errorf("invalid tcp_ports_from_host: %v", err)
+		return parseError(fmt.Errorf("invalid tcp_ports_from_host: %v", err))
 	}
 
 	if err := ValidatePortForward(config.Net.UDPPortsToHost); err != nil {
-		return nil, fmt.Errorf("invalid udp_ports_to_host: %v", err)
+		return parseError(fmt.Errorf("invalid udp_ports_to_host: %v", err))
 	}
 
 	if err := ValidatePortForward(config.Net.UDPPortsFromHost); err != nil {
-		return nil, fmt.Errorf("invalid udp_ports_from_host: %v", err)
+		return parseError(fmt.Errorf("invalid udp_ports_from_host: %v", err))
 	}
 
 	return &config, nil
