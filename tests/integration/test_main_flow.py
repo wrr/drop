@@ -24,8 +24,8 @@ ENV_DIR = env_dir(ENV_ID)
 
 class Config:
     def __init__(self, *,
-                 paths_ro: List[str] = None,
-                 paths_rw: List[str] = None,
+                 paths_ro = None, # List where elements are strings or lists of strings.
+                 paths_rw = None, # List where elements are strings or lists of strings.
                  blocked: List[str] = None,
                  env_expose: List[str] = None,
                  tcp_ports_to_host: List[str] = None,
@@ -224,8 +224,18 @@ class TestMainFlow(unittest.TestCase):
     def test_paths_ro_from_root_dir(self):
         # Expose a path outside of the home dir, normally not
         # available within Drop.
-        config = Config(paths_ro=[f'/boot'])
+        config = Config(paths_ro=['/boot'])
         result = self.sandbox_run('ls /boot/', config=config)
+        self.assertSuccess(result)
+
+    def test_paths_remaping(self):
+        # Mount /boot from host into the user homedir.
+        config = Config(paths_ro=[['/boot', '~/boot']])
+        result = self.sandbox_run('ls /boot/', config=config)
+        self.assertEqual(2, result.returncode)
+        self.assertIn("cannot access '/boot/': No such file or directory",
+                      result.stderr)
+        result = self.sandbox_run(f'ls {HOME_DIR / 'boot'}', config=config)
         self.assertSuccess(result)
 
     def test_paths_ro_target_is_file_not_a_dir(self):

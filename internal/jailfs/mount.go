@@ -107,16 +107,16 @@ func (rt *root) bind(src, trg string, mountflags uintptr) error {
 	return nil
 }
 
-func (rt *root) bindAll(srcDir, trgDir string, entries []string, flags uintptr) error {
+func (rt *root) bindAll(mounts []config.Mount, flags uintptr) error {
 	infoHeader := "not mounting %s, target already exists "
-	for _, entry := range entries {
-		src := filepath.Join(srcDir, entry)
-		trg := filepath.Join(trgDir, entry)
-		absTrg := filepath.Join(rt.fsRoot, trg)
+	for _, m := range mounts {
+		src := m.Source
+		trg := m.Target
+		hostTrg := filepath.Join(rt.fsRoot, trg)
 
 		if srcInfo, err := os.Stat(src); err == nil {
 
-			trgInfo, _ := os.Lstat(absTrg)
+			trgInfo, _ := os.Lstat(hostTrg)
 			if trgInfo != nil && trgInfo.Mode()&os.ModeSymlink != 0 {
 				log.Info(infoHeader+"but is a symbolic link", src)
 				continue
@@ -202,7 +202,7 @@ func (rt *root) mountRootSubDirs() error {
 //
 // Jail hides the real user's home dir from the host. Home dirs are
 // shared by jails with the same environment id.
-func (rt *root) mountHome(paths *Paths, cfg *config.Config) error {
+func (rt *root) mountHome(paths *Paths) error {
 	// Mount home dir as overlayfs, lowerdir holds only mount points,
 	// upperdir is where the actual files are stored.
 	// xino=off to disable Ubuntu 24.04 dmesg warning 'overlayfs: fs on
@@ -251,9 +251,15 @@ func (rt *root) mountDev() error {
 	// mkdev is not allowed in the container when running as a user,
 	// even if unix.CAP_MKNOD is passed, so we map some host devices to
 	// the container /dev instead.
-	devices := []string{"null", "zero", "full", "random", "urandom"}
+	devices := []config.Mount{
+		{Source: "/dev/null", Target: "/dev/null"},
+		{Source: "/dev/zero", Target: "/dev/zero"},
+		{Source: "/dev/full", Target: "/dev/full"},
+		{Source: "/dev/random", Target: "/dev/random"},
+		{Source: "/dev/urandom", Target: "/dev/urandom"},
+	}
 	flags = uintptr(unix.MS_NOEXEC | unix.MS_NOSUID)
-	if err := rt.bindAll("/dev", "/dev", devices, flags); err != nil {
+	if err := rt.bindAll(devices, flags); err != nil {
 		return err
 	}
 
@@ -422,23 +428,23 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	pathsRO := applyTildeToHomeDir(cfg.PathsRO, paths.HostHome)
-	pathsRW := applyTildeToHomeDir(cfg.PathsRW, paths.HostHome)
+	mountsRO := resolveHomeDir(cfg.MountsRO, paths.HostHome)
+	mountsRW := resolveHomeDir(cfg.MountsRW, paths.HostHome)
 
 	// Mount current working directory and it's subdirs as readable and
 	// writable, but only if Cwd is not the home directory or a parent of it
 	// to avoid exposing the original home directory.
 	if !isSubDirOrSame(paths.Cwd, paths.HostHome) {
-		pathsRW = append(pathsRW, paths.Cwd)
+		mountsRW = append(mountsRW, config.Mount{Source: paths.Cwd, Target: paths.Cwd})
 	}
 
-	mountPoints := append(pathsRO, pathsRW...)
+	allMounts := append(mountsRO, mountsRW...)
 
 	// This need to be done before overlayfs are mounted (/etc and user home).
-	if err := createOverlayFSMountPoints(mountPoints, paths); err != nil {
+	if err := createOverlayFSMountPoints(allMounts, paths); err != nil {
 		return err
 	}
-	if err := rt.mountHome(paths, cfg); err != nil {
+	if err := rt.mountHome(paths); err != nil {
 		return err
 	}
 
@@ -448,10 +454,10 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 
 	// MS_REC is required, see the comment in mountRootSubDirs
 	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_PRIVATE)
-	if err := rt.bindAll("/", "/", pathsRO, flags|unix.MS_RDONLY); err != nil {
+	if err := rt.bindAll(mountsRO, flags|unix.MS_RDONLY); err != nil {
 		return err
 	}
-	if err := rt.bindAll("/", "/", pathsRW, flags); err != nil {
+	if err := rt.bindAll(mountsRW, flags); err != nil {
 		return err
 	}
 
@@ -464,11 +470,14 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	return rt.pivot()
 }
 
-// applyTildeToHomeDir replace ~/ with the homeDir path
-func applyTildeToHomeDir(paths []string, homeDir string) []string {
-	result := make([]string, len(paths))
-	for i, p := range paths {
-		result[i] = osutil.TildeToHomeDir(p, homeDir)
+// resolveHomeDir replaces ~/ with the homeDir path in mounts Source and Target
+func resolveHomeDir(mounts []config.Mount, homeDir string) []config.Mount {
+	result := make([]config.Mount, len(mounts))
+	for i, m := range mounts {
+		result[i] = config.Mount{
+			Source: osutil.TildeToHomeDir(m.Source, homeDir),
+			Target: osutil.TildeToHomeDir(m.Target, homeDir),
+		}
 	}
 	return result
 }
@@ -476,12 +485,12 @@ func applyTildeToHomeDir(paths []string, homeDir string) []string {
 // getOverlayFSMountPointPath returns a path where mount point for trg
 // should be created, but only if this mouint point is on overlayFS.
 // If the mount point is not on overlayFS, the functions returns "".
-func getOverlayFSMountPointPath(src string, paths *Paths) string {
-	homeRel, err := filepath.Rel(paths.HostHome, src)
+func getOverlayFSMountPointPath(trg string, paths *Paths) string {
+	homeRel, err := filepath.Rel(paths.HostHome, trg)
 	if err != nil && !strings.HasPrefix(homeRel, "..") {
 		return filepath.Join(paths.HomeLower, homeRel)
 	}
-	etcRel, err := filepath.Rel("/etc", src)
+	etcRel, err := filepath.Rel("/etc", trg)
 	if err != nil && !strings.HasPrefix(etcRel, "..") {
 		return filepath.Join(paths.Etc, etcRel)
 	}
@@ -505,14 +514,14 @@ func getOverlayFSMountPointPath(src string, paths *Paths) string {
 //
 // Note that created endpoints may not be actually used in case other
 // mounts shadow them.
-func createOverlayFSMountPoints(mountPoints []string, paths *Paths) error {
-	for _, src := range mountPoints {
-		ovrlTrg := getOverlayFSMountPointPath(src, paths)
+func createOverlayFSMountPoints(mounts []config.Mount, paths *Paths) error {
+	for _, m := range mounts {
+		ovrlTrg := getOverlayFSMountPointPath(m.Target, paths)
 		if ovrlTrg == "" {
 			// Target not on overlayfs (or some error).
 			continue
 		}
-		if info, err := os.Stat(src); err == nil {
+		if info, err := os.Stat(m.Source); err == nil {
 			if info.IsDir() {
 				osutil.MkdirAll(ovrlTrg)
 			} else {

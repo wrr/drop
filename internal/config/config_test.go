@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// expectListEquals compares two string slices and reports detailed error if they differ
-func expectListEquals(t *testing.T, fieldName string, actual, expected []string) {
+// expectStringSlicesEqual reports error if thw string slices differ
+func expectStringSlicesEqual(t *testing.T, fieldName string, actual, expected []string) {
 	t.Helper()
 	if len(actual) != len(expected) {
 		t.Errorf("expected %s length %d, got %d", fieldName, len(expected), len(actual))
@@ -15,6 +15,23 @@ func expectListEquals(t *testing.T, fieldName string, actual, expected []string)
 	for i, expectedItem := range expected {
 		if actual[i] != expectedItem {
 			t.Errorf("expected %s[%d] %s, got %s", fieldName, i, expectedItem, actual[i])
+		}
+	}
+}
+
+// expectMountSlicesEqual reports error if two Mount slices differ
+func expectMountSlicesEqual(t *testing.T, fieldName string, actual, expected []Mount) {
+	t.Helper()
+	if len(actual) != len(expected) {
+		t.Errorf("expected %s length %d, got %d", fieldName, len(expected), len(actual))
+		return
+	}
+	for i, expectedItem := range expected {
+		if actual[i].Source != expectedItem.Source {
+			t.Errorf("expected %s[%d].Source %s, got %s", fieldName, i, expectedItem.Source, actual[i].Source)
+		}
+		if actual[i].Target != expectedItem.Target {
+			t.Errorf("expected %s[%d].Target %s, got %s", fieldName, i, expectedItem.Target, actual[i].Target)
 		}
 	}
 }
@@ -244,10 +261,10 @@ udp_ports_from_host = []
 			if got.Mode != expected.Mode {
 				t.Errorf("expected Mode '%s', got '%s'", expected.Mode, got.Mode)
 			}
-			expectListEquals(t, "TCPPortsToHost", got.TCPPortsToHost, expected.TCPPortsToHost)
-			expectListEquals(t, "TCPPortsFromHost", got.TCPPortsFromHost, expected.TCPPortsFromHost)
-			expectListEquals(t, "UDPPortsToHost", got.UDPPortsToHost, expected.UDPPortsToHost)
-			expectListEquals(t, "UDPPortsFromHost", got.UDPPortsFromHost, expected.UDPPortsFromHost)
+			expectStringSlicesEqual(t, "TCPPortsToHost", got.TCPPortsToHost, expected.TCPPortsToHost)
+			expectStringSlicesEqual(t, "TCPPortsFromHost", got.TCPPortsFromHost, expected.TCPPortsFromHost)
+			expectStringSlicesEqual(t, "UDPPortsToHost", got.UDPPortsToHost, expected.UDPPortsToHost)
+			expectStringSlicesEqual(t, "UDPPortsFromHost", got.UDPPortsFromHost, expected.UDPPortsFromHost)
 		})
 	}
 }
@@ -263,7 +280,7 @@ func TestParse(t *testing.T) {
 			name: "complete valid config",
 			tomlStr: `
 paths_ro = ["/home/user/docs", "/tmp"]
-paths_rw = ["/home/user/work"]
+paths_rw = ["/home/user/work", ["/media", "~/media"]]
 blocked = ["/mnt", "/root"]
 env_expose = ["HOME", "PATH", "LC_*"]
 
@@ -275,8 +292,14 @@ udp_ports_to_host = ["5000"]
 udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 `,
 			expected: Config{
-				PathsRO:   []string{"/home/user/docs", "/tmp"},
-				PathsRW:   []string{"/home/user/work"},
+				MountsRO: []Mount{
+					{Source: "/home/user/docs", Target: "/home/user/docs"},
+					{Source: "/tmp", Target: "/tmp"},
+				},
+				MountsRW: []Mount{
+					{Source: "/home/user/work", Target: "/home/user/work"},
+					{Source: "/media", Target: "~/media"},
+				},
 				Blocked:   []string{"/mnt", "/root"},
 				EnvExpose: []string{"HOME", "PATH", "LC_*"},
 				Net: Net{
@@ -293,8 +316,8 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			name:    "empty config",
 			tomlStr: ``,
 			expected: Config{
-				PathsRO:   nil,
-				PathsRW:   nil,
+				MountsRO:  nil,
+				MountsRW:  nil,
 				Blocked:   nil,
 				EnvExpose: nil,
 				Net: Net{
@@ -427,18 +450,18 @@ paths_rw = ["relative/path"]
 				return
 			}
 
-			expectListEquals(t, "PathsRO", result.PathsRO, tt.expected.PathsRO)
-			expectListEquals(t, "PathsRW", result.PathsRW, tt.expected.PathsRW)
-			expectListEquals(t, "Blocked", result.Blocked, tt.expected.Blocked)
-			expectListEquals(t, "EnvExpose", result.EnvExpose, tt.expected.EnvExpose)
+			expectMountSlicesEqual(t, "PathsRO", result.MountsRO, tt.expected.MountsRO)
+			expectMountSlicesEqual(t, "PathsRW", result.MountsRW, tt.expected.MountsRW)
+			expectStringSlicesEqual(t, "Blocked", result.Blocked, tt.expected.Blocked)
+			expectStringSlicesEqual(t, "EnvExpose", result.EnvExpose, tt.expected.EnvExpose)
 
 			if result.Net.Mode != tt.expected.Net.Mode {
 				t.Errorf("expected Net.Mode '%s', got '%s'", tt.expected.Net.Mode, result.Net.Mode)
 			}
-			expectListEquals(t, "Net.TCPPortsToHost", result.Net.TCPPortsToHost, tt.expected.Net.TCPPortsToHost)
-			expectListEquals(t, "Net.TCPPortsFromHost", result.Net.TCPPortsFromHost, tt.expected.Net.TCPPortsFromHost)
-			expectListEquals(t, "Net.UDPPortsToHost", result.Net.UDPPortsToHost, tt.expected.Net.UDPPortsToHost)
-			expectListEquals(t, "Net.UDPPortsFromHost", result.Net.UDPPortsFromHost, tt.expected.Net.UDPPortsFromHost)
+			expectStringSlicesEqual(t, "Net.TCPPortsToHost", result.Net.TCPPortsToHost, tt.expected.Net.TCPPortsToHost)
+			expectStringSlicesEqual(t, "Net.TCPPortsFromHost", result.Net.TCPPortsFromHost, tt.expected.Net.TCPPortsFromHost)
+			expectStringSlicesEqual(t, "Net.UDPPortsToHost", result.Net.UDPPortsToHost, tt.expected.Net.UDPPortsToHost)
+			expectStringSlicesEqual(t, "Net.UDPPortsFromHost", result.Net.UDPPortsFromHost, tt.expected.Net.UDPPortsFromHost)
 		})
 	}
 }
@@ -459,6 +482,147 @@ func TestValidateNetworkMode(t *testing.T) {
 		} else if !strings.Contains(err.Error(), "invalid network mode") {
 			t.Errorf("unexpected error for mode '%s': %s", mode, err.Error())
 		}
+	}
+}
+
+func TestMountUnmarshalingAndValidation(t *testing.T) {
+	tests := []struct {
+		name     string
+		tomlStr  string
+		expected []Mount
+		error    string
+	}{
+		{
+			name: "simple string paths",
+			tomlStr: `
+paths_ro = ["~/.bashrc", "/etc/hosts"]
+`,
+			expected: []Mount{
+				{Source: "~/.bashrc", Target: "~/.bashrc"},
+				{Source: "/etc/hosts", Target: "/etc/hosts"},
+			},
+			error: "",
+		},
+		{
+			name: "one-element arrays",
+			tomlStr: `
+paths_ro = [["~/.bashrc"], ["/etc/hosts"]]
+`,
+			expected: []Mount{
+				{Source: "~/.bashrc", Target: "~/.bashrc"},
+				{Source: "/etc/hosts", Target: "/etc/hosts"},
+			},
+			error: "",
+		},
+		{
+			name: "two-element arrays",
+			tomlStr: `
+paths_ro = [["~/.gitconfig", "~/.gitconfig-host"], ["/boot", "/mnt/boot"]]
+`,
+			expected: []Mount{
+				{Source: "~/.gitconfig", Target: "~/.gitconfig-host"},
+				{Source: "/boot", Target: "/mnt/boot"},
+			},
+			error: "",
+		},
+		{
+			name: "mixed string and arrays",
+			tomlStr: `
+paths_ro = ["~/.bashrc", ["~/.gitconfig", "~/.gitconfig-host"], ["/etc/hosts"]]
+`,
+			expected: []Mount{
+				{Source: "~/.bashrc", Target: "~/.bashrc"},
+				{Source: "~/.gitconfig", Target: "~/.gitconfig-host"},
+				{Source: "/etc/hosts", Target: "/etc/hosts"},
+			},
+			error: "",
+		},
+		{
+			name: "empty array",
+			tomlStr: `
+paths_ro = [[]]
+`,
+			expected: []Mount{},
+			error:    "path array must have 1 or 2 elements, got 0",
+		},
+		{
+			name: "three-element array",
+			tomlStr: `
+paths_ro = [["~/.bashrc", "~/.bashrc2", "~/.bashrc3"]]
+`,
+			expected: []Mount{},
+			error:    "path array must have 1 or 2 elements, got 3",
+		},
+		{
+			name: "array with non-string",
+			tomlStr: `
+paths_ro = [[123, "~/.bashrc"]]
+`,
+			expected: []Mount{},
+			error:    "path array element 0 is not a string",
+		},
+		{
+			name: "neither string nor array",
+			tomlStr: `
+paths_ro = [64]
+`,
+			expected: []Mount{},
+			error:    "path should be a string or array of strings, got int64",
+		},
+		// MountPath validation:
+		{
+			name: "Invalid path",
+			tomlStr: `
+paths_ro = ["~/.bashrc", "/etc/../hosts"]
+`,
+			expected: []Mount{},
+			error:    "invalid paths_ro '/etc/../hosts': path is not normalized",
+		},
+		{
+			name: "Invalid path, not normalized",
+			tomlStr: `
+paths_ro = ["~/.bashrc", "/etc/../hosts"]
+`,
+			expected: []Mount{},
+			error:    "invalid paths_ro '/etc/../hosts': path is not normalized",
+		},
+		{
+			name: "Invalid path, not absolute",
+			tomlStr: `
+paths_ro = ["~/.bashrc", ["/usr/bin", "bin"]]
+`,
+			expected: []Mount{},
+			error:    "invalid paths_ro 'bin': path must start with / or ~/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Parse(tt.tomlStr)
+
+			if tt.error != "" {
+				if err == nil {
+					t.Errorf("expected error containing '%s', got nil", tt.error)
+					return
+				}
+				if !strings.Contains(err.Error(), tt.error) {
+					t.Errorf("expected error containing '%s', got '%s'", tt.error, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if result == nil {
+				t.Errorf("expected result but got nil")
+				return
+			}
+
+			expectMountSlicesEqual(t, "PathsRO", result.MountsRO, tt.expected)
+		})
 	}
 }
 

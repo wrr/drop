@@ -19,9 +19,14 @@ type Net struct {
 	UDPPortsFromHost []string `toml:"udp_ports_from_host"`
 }
 
+type Mount struct {
+	Source string
+	Target string
+}
+
 type Config struct {
-	PathsRO   []string `toml:"paths_ro"`
-	PathsRW   []string `toml:"paths_rw"`
+	MountsRO  []Mount  `toml:"paths_ro"`
+	MountsRW  []Mount  `toml:"paths_rw"`
 	Blocked   []string `toml:"blocked"`
 	EnvExpose []string `toml:"env_expose"`
 	Net       Net      `toml:"net"`
@@ -31,6 +36,44 @@ type PortForward struct {
 	HostIP    string
 	HostPort  int
 	GuestPort int
+}
+
+// Custom toml.Unmarshaler for mount field which is of mixed type
+// (TOML 1.0 feature). In TOML mount entry can be either a single
+// string, like "~/go", which sets mount source and target to be the
+// same, or an array ["~/go", "~/host-go"], the first entry is a mount
+// source, the second is a target.
+func (m *Mount) UnmarshalTOML(data any) error {
+	switch v := data.(type) {
+	case string:
+		// Single string: source and target are the same
+		m.Source = v
+		m.Target = v
+	case []any:
+		// Array of strings: 1 element (same source/target) or 2 elements (different)
+		if len(v) == 0 || len(v) > 2 {
+			return fmt.Errorf("path array must have 1 or 2 elements, got %d", len(v))
+		}
+
+		paths := make([]string, len(v))
+		for i, elem := range v {
+			str, ok := elem.(string)
+			if !ok {
+				return fmt.Errorf("path array element %d is not a string", i)
+			}
+			paths[i] = str
+		}
+
+		m.Source = paths[0]
+		if len(paths) == 1 {
+			m.Target = paths[0]
+		} else {
+			m.Target = paths[1]
+		}
+	default:
+		return fmt.Errorf("path should be a string or array of strings, got %T", data)
+	}
+	return nil
 }
 
 func Read(path string) (*Config, error) {
@@ -47,11 +90,11 @@ func Parse(configStr string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %v", err)
 	}
 
-	if err := validatePaths("paths_ro", config.PathsRO); err != nil {
+	if err := validateMounts("paths_ro", config.MountsRO); err != nil {
 		return nil, err
 	}
 
-	if err := validatePaths("paths_rw", config.PathsRW); err != nil {
+	if err := validateMounts("paths_rw", config.MountsRW); err != nil {
 		return nil, err
 	}
 
@@ -85,11 +128,24 @@ func Parse(configStr string) (*Config, error) {
 	return &config, nil
 }
 
+// validateMounts checks if all mount source and target paths are normalized and either absolute or start with '~/'.
+func validateMounts(propName string, mounts []Mount) error {
+	for _, m := range mounts {
+		if err := validatePathEntry(m.Source); err != nil {
+			return fmt.Errorf("invalid %s '%s': %v", propName, m.Source, err)
+		}
+		if err := validatePathEntry(m.Target); err != nil {
+			return fmt.Errorf("invalid %s '%s': %v", propName, m.Target, err)
+		}
+	}
+	return nil
+}
+
 // validatePaths checks if all paths are normalized and either absolute or start with '~/'.
-func validatePaths(prop_name string, paths []string) error {
+func validatePaths(propName string, paths []string) error {
 	for _, p := range paths {
 		if err := validatePathEntry(p); err != nil {
-			return fmt.Errorf("invalid %s '%s': %v", prop_name, p, err)
+			return fmt.Errorf("invalid %s '%s': %v", propName, p, err)
 		}
 	}
 	return nil
