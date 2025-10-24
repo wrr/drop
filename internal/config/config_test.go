@@ -405,6 +405,14 @@ mounts = ["relative/path"]
 			expected: Config{},
 			error:    "invalid mounts 'relative/path': path must start with / or ~/",
 		},
+		{
+			name: "invalid blocked path",
+			tomlStr: `
+blocked = ["foo"]
+`,
+			expected: Config{},
+			error:    "invalid blocked path 'foo': path must start with / or ~/",
+		},
 	}
 
 	for _, tt := range tests {

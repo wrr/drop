@@ -121,6 +121,10 @@ func Parse(configStr string) (*Config, error) {
 		return parseError(err)
 	}
 
+	if err := validatePaths("blocked path", config.Blocked); err != nil {
+		return parseError(err)
+	}
+
 	if err := validateEnvExpose(config.EnvExpose); err != nil {
 		return parseError(err)
 	}

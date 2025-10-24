@@ -83,7 +83,8 @@ func WriteDefault(path string, homeDir string) error {
 
 mounts = %s
 
-# Absolute paths to dirs or files to block access to.
+# Paths to dirs or files to block access to. Need to be normalized and
+# either starting with / or ~/
 #
 # All host filesystem access restrictions still apply to Drop, so you
 # don't need to block access to files that are already not accessible
