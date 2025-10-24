@@ -34,6 +34,22 @@ func expectMountSlicesEqual(t *testing.T, fieldName string, actual, expected []M
 	}
 }
 
+func checkError(expected string, got error) error {
+	if expected == "" {
+		if got != nil {
+			return fmt.Errorf("unexpected error: %v", got)
+		}
+		return nil
+	}
+	if got == nil {
+		return fmt.Errorf("expected error %q, got nil", expected)
+	}
+	if !strings.Contains(got.Error(), expected) {
+		return fmt.Errorf("expected error %q, got %q", expected, got.Error())
+	}
+	return nil
+}
+
 func TestValidatePortForward(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -145,21 +161,8 @@ func TestValidatePortForward(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidatePortForward(tt.portSpecs)
-
-			if tt.error != "" {
-				if err == nil {
-					t.Errorf("expected error '%s', got nil", tt.error)
-					return
-				}
-				if !strings.Contains(err.Error(), tt.error) {
-					t.Errorf("expected error containing '%s', got '%s'", tt.error, err.Error())
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
+			if terr := checkError(tt.error, err); terr != nil {
+				t.Fatal(terr)
 			}
 		})
 	}
@@ -233,26 +236,14 @@ udp_ports_from_host = []
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := Parse(tt.tomlStr)
-
+			if terr := checkError(tt.error, err); terr != nil {
+				t.Fatal(terr)
+			}
 			if tt.error != "" {
-				if err == nil {
-					t.Errorf("expected error '%s', got nil", tt.error)
-					return
-				}
-				if !strings.Contains(err.Error(), tt.error) {
-					t.Errorf("expected error containing '%s', got '%s'", tt.error, err.Error())
-				}
 				return
 			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
-
 			if result == nil {
-				t.Errorf("expected result but got nil")
-				return
+				t.Fatalf("expected result but got nil")
 			}
 			got := result.Net
 			expected := tt.expected.Net
@@ -419,26 +410,15 @@ blocked = ["foo"]
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := Parse(tt.tomlStr)
-
-			if tt.error != "" {
-				if err == nil {
-					t.Errorf("expected error '%s', got nil", tt.error)
-					return
-				}
-				if !strings.Contains(err.Error(), tt.error) {
-					t.Errorf("expected error containing '%s', got '%s'", tt.error, err.Error())
-				}
-				return
+			if terr := checkError(tt.error, err); terr != nil {
+				t.Fatal(terr)
 			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
+			if tt.error != "" {
 				return
 			}
 
 			if result == nil {
-				t.Errorf("expected result but got nil")
-				return
+				t.Fatalf("expected result but got nil")
 			}
 
 			expectMountSlicesEqual(t, "Mounts", result.Mounts, tt.expected.Mounts)
@@ -572,30 +552,18 @@ func TestParseMount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := ParseMount(tt.input)
-
-			if tt.error != "" {
-				if err == nil {
-					t.Errorf("expected error containing '%s', got nil", tt.error)
-					return
-				}
-				if !strings.Contains(err.Error(), tt.error) {
-					t.Errorf("expected error containing '%s', got '%s'", tt.error, err.Error())
-				}
-				return
+			if terr := checkError(tt.error, err); terr != nil {
+				t.Fatal(terr)
 			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
+			if tt.error != "" {
 				return
 			}
 
 			if result == nil {
-				t.Errorf("expected result but got nil")
-				return
+				t.Fatalf("expected result but got nil")
 			}
-
 			if *result != tt.expected {
-				t.Errorf("expected %+v, got %+v", tt.expected, *result)
+				t.Fatalf("expected %+v, got %+v", tt.expected, *result)
 			}
 		})
 	}
@@ -751,28 +719,12 @@ mounts = ["~/.bashrc", {source = "/usr/bin", target = "bin"}]
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := Parse(tt.tomlStr)
-
+			if terr := checkError(tt.error, err); terr != nil {
+				t.Fatal(terr)
+			}
 			if tt.error != "" {
-				if err == nil {
-					t.Errorf("expected error containing '%s', got nil", tt.error)
-					return
-				}
-				if !strings.Contains(err.Error(), tt.error) {
-					t.Errorf("expected error containing '%s', got '%s'", tt.error, err.Error())
-				}
 				return
 			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
-
-			if result == nil {
-				t.Errorf("expected result but got nil")
-				return
-			}
-
 			expectMountSlicesEqual(t, "Mounts", result.Mounts, tt.expected)
 		})
 	}
@@ -804,19 +756,8 @@ func TestValidateBlockedPaths(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateBlockedPaths("test_prop", tt.paths)
-
-			if tt.error != "" {
-				if err == nil {
-					t.Errorf("expected error '%s', got nil", tt.error)
-					return
-				}
-				if !strings.Contains(err.Error(), tt.error) {
-					t.Errorf("expected error '%s', got '%s'", tt.error, err.Error())
-				}
-				return
-			}
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
+			if terr := checkError(tt.error, err); terr != nil {
+				t.Fatal(terr)
 			}
 		})
 	}
@@ -853,16 +794,8 @@ func TestValidatePath(t *testing.T) {
 		for _, path := range tt.paths {
 			t.Run(fmt.Sprintf("path=%q", path), func(t *testing.T) {
 				err := validatePath(path)
-				if tt.error == "" {
-					if err != nil {
-						t.Errorf("unexpected error: %v", err)
-					}
-					return
-				}
-				if err == nil {
-					t.Errorf("expected error %q, got nil", tt.error)
-				} else if !strings.Contains(err.Error(), tt.error) {
-					t.Errorf("expected error %q, got %q", tt.error, err.Error())
+				if terr := checkError(tt.error, err); terr != nil {
+					t.Fatal(terr)
 				}
 			})
 		}
@@ -892,17 +825,10 @@ func TestValidateRelativePath(t *testing.T) {
 		for _, path := range tt.paths {
 			t.Run(fmt.Sprintf("path=%q", path), func(t *testing.T) {
 				err := validateRelativePath(path)
-				if tt.error == "" {
-					if err != nil {
-						t.Errorf("unexpected error: %v", err)
-					}
-					return
+				if terr := checkError(tt.error, err); terr != nil {
+					t.Fatal(terr)
 				}
-				if err == nil {
-					t.Errorf("expected error %q, got nil", tt.error)
-				} else if !strings.Contains(err.Error(), tt.error) {
-					t.Errorf("expected error %q, got %q", tt.error, err.Error())
-				}
+
 			})
 		}
 	}
@@ -969,20 +895,8 @@ func TestValidateEnvExpose(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateEnvExpose(tt.patterns)
-
-			if tt.error != "" {
-				if err == nil {
-					t.Errorf("expected error '%s', got nil", tt.error)
-					return
-				}
-				if !strings.Contains(err.Error(), tt.error) {
-					t.Errorf("expected error '%s', got '%s'", tt.error, err.Error())
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
+			if terr := checkError(tt.error, err); terr != nil {
+				t.Fatal(terr)
 			}
 		})
 	}
