@@ -121,7 +121,7 @@ func Parse(configStr string) (*Config, error) {
 		return parseError(err)
 	}
 
-	if err := validatePaths("blocked path", config.Blocked); err != nil {
+	if err := validateBlockedPaths("blocked path", config.Blocked); err != nil {
 		return parseError(err)
 	}
 
@@ -192,28 +192,29 @@ func ParseMount(str string) (*Mount, error) {
 // validateMounts checks if all mount source and target paths are normalized and either absolute or start with '~/'.
 func validateMounts(propName string, mounts []Mount) error {
 	for _, m := range mounts {
-		if err := validatePathEntry(m.Source); err != nil {
+		if err := validatePath(m.Source); err != nil {
 			return fmt.Errorf("invalid %s '%s': %v", propName, m.Source, err)
 		}
-		if err := validatePathEntry(m.Target); err != nil {
+		if err := validatePath(m.Target); err != nil {
 			return fmt.Errorf("invalid %s '%s': %v", propName, m.Target, err)
 		}
 	}
 	return nil
 }
 
-// validatePaths checks if all paths are normalized and either absolute or start with '~/'.
-func validatePaths(propName string, paths []string) error {
+// validateBlockedPaths checks if all paths are normalized and either
+// absolute or start with '~/'.
+func validateBlockedPaths(propId string, paths []string) error {
 	for _, p := range paths {
-		if err := validatePathEntry(p); err != nil {
-			return fmt.Errorf("invalid %s '%s': %v", propName, p, err)
+		if err := validatePath(p); err != nil {
+			return fmt.Errorf("invalid %s '%s': %v", propId, p, err)
 		}
 	}
 	return nil
 }
 
-func validatePathEntry(path string) error {
-	if !strings.HasPrefix(path, "~/") && !strings.HasPrefix(path, "/") {
+func validatePath(path string) error {
+	if !strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "~/") {
 		return fmt.Errorf("path must start with / or ~/")
 	}
 	if path == "/" {
@@ -229,6 +230,23 @@ func validatePathEntry(path string) error {
 	// filepath.Clean() removes trailing / from all paths except /.  We
 	// allow for trailing /, so we remove it before validation.
 	path = strings.TrimSuffix(path, "/")
+
+	if path != filepath.Clean(path) {
+		return fmt.Errorf("path is not normalized")
+	}
+	return nil
+}
+
+func validateRelativePath(path string) error {
+	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~/") {
+		return fmt.Errorf("path must be relative, cannot start with / or ~/")
+	}
+	if path == "." || path == "./" {
+		return nil
+	}
+	// Allow for trailing / and leading ./
+	path = strings.TrimSuffix(path, "/")
+	path = strings.TrimPrefix(path, "./")
 
 	if path != filepath.Clean(path) {
 		return fmt.Errorf("path is not normalized")

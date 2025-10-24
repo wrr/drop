@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -777,7 +778,7 @@ mounts = ["~/.bashrc", {source = "/usr/bin", target = "bin"}]
 	}
 }
 
-func TestValidatePaths(t *testing.T) {
+func TestValidateBlockedPaths(t *testing.T) {
 	tests := []struct {
 		name  string
 		paths []string
@@ -802,7 +803,7 @@ func TestValidatePaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePaths("test_prop", tt.paths)
+			err := validateBlockedPaths("test_prop", tt.paths)
 
 			if tt.error != "" {
 				if err == nil {
@@ -821,113 +822,89 @@ func TestValidatePaths(t *testing.T) {
 	}
 }
 
-func TestValidatePathEntry(t *testing.T) {
+func TestValidatePath(t *testing.T) {
 	tests := []struct {
-		name  string
-		path  string
 		error string
+		paths []string
 	}{
 		{
-			name:  "absolute path",
-			path:  "/usr/local",
 			error: "",
+			paths: []string{"/usr/local", "/usr/local/", "~/tmp/docs", "~/tmp/docs/", "~/.bashrc"},
 		},
 		{
-			name:  "absolute path with trailing /",
-			path:  "/usr/local/",
-			error: "",
-		},
-		{
-			name:  "home path",
-			path:  "~/tmp/docs",
-			error: "",
-		},
-		{
-			name:  "home path with trailing /",
-			path:  "~/tmp/docs/",
-			error: "",
-		},
-		{
-			name:  "home dot file",
-			path:  "~/.bashrc",
-			error: "",
-		},
-		{
-			name:  "empty path",
-			path:  "",
 			error: "path must start with / or ~/",
+			paths: []string{"", "docs/file.txt", "~user", "~"},
 		},
 		{
-			name:  "relative path without ~",
-			path:  "docs/file.txt",
-			error: "path must start with / or ~/",
-		},
-		{
-			name:  "path with ..",
-			path:  "/home/../etc/passwd",
 			error: "path is not normalized",
+			paths: []string{"/home/../etc/passwd", "~/../secrets", "/home/./user", "/home/user/.", "/home//user"},
 		},
 		{
-			name:  "home path with ..",
-			path:  "~/../secrets",
-			error: "path is not normalized",
-		},
-		{
-			name:  "path with /./",
-			path:  "/home/./user",
-			error: "path is not normalized",
-		},
-		{
-			name:  "path ending with /.",
-			path:  "/home/user/.",
-			error: "path is not normalized",
-		},
-		{
-			name:  "path with double slashes",
-			path:  "/home//user",
-			error: "path is not normalized",
-		},
-		{
-			name:  "invalid ~",
-			path:  "~user",
-			error: "path must start with / or ~/",
-		},
-		{
-			name:  "tilde alone",
-			path:  "~",
-			error: "path must start with / or ~/",
-		},
-		{
-			name:  "root directory alone",
-			path:  "/",
 			error: "cannot expose the whole root directory",
+			paths: []string{"/"},
 		},
 		{
-			name:  "home directory alone",
-			path:  "~/",
 			error: "cannot expose the whole home directory",
+			paths: []string{"~/"},
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validatePathEntry(tt.path)
-
-			if tt.error != "" {
-				if err == nil {
-					t.Errorf("expected error '%s', got nil", tt.error)
+		for _, path := range tt.paths {
+			t.Run(fmt.Sprintf("path=%q", path), func(t *testing.T) {
+				err := validatePath(path)
+				if tt.error == "" {
+					if err != nil {
+						t.Errorf("unexpected error: %v", err)
+					}
 					return
 				}
-				if !strings.Contains(err.Error(), tt.error) {
-					t.Errorf("expected error '%s', got '%s'", tt.error, err.Error())
+				if err == nil {
+					t.Errorf("expected error %q, got nil", tt.error)
+				} else if !strings.Contains(err.Error(), tt.error) {
+					t.Errorf("expected error %q, got %q", tt.error, err.Error())
 				}
-				return
-			}
+			})
+		}
+	}
+}
 
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
+func TestValidateRelativePath(t *testing.T) {
+	tests := []struct {
+		error string
+		paths []string
+	}{
+		{
+			error: "",
+			paths: []string{"local", "local/", "local/bin", "./local", ".", "./"},
+		},
+		{
+			error: "path must be relative",
+			paths: []string{"/local", "~/local"},
+		},
+		{
+			error: "path is not normalized",
+			paths: []string{"", "local/../bin", "local/./bin", "local/bin/.", "local//bin"},
+		},
+	}
+
+	for _, tt := range tests {
+		for _, path := range tt.paths {
+			t.Run(fmt.Sprintf("path=%q", path), func(t *testing.T) {
+				err := validateRelativePath(path)
+				if tt.error == "" {
+					if err != nil {
+						t.Errorf("unexpected error: %v", err)
+					}
+					return
+				}
+				if err == nil {
+					t.Errorf("expected error %q, got nil", tt.error)
+				} else if !strings.Contains(err.Error(), tt.error) {
+					t.Errorf("expected error %q, got %q", tt.error, err.Error())
+				}
+			})
+		}
 	}
 }
 

@@ -60,7 +60,7 @@ func WriteDefault(path string, homeDir string) error {
 # "~/todo::rw" - expose ~/todo file as writable.
 # "~/todo:~/host-todo:rw" - expose ~/todo file as writable ~/host-todo.
 #
-# Alternatively, a verbose object syntax can be used; it allows to
+# Alternatively, a verbose dictionary syntax can be used; it allows to
 # handle paths with ':' characters. Equivalents of the examples above
 # with the verbose syntax are:
 #
