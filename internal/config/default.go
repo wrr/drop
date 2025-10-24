@@ -93,6 +93,13 @@ mounts = %s
 # just to block writing to them.
 blocked = %s
 
+cwd.mounts = [
+ "./::rw",
+ ".git"
+]
+cwd.blocked = [
+]
+
 # Environment variables to be exposed from process starting Drop to
 # the sandbox. You can use glob patterns to expose all variables with
 # common prefix/suffix.

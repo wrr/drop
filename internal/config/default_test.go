@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -33,9 +34,17 @@ func TestWriteDefault(t *testing.T) {
 		t.Errorf("Expected mounts to be not nil")
 	}
 
-	if cfg.Blocked == nil {
-		t.Errorf("Expected blocked to be not nil")
+	expectEmptyList(t, "cfg.Blocked", cfg.Cwd.Blocked)
+
+	expected := []Mount{
+		{Source: "./", Target: "./", RW: true, Overlay: false},
+		{Source: ".git", Target: ".git", RW: false, Overlay: false},
 	}
+	if !slices.Equal(cfg.Cwd.Mounts, expected) {
+		t.Errorf("Expected CWD.Mounts to be %+v, got %+v", expected, cfg.Cwd.Mounts)
+	}
+
+	expectEmptyList(t, "CWD.Blocked", cfg.Cwd.Blocked)
 
 	if cfg.EnvExpose == nil {
 		t.Errorf("Expected env_expose to be not nil")

@@ -344,9 +344,17 @@ func childProcessEntry() (int, error) {
 	}
 
 	// Change working directory to what it was originally, but on the
-	// new filesystem root.
-	if err := unix.Chdir(paths.Cwd); err != nil {
-		return 1, fmt.Errorf("chdir to %s failed: %v", paths.Cwd, err)
+	// new filesystem root. If Cwd is not accessible on the new
+	// filesystem, fallback to home dir and then to /
+	chdirPaths := []string{paths.Cwd, paths.HostHome, "/"}
+	var chdirErr error
+	for _, p := range chdirPaths {
+		if chdirErr = unix.Chdir(p); chdirErr == nil {
+			break
+		}
+	}
+	if chdirErr != nil {
+		return 1, fmt.Errorf("failed to chdir to /: %v", chdirErr)
 	}
 
 	// Drop all the capabilities in the user namespace.

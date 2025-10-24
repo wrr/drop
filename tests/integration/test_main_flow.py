@@ -26,13 +26,21 @@ class Config:
     def __init__(self, *,
                  mounts: List[str] = None,
                  blocked: List[str] = None,
+                 cwd_mounts: List[str] = None,
+                 cwd_blocked: List[str] = None,
                  env_expose: List[str] = None,
                  tcp_ports_to_host: List[str] = None,
                  tcp_ports_from_host: List[str] = None,
                  udp_ports_to_host: List[str] = None,
                  udp_ports_from_host: List[str] = None):
         self.mounts = mounts or []
+        # Always expose the directory where test coverage data is
+        # stored, to ensure all tests can write coverage data.
+        cover_path = Path(os.getcwd()) /  'cover'
+        self.mounts += [str(cover_path) + "::rw"]
         self.blocked = blocked or []
+        self.cwd_mounts = cwd_mounts or ['.::rw']
+        self.cwd_blocked = cwd_blocked or ['.::rw']
         self.env_expose = env_expose or []
         self.tcp_ports_to_host = tcp_ports_to_host or []
         self.tcp_ports_from_host = tcp_ports_from_host or []
@@ -44,6 +52,8 @@ class Config:
         toml_lines = [
             f'mounts = {str(self.mounts)}',
             f'blocked = {str(self.blocked)}',
+            f'cwd.mounts = {str(self.cwd_mounts)}',
+            f'cwd.blocked = {str(self.cwd_blocked)}',
             f'env_expose = {str(self.env_expose)}',
             '',
             '[net]',
@@ -146,12 +156,7 @@ class TestMainFlow(unittest.TestCase):
         env_dir_from_cwd = env_dir(env_id)
         rmdir(env_dir_from_cwd)
         try:
-            # Expose the directory where test coverage data is stored,
-            # otherwise the test fails in coverage gathering mode.
-            cover_path = Path(os.getcwd()) /  'cover'
-            config = Config(mounts=[str(cover_path) + "::rw"])
-            result = self.sandbox_run('ls', config=config, env_id=None,
-                                      cwd=cwd)
+            result = self.sandbox_run('ls', env_id=None, cwd=cwd)
             self.assertSuccess(result)
             self.assertFalse(os.path.exists(ENV_DIR))
             self.assertTrue(os.path.exists(env_dir_from_cwd), 
@@ -218,6 +223,21 @@ class TestMainFlow(unittest.TestCase):
             result = self.sandbox_run(cmd, config=config)
             self.assertEqual(1, result.returncode)
             self.assertIn('Read-only file system', result.stderr)
+
+            # Mount point should not be created directly in the Drop
+            # home dir, but in a disposable overlayfs lower layer.
+            self.assertFalse(os.path.exists(ENV_DIR / 'home' / exposed_dname))
+
+    def test_cwd_mount_read_only(self):
+        config = Config(cwd_mounts=['.'])
+        # Reading from CWD should work
+        result = self.sandbox_run('cat go.mod', config=config)
+        self.assertSuccess(result)
+
+        # Writing to CWD should fail
+        result = self.sandbox_run('touch testfile', config=config)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Read-only file system', result.stderr)
 
     def test_mounts_from_root_dir(self):
         # Expose a path outside of the home dir, normally not
@@ -339,6 +359,9 @@ class TestMainFlow(unittest.TestCase):
             self.assertEqual('world\n', read(hello_path))
             self.assertTrue(os.path.isdir(home_sub_path / 'foo'))
             self.assertTrue(os.path.isfile(home_sub_path / 'bar'))
+        # Mount point should not be created directly in the Drop
+        # home dir, but in a disposable overlayfs lower layer.
+        self.assertFalse(os.path.exists(ENV_DIR / 'home' / exposed_dname))
 
     def test_var(self):
         # Test that /var directory is empty initially and files created
@@ -350,13 +373,13 @@ class TestMainFlow(unittest.TestCase):
         line_count = int(result.stdout.strip())
         self.assertEqual(0, line_count)
 
-        cmd = f'bash -c "echo hello > /var/foo"'
+        cmd = 'bash -c "echo hello > /var/foo"'
         result = self.sandbox_run(cmd)
         self.assertSuccess(result)
 
         # Ensure the file was not created in the host /var, but in the
         # Drop env /var dir.
-        host_var_file = Path(f'/var/foo')
+        host_var_file = Path('/var/foo')
         self.assertFalse(host_var_file.exists())
         jail_var_file = ENV_DIR / 'var' / 'foo'
         self.assertTrue(jail_var_file.exists())

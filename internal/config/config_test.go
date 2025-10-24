@@ -276,7 +276,8 @@ mounts = [
 ]
 blocked = ["/mnt", "/root"]
 env_expose = ["HOME", "PATH", "LC_*"]
-
+cwd.mounts = [".::rw", ".git"]
+cwd.blocked = [".github"]
 [net]
 mode = "isolated"
 tcp_ports_to_host = ["8080", "3000:3001"]
@@ -291,7 +292,14 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 					{Source: "/home/user/work", Target: "/home/user/work", RW: true},
 					{Source: "/media", Target: "~/media", RW: true},
 				},
-				Blocked:   []string{"/mnt", "/root"},
+				Blocked: []string{"/mnt", "/root"},
+				Cwd: Cwd{
+					Mounts: []Mount{
+						{Source: ".", Target: ".", RW: true},
+						{Source: ".git", Target: ".git"},
+					},
+					Blocked: []string{".github"},
+				},
 				EnvExpose: []string{"HOME", "PATH", "LC_*"},
 				Net: Net{
 					Mode:             "isolated",
@@ -405,6 +413,38 @@ blocked = ["foo"]
 			expected: Config{},
 			error:    "invalid blocked path 'foo': path must start with / or ~/",
 		},
+		{
+			name: "invalid cwd.mounts, absolute source path",
+			tomlStr: `
+cwd.mounts = ["/local"]
+`,
+			expected: Config{},
+			error:    "invalid cwd.mounts '/local': path must be relative, cannot start with / or ~/",
+		},
+		{
+			name: "invalid cwd.mounts, not normalized target path",
+			tomlStr: `
+cwd.mounts = ["./.git:../.git"]
+`,
+			expected: Config{},
+			error:    "invalid cwd.mounts '../.git': path is not normalized",
+		},
+		{
+			name: "invalid cwd.blocked, absolute source path",
+			tomlStr: `
+cwd.blocked = ["/local"]
+`,
+			expected: Config{},
+			error:    "invalid cwd.blocked path '/local': path must be relative, cannot start with / or ~/",
+		},
+		{
+			name: "invalid cwd.blocked, not normalized paths",
+			tomlStr: `
+cwd.blocked = ["../../foo"]
+`,
+			expected: Config{},
+			error:    "invalid cwd.blocked path '../../foo': path is not normalized",
+		},
 	}
 
 	for _, tt := range tests {
@@ -423,6 +463,8 @@ blocked = ["foo"]
 
 			expectMountSlicesEqual(t, "Mounts", result.Mounts, tt.expected.Mounts)
 			expectStringSlicesEqual(t, "Blocked", result.Blocked, tt.expected.Blocked)
+			expectMountSlicesEqual(t, "Cwd.Mounts", result.Cwd.Mounts, tt.expected.Cwd.Mounts)
+			expectStringSlicesEqual(t, "Cwd.Blocked", result.Cwd.Blocked, tt.expected.Cwd.Blocked)
 			expectStringSlicesEqual(t, "EnvExpose", result.EnvExpose, tt.expected.EnvExpose)
 
 			if result.Net.Mode != tt.expected.Net.Mode {
@@ -730,7 +772,7 @@ mounts = ["~/.bashrc", {source = "/usr/bin", target = "bin"}]
 	}
 }
 
-func TestValidateBlockedPaths(t *testing.T) {
+func TestValidatePaths(t *testing.T) {
 	tests := []struct {
 		name  string
 		paths []string
@@ -755,7 +797,7 @@ func TestValidateBlockedPaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateBlockedPaths("test_prop", tt.paths)
+			err := validatePaths("test_prop", tt.paths, validateAbsOrHomePath)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
 			}
@@ -763,7 +805,7 @@ func TestValidateBlockedPaths(t *testing.T) {
 	}
 }
 
-func TestValidatePath(t *testing.T) {
+func TestValidateAbsOrHomePath(t *testing.T) {
 	tests := []struct {
 		error string
 		paths []string
@@ -793,7 +835,7 @@ func TestValidatePath(t *testing.T) {
 	for _, tt := range tests {
 		for _, path := range tt.paths {
 			t.Run(fmt.Sprintf("path=%q", path), func(t *testing.T) {
-				err := validatePath(path)
+				err := validateAbsOrHomePath(path)
 				if terr := checkError(tt.error, err); terr != nil {
 					t.Fatal(terr)
 				}
@@ -802,7 +844,7 @@ func TestValidatePath(t *testing.T) {
 	}
 }
 
-func TestValidateRelativePath(t *testing.T) {
+func TestValidateRelPath(t *testing.T) {
 	tests := []struct {
 		error string
 		paths []string
@@ -817,14 +859,14 @@ func TestValidateRelativePath(t *testing.T) {
 		},
 		{
 			error: "path is not normalized",
-			paths: []string{"", "local/../bin", "local/./bin", "local/bin/.", "local//bin"},
+			paths: []string{"", "local/../bin", "local/./bin", "local/bin/.", "local//bin", "../.git"},
 		},
 	}
 
 	for _, tt := range tests {
 		for _, path := range tt.paths {
 			t.Run(fmt.Sprintf("path=%q", path), func(t *testing.T) {
-				err := validateRelativePath(path)
+				err := validateRelPath(path)
 				if terr := checkError(tt.error, err); terr != nil {
 					t.Fatal(terr)
 				}

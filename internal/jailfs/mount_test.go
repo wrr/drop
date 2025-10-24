@@ -1,6 +1,11 @@
 package jailfs
 
-import "testing"
+import (
+	"slices"
+	"testing"
+
+	"github.com/wrr/drop/internal/config"
+)
 
 func TestIsSubDir(t *testing.T) {
 	tests := []struct {
@@ -107,5 +112,35 @@ func TestIsSubDir(t *testing.T) {
 				t.Errorf("isSubDirOrSame(%q, %q) = %v, want %v", tt.parent, tt.child, result, tt.isSubDirOrSame)
 			}
 		})
+	}
+}
+
+func TestResolveHomeDir(t *testing.T) {
+	mounts := []config.Mount{
+		{Source: "~/foo", Target: "~/bar", RW: true},
+		{Source: "/etc", Target: "~/baz", RW: false},
+	}
+	result := resolveHomeDir(mounts, "/home/alice")
+	expected := []config.Mount{
+		{Source: "/home/alice/foo", Target: "/home/alice/bar", RW: true},
+		{Source: "/etc", Target: "/home/alice/baz", RW: false},
+	}
+	if !slices.Equal(result, expected) {
+		t.Errorf("Expected %+v, got %+v", expected, result)
+	}
+}
+
+func TestResolveCwd(t *testing.T) {
+	mounts := []config.Mount{
+		{Source: ".", Target: ".", RW: true},
+		{Source: ".git", Target: ".git2", RW: false},
+	}
+	result := resolveCwd(mounts, "/home/alice/project")
+	expected := []config.Mount{
+		{Source: "/home/alice/project", Target: "/home/alice/project", RW: true},
+		{Source: "/home/alice/project/.git", Target: "/home/alice/project/.git2", RW: false},
+	}
+	if !slices.Equal(result, expected) {
+		t.Errorf("Expected %+v, got %+v", expected, result)
 	}
 }

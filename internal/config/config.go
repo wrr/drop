@@ -26,9 +26,15 @@ type Mount struct {
 	Overlay bool
 }
 
+type Cwd struct {
+	Mounts  []Mount  `toml:"mounts"`
+	Blocked []string `toml:"blocked"`
+}
+
 type Config struct {
 	Mounts    []Mount  `toml:"mounts"`
 	Blocked   []string `toml:"blocked"`
+	Cwd       Cwd      `toml:"cwd"`
 	EnvExpose []string `toml:"env_expose"`
 	Net       Net      `toml:"net"`
 }
@@ -117,11 +123,17 @@ func Parse(configStr string) (*Config, error) {
 		return parseError(err)
 	}
 
-	if err := validateMounts("mounts", config.Mounts); err != nil {
+	if err := validateMounts("mounts", config.Mounts, validateAbsOrHomePath); err != nil {
+		return parseError(err)
+	}
+	if err := validatePaths("blocked path", config.Blocked, validateAbsOrHomePath); err != nil {
 		return parseError(err)
 	}
 
-	if err := validateBlockedPaths("blocked path", config.Blocked); err != nil {
+	if err := validateMounts("cwd.mounts", config.Cwd.Mounts, validateRelPath); err != nil {
+		return parseError(err)
+	}
+	if err := validatePaths("cwd.blocked path", config.Cwd.Blocked, validateRelPath); err != nil {
 		return parseError(err)
 	}
 
@@ -189,31 +201,32 @@ func ParseMount(str string) (*Mount, error) {
 	return &m, nil
 }
 
-// validateMounts checks if all mount source and target paths are normalized and either absolute or start with '~/'.
-func validateMounts(propName string, mounts []Mount) error {
+// validateMounts checks if all mount source and target paths pass the
+// provided validation function.
+func validateMounts(propId string, mounts []Mount, validateFn func(string) error) error {
 	for _, m := range mounts {
-		if err := validatePath(m.Source); err != nil {
-			return fmt.Errorf("invalid %s '%s': %v", propName, m.Source, err)
+		if err := validateFn(m.Source); err != nil {
+			return fmt.Errorf("invalid %s '%s': %v", propId, m.Source, err)
 		}
-		if err := validatePath(m.Target); err != nil {
-			return fmt.Errorf("invalid %s '%s': %v", propName, m.Target, err)
+		if err := validateFn(m.Target); err != nil {
+			return fmt.Errorf("invalid %s '%s': %v", propId, m.Target, err)
 		}
 	}
 	return nil
 }
 
-// validateBlockedPaths checks if all paths are normalized and either
-// absolute or start with '~/'.
-func validateBlockedPaths(propId string, paths []string) error {
+// validatePaths checks if all paths pass the provided
+// validation function.
+func validatePaths(propId string, paths []string, validateFn func(string) error) error {
 	for _, p := range paths {
-		if err := validatePath(p); err != nil {
+		if err := validateFn(p); err != nil {
 			return fmt.Errorf("invalid %s '%s': %v", propId, p, err)
 		}
 	}
 	return nil
 }
 
-func validatePath(path string) error {
+func validateAbsOrHomePath(path string) error {
 	if !strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "~/") {
 		return fmt.Errorf("path must start with / or ~/")
 	}
@@ -237,7 +250,7 @@ func validatePath(path string) error {
 	return nil
 }
 
-func validateRelativePath(path string) error {
+func validateRelPath(path string) error {
 	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~/") {
 		return fmt.Errorf("path must be relative, cannot start with / or ~/")
 	}
@@ -248,7 +261,7 @@ func validateRelativePath(path string) error {
 	path = strings.TrimSuffix(path, "/")
 	path = strings.TrimPrefix(path, "./")
 
-	if path != filepath.Clean(path) {
+	if path != filepath.Clean(path) || strings.HasPrefix(path, "..") {
 		return fmt.Errorf("path is not normalized")
 	}
 	return nil
