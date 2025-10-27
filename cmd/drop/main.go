@@ -103,11 +103,11 @@ Options:
 		}
 	}
 
-	runDir, err := jailfs.NewRunDir(homeDir, envId)
+	runDir, cleanRunDir, err := jailfs.NewRunDir(homeDir, envId)
 	if err != nil {
 		return 1, fmt.Errorf("failed to create run dir: %v", err)
 	}
-	defer jailfs.CleanRunDir(runDir)
+	defer cleanRunDir()
 
 	if configPath == jailfs.DefaultConfigPath(homeDir) && !osutil.Exists(configPath) {
 		if err := config.WriteDefault(configPath, homeDir); err != nil {
@@ -269,11 +269,11 @@ Options:
 	// Start pasta to provide network connectivity to the jailed process
 	// in isolated network mode
 	if cfg.Net.Mode == "isolated" {
-		cleanup, err := netns.StartPasta(cmd.Process.Pid, cfg.Net, runDir)
+		cleanPasta, err := netns.StartPasta(cmd.Process.Pid, cfg.Net, runDir)
 		if err != nil {
 			return 1, err
 		}
-		defer cleanup()
+		defer cleanPasta()
 	}
 
 	// Signal child process that setup is finished. This needs to be

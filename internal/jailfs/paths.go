@@ -7,7 +7,9 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/wrr/drop/internal/log"
 	"github.com/wrr/drop/internal/osutil"
 )
 
@@ -111,31 +113,8 @@ func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 	return &paths, nil
 }
 
-// NewRunDir creates a directory to store this jail instance runtime
-// files and dirs (for example, the main root file system mount
-// point). The directory can be removed when this jail instance
-// terminates.
-func NewRunDir(homeDir string, envId string) (string, error) {
-	parent := filepath.Join(homeDir, ".drop", "internal", "run")
-
-	if err := osutil.MkdirAll(parent); err != nil {
-		return "", err
-	}
-	path, err := os.MkdirTemp(parent, fmt.Sprintf("%s-", envId))
-	if err != nil {
-		return "", fmt.Errorf("failed to create run sub-directory: %v", err)
-	}
-	return path, nil
-}
-
 func DefaultConfigPath(hostHome string) string {
 	return filepath.Join(hostHome, ".drop", "config")
-}
-
-// ClearRunDir removes the jail instance specific runtime files, no longer
-// needed when jail is exited.
-func CleanRunDir(path string) error {
-	return os.RemoveAll(path)
 }
 
 var envIdChars = `a-zA-Z0-9-_\.`
@@ -155,6 +134,130 @@ func CwdToEnvId() (string, error) {
 		return "", fmt.Errorf("get current directory failed: %v", err)
 	}
 	return pathToEnvId(cwd), nil
+}
+
+// NewRunDir creates a directory to store this jail instance runtime
+// files and dirs (for example, the main root file system mount
+// point). The directory can be removed when this jail instance
+// terminates.
+func NewRunDir(homeDir string, envId string) (string, func(), error) {
+	parent := filepath.Join(homeDir, ".drop", "internal", "run")
+
+	if err := osutil.MkdirAll(parent); err != nil {
+		return "", nil, err
+	}
+	runDir, err := os.MkdirTemp(parent, fmt.Sprintf("%s-", envId))
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create run sub-directory: %v", err)
+	}
+
+	lockFile, err := lockRunDir(runDir)
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() {
+		// Releases the lock (not crucial, because proccess termination
+		// also does it).
+		lockFile.Close()
+		if err := cleanRunDir(runDir); err != nil {
+			log.Info("failed to clean run dir %v", err)
+		}
+	}
+	return runDir, cleanup, nil
+}
+
+// cleanRunDir removes runtime files no longer needed when Drop
+// terminates.
+func cleanRunDir(runDir string) error {
+	// Remove the current instance run dir
+	err := os.RemoveAll(runDir)
+	if err != nil {
+		return err
+	}
+	// This could be run at any time:
+	return removeOrphanedRunDirs(filepath.Dir(runDir))
+}
+
+const runLockFname string = "lock"
+
+// removeOrphanedRunDirs checks if run dirs orphaned by other Drop
+// instances exist (orphaned dirs are created when Drop is killed
+// with -9, system looses power, etc.). Removes them if they are older
+// than orphanedRemoveAfter thredhols, this is to avoid race when freshly
+// created, but not yet locked run dir would be removed.
+func removeOrphanedRunDirs(runDirParent string) error {
+	orphanedRemoveAfter := 1 * time.Minute
+	orphanedRemoveTime := time.Now().Add(-orphanedRemoveAfter)
+	entries, err := os.ReadDir(runDirParent)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		runDir := filepath.Join(runDirParent, entry.Name())
+		locked, err := isRunDirLocked(runDir)
+		if err != nil {
+			return err
+		}
+		if locked {
+			// Still in use, not orphaned
+			continue
+		}
+		info, err := os.Stat(runDir)
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(orphanedRemoveTime) {
+			if err := os.RemoveAll(runDir); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// lockRunDir places a locked file in a run dir. The lock is
+// automatically released by the kernel when process exits/dies. This
+// allows to detect orphaned, unused run dirs and remove them.
+func lockRunDir(runDir string) (*os.File, error) {
+	lockPath := filepath.Join(runDir, runLockFname)
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create a file %v: %v", lockPath, err)
+	}
+	// Do not close the file, as this releases the lock. The lock should
+	// be released when the process terminates.
+
+	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to lock a file %v: %v", lockPath, err)
+	}
+	return file, nil
+}
+
+func isRunDirLocked(runDir string) (bool, error) {
+	lockPath := filepath.Join(runDir, runLockFname)
+	file, err := os.Open(lockPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Lock file doesn't exists, runDir is not locked
+			return false, nil
+		}
+		return false, err
+	}
+	defer file.Close()
+	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if err != nil {
+		// File is locked by another process or another error
+		// (we just assume file is locked to avoid complex error
+		//  handling).
+		return true, nil
+	}
+	// Not locked, release the lock
+	syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	return false, nil
 }
 
 func pathToEnvId(path string) string {
