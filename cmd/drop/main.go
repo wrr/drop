@@ -71,21 +71,45 @@ func parentProcessEntry() (int, error) {
 		fmt.Fprintf(os.Stderr, `Drop limits programs abilities to read and write user's files
 Usage: drop [options] [command...]
 Options:
-`)
-		flag.PrintDefaults()
+  -env, -e value
+        Environment ID
+  -config, -c value
+        Path to config file (default: %s)
+  -root, -r
+        Be root (uid 0) in the jail. Useful for running installation scripts that
+        require to be run as root. This option doesn't grant any additional privileges to the jailed
+        processes. For convenience, the home dir of a root user is not set to /root, but
+        kept as the original home dir.
+  -net, -n value
+        Network mode: off, isolated, or unjailed
+  -tcp-to-host, -t value
+        Publish TCP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]
+  -tcp-from-host, -T value
+        Publish TCP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]
+  -udp-to-host, -u value
+        Publish UDP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]
+  -udp-from-host, -U value
+        Publish UDP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]
+  -help, -h
+        Show help
+`, configPath)
 	}
-
-	flag.Var((*stringSlice)(&tcpPortsToHost), "t", "Publish TCP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]")
-	flag.Var((*stringSlice)(&tcpPortsFromHost), "T", "Publish TCP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]")
-	flag.Var((*stringSlice)(&udpPortsToHost), "u", "Publish UDP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]")
-	flag.Var((*stringSlice)(&udpPortsFromHost), "U", "Publish UDP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]")
-	flag.StringVar(&envId, "e", "", "Environment ID")
-	flag.StringVar(&configPath, "c", configPath, "Path to config file")
-	flag.StringVar(&networkMode, "n", "", "Network mode: off, isolated, or unjailed")
-	flag.BoolVar(&beRoot, "r", false, "Be root (uid 0) in the jail. Useful for running installation scripts that\n"+
-		"require to be run as root. This option doesn't grant any additional privileges to the jailed\n"+
-		"processes. For convenience, the home dir of a root user is not set to /root, but\n"+
-		"kept as the original home dir.")
+	flag.StringVar(&envId, "env", "", "")
+	flag.StringVar(&envId, "e", "", "")
+	flag.StringVar(&configPath, "config", configPath, "")
+	flag.StringVar(&configPath, "c", configPath, "")
+	flag.BoolVar(&beRoot, "root", false, "")
+	flag.BoolVar(&beRoot, "r", false, "")
+	flag.StringVar(&networkMode, "net", "", "")
+	flag.StringVar(&networkMode, "n", "", "")
+	flag.Var((*stringSlice)(&tcpPortsToHost), "tcp-to-host", "")
+	flag.Var((*stringSlice)(&tcpPortsToHost), "t", "")
+	flag.Var((*stringSlice)(&tcpPortsFromHost), "tcp-from-host", "")
+	flag.Var((*stringSlice)(&tcpPortsFromHost), "T", "")
+	flag.Var((*stringSlice)(&udpPortsToHost), "udp-to-host", "")
+	flag.Var((*stringSlice)(&udpPortsToHost), "u", "")
+	flag.Var((*stringSlice)(&udpPortsFromHost), "udp-from-host", "")
+	flag.Var((*stringSlice)(&udpPortsFromHost), "U", "")
 
 	err = flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
