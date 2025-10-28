@@ -6,7 +6,7 @@ import base
 
 from base import Config, ENV_DIR
 
-class TestMainFlow(base.TestBase):
+class TestCore(base.TestBase):
     def test_exit_code_passed(self):
         cmd = 'bash -c "exit 77"'
         result = self.sandbox_run(cmd)
