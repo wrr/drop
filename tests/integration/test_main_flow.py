@@ -1,123 +1,20 @@
 import getpass
 import os
 import re
-import shlex
 import shutil
 import socket
-import subprocess
-import tempfile
 import time
-import unittest
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import List
 
-ENV_ID = 'drop-tests'
+import base
+
+from base import Config, ENV_DIR
+
 HOME_DIR = Path.home()
 
-def env_dir(env_id: str) -> Path:
-    return HOME_DIR / '.drop' / 'envs' / env_id
-
-ENV_DIR = env_dir(ENV_ID)
-
-
-class Config:
-    def __init__(self, *,
-                 mounts: List[str] = None,
-                 blocked: List[str] = None,
-                 cwd_mounts: List[str] = None,
-                 cwd_blocked: List[str] = None,
-                 env_expose: List[str] = None,
-                 tcp_ports_to_host: List[str] = None,
-                 tcp_ports_from_host: List[str] = None,
-                 udp_ports_to_host: List[str] = None,
-                 udp_ports_from_host: List[str] = None):
-        self.mounts = mounts or []
-        # Always expose the directory where test coverage data is
-        # stored, to ensure all tests can write coverage data.
-        cover_path = Path(os.getcwd()) /  'cover'
-        self.mounts += [str(cover_path) + "::rw"]
-        self.blocked = blocked or []
-        self.cwd_mounts = cwd_mounts or ['.::rw']
-        self.cwd_blocked = cwd_blocked or ['.::rw']
-        self.env_expose = env_expose or []
-        self.tcp_ports_to_host = tcp_ports_to_host or []
-        self.tcp_ports_from_host = tcp_ports_from_host or []
-        self.udp_ports_to_host = udp_ports_to_host or []
-        self.udp_ports_from_host = udp_ports_from_host or []
-
-    def toml(self) -> str:
-        """Return configuration as TOML string"""
-        toml_lines = [
-            f'mounts = {str(self.mounts)}',
-            f'blocked = {str(self.blocked)}',
-            f'cwd.mounts = {str(self.cwd_mounts)}',
-            f'cwd.blocked = {str(self.cwd_blocked)}',
-            f'env_expose = {str(self.env_expose)}',
-            '',
-            '[net]',
-            f'tcp_ports_to_host = {str(self.tcp_ports_to_host)}',
-            f'tcp_ports_from_host = {str(self.tcp_ports_from_host)}',
-            f'udp_ports_to_host = {str(self.udp_ports_to_host)}',
-            f'udp_ports_from_host = {str(self.udp_ports_from_host)}'
-        ]
-        return '\n'.join(toml_lines)
-
-
-class TestMainFlow(unittest.TestCase):
-    def setUp(self):
-        rmdir(ENV_DIR)
-        self.temp_dir = tempfile.mkdtemp(prefix='drop-tests')
-        self.background_processes = []
-
-    def tearDown(self):
-        for process in self.background_processes:
-            if process.poll() is None:  # Process is still running
-                process.kill()
-
-        rmdir(ENV_DIR)
-        if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
-
-    def sandbox_run_background(self, command, config: Config = None,
-                               env_id: str = ENV_ID, drop_extra_args=None,
-                               **subprocess_kwargs):
-        """Execute a command in the sandbox.
-
-        Does not wait for the command to finish execution.
-        Returns Popen object.
-        """
-        if config is None:
-            config = Config()
-        config_file = os.path.join(self.temp_dir, 'config.toml')
-        write_config(config, config_file)
-        cmd_args = [f'{os.getcwd()}/drop']
-        if drop_extra_args:
-            cmd_args += shlex.split(drop_extra_args)
-        cmd_args += ['-c', config_file]
-        if env_id:
-            cmd_args += ['-e', env_id]
-        cmd_args += shlex.split(command)
-        process = subprocess.Popen(cmd_args, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, text=True,
-                                   **subprocess_kwargs)
-        self.background_processes.append(process)
-        return process
-
-    def sandbox_run(self, command, config: Config = None,
-                    env_id: str = ENV_ID, drop_extra_args=None,
-                    **subprocess_kwargs):
-        """Execute a command in the sandbox and return its result."""
-        process = self.sandbox_run_background(
-            command, config, env_id, drop_extra_args, **subprocess_kwargs)
-        return wait_process_completed(process)
-
-    def assertSuccess(self, result):
-        self.assertTrue(result.stderr == '',
-                        f'Unexpected error {result.stderr}')
-        self.assertEqual(0, result.returncode)
-
+class TestMainFlow(base.TestBase):
     def test_exit_code_passed(self):
         cmd = 'bash -c "exit 77"'
         result = self.sandbox_run(cmd)
@@ -153,8 +50,8 @@ class TestMainFlow(unittest.TestCase):
         # current working dir.
         cwd = self.temp_dir
         env_id = str(cwd).replace('/', '-').strip('-')
-        env_dir_from_cwd = env_dir(env_id)
-        rmdir(env_dir_from_cwd)
+        env_dir_from_cwd = base.env_dir(env_id)
+        base.rmdir(env_dir_from_cwd)
         try:
             result = self.sandbox_run('ls', env_id=None, cwd=cwd)
             self.assertSuccess(result)
@@ -162,7 +59,7 @@ class TestMainFlow(unittest.TestCase):
             self.assertTrue(os.path.exists(env_dir_from_cwd), 
                             f'env dir is missing {env_dir_from_cwd}')
         finally:
-            rmdir(env_dir_from_cwd)
+            base.rmdir(env_dir_from_cwd)
 
     def test_process_isolation(self):
         cmd = 'bash -c "sleep 10 & ps aux --noheaders"'
@@ -202,14 +99,14 @@ class TestMainFlow(unittest.TestCase):
         jail_file = ENV_DIR / 'home' / fname
         self.assertTrue(os.path.exists(jail_file))
 
-        self.assertEqual('Hello world\n', read(jail_file))
+        self.assertEqual('Hello world\n', base.read(jail_file))
 
     def test_mount_read_only(self):
         exposed_dname = 'drop-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
-            write('hello', hello_path)
+            base.write('hello', hello_path)
             config = Config(mounts=[f'~/{exposed_dname}'])
             # Reading from files in the dir exposed as readonly is
             # allowed
@@ -260,7 +157,7 @@ class TestMainFlow(unittest.TestCase):
         exposed_dname = 'drop-test-data'
         # Create an empty file in the env home dir that conflicts
         # with the exposed directory
-        write('', ENV_DIR / 'home' / exposed_dname)
+        base.write('', ENV_DIR / 'home' / exposed_dname)
 
         host_dir = HOME_DIR / exposed_dname
         with scoped_dir(host_dir):
@@ -337,7 +234,7 @@ class TestMainFlow(unittest.TestCase):
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
         with scoped_dir(home_sub_path):
-            write('hello', hello_path)
+            base.write('hello', hello_path)
             config = Config(mounts=[f"~/{exposed_dname}::rw"])
             # Reading from files in the dir exposed in readwrite mode
             # is allowed
@@ -356,7 +253,7 @@ class TestMainFlow(unittest.TestCase):
             result = self.sandbox_run(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('world\n', result.stdout)
-            self.assertEqual('world\n', read(hello_path))
+            self.assertEqual('world\n', base.read(hello_path))
             self.assertTrue(os.path.isdir(home_sub_path / 'foo'))
             self.assertTrue(os.path.isfile(home_sub_path / 'bar'))
         # Mount point should not be created directly in the Drop
@@ -384,7 +281,7 @@ class TestMainFlow(unittest.TestCase):
         jail_var_file = ENV_DIR / 'var' / 'foo'
         self.assertTrue(jail_var_file.exists())
 
-        self.assertEqual('hello\n', read(jail_var_file))
+        self.assertEqual('hello\n', base.read(jail_var_file))
 
     def test_run(self):
         # Test that /run directory is empty
@@ -438,7 +335,7 @@ class TestMainFlow(unittest.TestCase):
         self.assertSuccess(result)
 
         drop_env = result.stdout.strip()
-        self.assertEqual(ENV_ID, drop_env)
+        self.assertEqual(base.ENV_ID, drop_env)
 
     def test_devices(self):
         # Ensure /dev/null can be written to but its size remains 0
@@ -521,7 +418,7 @@ class TestMainFlow(unittest.TestCase):
 
         response = loopback_read_tcp(20112)
         self.assertEqual('hello', response)
-        self.assertSuccess(wait_process_completed(process))
+        self.assertSuccess(self.wait_process_completed(process))
 
         # expose UDP port 20112 from the sandbox to the host
         process = self.sandbox_run_background(
@@ -531,7 +428,7 @@ class TestMainFlow(unittest.TestCase):
 
         response = loopback_read_udp(20112)
         self.assertEqual('hello', response)
-        self.assertSuccess(wait_process_completed(process))
+        self.assertSuccess(self.wait_process_completed(process))
 
     def test_open_fds_not_passed_to_sanbox(self):
         try:
@@ -645,39 +542,11 @@ def scoped_dir(path):
 def scoped_empty_file(path):
     """Create an empty file and clean up afterwards."""
     try:
-        write('', path)
+        base.write('', path)
         yield path
     finally:
         if path.exists():
             path.unlink()
-
-def rmdir(path):
-    if os.path.exists(path):
-        shutil.rmtree(path)
-
-def write(content, path: str) -> None:
-    """Write content to a file, ensure parent dir exists"""
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'w') as f:
-        f.write(content)
-
-def write_config(config: Config, path: str) -> None:
-    """Write a Config object to a file as TOML"""
-    write(config.toml(), path)
-
-def read(path: str) -> str:
-    with open(path, 'r') as f:
-        return f.read()
-
-def wait_process_completed(process):
-    stdout, stderr = process.communicate()
-    retcode = process.poll()
-    return subprocess.CompletedProcess(
-        returncode=retcode,
-        args=process.args,
-        stdout=stdout,
-        stderr=stderr
-    )
 
 def loopback_read_tcp(tcp_port):
     """Attempt to connect to a TCP port and return the response string.
