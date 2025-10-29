@@ -75,10 +75,29 @@ class TestBase(unittest.TestCase):
         if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
+    def run_background(self, command, **subprocess_kwargs):
+        """Execute a background command.
+
+        Does not wait for the command to finish execution.
+        Returns Popen object.
+
+        Args:
+            command: Command string or list of arguments
+        """
+        if isinstance(command, str):
+            cmd_args = shlex.split(command)
+        else:
+            cmd_args = command
+        process = subprocess.Popen(cmd_args, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True,
+                                   **subprocess_kwargs)
+        self.background_processes.append(process)
+        return process
+
     def sandbox_run_background(self, command, config: Config = None,
                                env_id: str = ENV_ID, drop_extra_args=None,
                                **subprocess_kwargs):
-        """Execute a command in the sandbox.
+        """Execute a background command in the sandbox.
 
         Does not wait for the command to finish execution.
         Returns Popen object.
@@ -94,11 +113,7 @@ class TestBase(unittest.TestCase):
         if env_id:
             cmd_args += ['-e', env_id]
         cmd_args += shlex.split(command)
-        process = subprocess.Popen(cmd_args, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, text=True,
-                                   **subprocess_kwargs)
-        self.background_processes.append(process)
-        return process
+        return self.run_background(cmd_args, **subprocess_kwargs)
 
     def sandbox_run(self, command, config: Config = None,
                     env_id: str = ENV_ID, drop_extra_args=None,
@@ -109,7 +124,7 @@ class TestBase(unittest.TestCase):
         return self.wait_process_completed(process)
 
     def wait_process_completed(self, process):
-        stdout, stderr = process.communicate()
+        stdout, stderr = process.communicate(timeout=500)
         retcode = process.poll()
         return subprocess.CompletedProcess(
             returncode=retcode,
@@ -117,6 +132,16 @@ class TestBase(unittest.TestCase):
             stdout=stdout,
             stderr=stderr
         )
+
+    def kill_process(self, process):
+        """Kill a process and wait for it to exit"""
+        process.kill()
+        # We don't use process.communicate() here because for
+        # uninvestigated reason it randomly timeouts if the process is
+        # first killed.
+        process.stdout.close()
+        process.stderr.close()
+        process.wait()
 
     def assertSuccess(self, result):
         self.assertTrue(result.stderr == '',
