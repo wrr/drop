@@ -79,7 +79,7 @@ class TestCore(base.TestBase):
         self.assertTrue(re.match(ps_process, ps_lines[2]),
                         f'Unexpected ps output: {ps_lines[2]}')
 
-    def test_env_expose(self):
+    def test_exposed_env_vars(self):
         os.environ['FOO'] = 'bar'
 
         try:
@@ -89,7 +89,7 @@ class TestCore(base.TestBase):
             self.assertSuccess(result)
             self.assertEqual('', result.stdout.strip())
 
-            config = Config(env_expose=['FOO'])
+            config = Config(exposed_env_vars=['FOO'])
             result = self.sandbox_run(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('bar', result.stdout.strip())

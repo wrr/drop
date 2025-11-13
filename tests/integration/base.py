@@ -21,7 +21,7 @@ class Config:
                  blocked: List[str] = None,
                  cwd_mounts: List[str] = None,
                  cwd_blocked: List[str] = None,
-                 env_expose: List[str] = None,
+                 exposed_env_vars: List[str] = None,
                  tcp_ports_to_host: List[str] = None,
                  tcp_ports_from_host: List[str] = None,
                  udp_ports_to_host: List[str] = None,
@@ -34,7 +34,7 @@ class Config:
         self.blocked = blocked or []
         self.cwd_mounts = cwd_mounts or ['.::rw']
         self.cwd_blocked = cwd_blocked or []
-        self.env_expose = env_expose or []
+        self.exposed_env_vars = exposed_env_vars or []
         self.tcp_ports_to_host = tcp_ports_to_host or []
         self.tcp_ports_from_host = tcp_ports_from_host or []
         self.udp_ports_to_host = udp_ports_to_host or []
@@ -47,7 +47,7 @@ class Config:
             f'blocked = {str(self.blocked)}',
             f'cwd.mounts = {str(self.cwd_mounts)}',
             f'cwd.blocked = {str(self.cwd_blocked)}',
-            f'env_expose = {str(self.env_expose)}',
+            f'exposed_env_vars = {str(self.exposed_env_vars)}',
             '',
             '[net]',
             f'tcp_ports_to_host = {str(self.tcp_ports_to_host)}',

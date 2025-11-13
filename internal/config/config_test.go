@@ -275,7 +275,7 @@ mounts = [
   {source = "/media", target = "~/media", rw = true}
 ]
 blocked = ["/mnt", "/root"]
-env_expose = ["HOME", "PATH", "LC_*"]
+exposed_env_vars = ["HOME", "PATH", "LC_*"]
 cwd.mounts = [".::rw", ".git"]
 cwd.blocked = [".github"]
 [net]
@@ -300,7 +300,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 					},
 					Blocked: []string{".github"},
 				},
-				EnvExpose: []string{"HOME", "PATH", "LC_*"},
+				ExposedEnvVars: []string{"HOME", "PATH", "LC_*"},
 				Net: Net{
 					Mode:             "isolated",
 					TCPPortsToHost:   []string{"8080", "3000:3001"},
@@ -315,9 +315,9 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			name:    "empty config",
 			tomlStr: ``,
 			expected: Config{
-				Mounts:    nil,
-				Blocked:   nil,
-				EnvExpose: nil,
+				Mounts:         nil,
+				Blocked:        nil,
+				ExposedEnvVars: nil,
 				Net: Net{
 					Mode:             "isolated", // default
 					TCPPortsToHost:   nil,
@@ -329,12 +329,12 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			error: "",
 		},
 		{
-			name: "invalid env_expose pattern",
+			name: "invalid exposed_env_vars pattern",
 			tomlStr: `
-env_expose = ["HOME", "INVALID["]
+exposed_env_vars = ["HOME", "INVALID["]
 `,
 			expected: Config{},
-			error:    "invalid env_expose pattern 'INVALID['",
+			error:    "invalid exposed_env_vars pattern 'INVALID['",
 		},
 		{
 			name: "invalid TOML syntax",
@@ -465,7 +465,7 @@ cwd.blocked = ["../../foo"]
 			expectStringSlicesEqual(t, "Blocked", result.Blocked, tt.expected.Blocked)
 			expectMountSlicesEqual(t, "Cwd.Mounts", result.Cwd.Mounts, tt.expected.Cwd.Mounts)
 			expectStringSlicesEqual(t, "Cwd.Blocked", result.Cwd.Blocked, tt.expected.Cwd.Blocked)
-			expectStringSlicesEqual(t, "EnvExpose", result.EnvExpose, tt.expected.EnvExpose)
+			expectStringSlicesEqual(t, "ExposedEnvVars", result.ExposedEnvVars, tt.expected.ExposedEnvVars)
 
 			if result.Net.Mode != tt.expected.Net.Mode {
 				t.Errorf("expected Net.Mode '%s', got '%s'", tt.expected.Net.Mode, result.Net.Mode)
@@ -876,7 +876,7 @@ func TestValidateRelPath(t *testing.T) {
 	}
 }
 
-func TestValidateEnvExpose(t *testing.T) {
+func TestValidateExposedEnvVars(t *testing.T) {
 	tests := []struct {
 		name     string
 		patterns []string
@@ -900,17 +900,17 @@ func TestValidateEnvExpose(t *testing.T) {
 		{
 			name:     "invalid pattern - unclosed bracket",
 			patterns: []string{"HOME", "LC_["},
-			error:    "invalid env_expose pattern 'LC_['",
+			error:    "invalid exposed_env_vars pattern 'LC_['",
 		},
 		{
 			name:     "invalid pattern - unclosed bracket at end",
 			patterns: []string{"HOME", "PATH["},
-			error:    "invalid env_expose pattern 'PATH['",
+			error:    "invalid exposed_env_vars pattern 'PATH['",
 		},
 		{
 			name:     "multiple invalid patterns",
 			patterns: []string{"HOME", "LC_[", "VALID_*", "BAD["},
-			error:    "invalid env_expose pattern 'LC_['",
+			error:    "invalid exposed_env_vars pattern 'LC_['",
 		},
 		{
 			name:     "valid character class pattern",
@@ -925,7 +925,7 @@ func TestValidateEnvExpose(t *testing.T) {
 		{
 			name:     "single invalid pattern",
 			patterns: []string{"INVALID["},
-			error:    "invalid env_expose pattern 'INVALID['",
+			error:    "invalid exposed_env_vars pattern 'INVALID['",
 		},
 		{
 			name:     "valid edge case patterns",
@@ -936,7 +936,7 @@ func TestValidateEnvExpose(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateEnvExpose(tt.patterns)
+			err := validateExposedEnvVars(tt.patterns)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
 			}

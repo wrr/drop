@@ -32,11 +32,11 @@ type Cwd struct {
 }
 
 type Config struct {
-	Mounts    []Mount  `toml:"mounts"`
-	Blocked   []string `toml:"blocked"`
-	Cwd       Cwd      `toml:"cwd"`
-	EnvExpose []string `toml:"env_expose"`
-	Net       Net      `toml:"net"`
+	Mounts         []Mount  `toml:"mounts"`
+	Blocked        []string `toml:"blocked"`
+	Cwd            Cwd      `toml:"cwd"`
+	ExposedEnvVars []string `toml:"exposed_env_vars"`
+	Net            Net      `toml:"net"`
 }
 
 type PortForward struct {
@@ -137,7 +137,7 @@ func Parse(configStr string) (*Config, error) {
 		return parseError(err)
 	}
 
-	if err := validateEnvExpose(config.EnvExpose); err != nil {
+	if err := validateExposedEnvVars(config.ExposedEnvVars); err != nil {
 		return parseError(err)
 	}
 
@@ -267,11 +267,11 @@ func validateRelPath(path string) error {
 	return nil
 }
 
-// validateEnvExpose check if all patterns in the env_expose list are valid glob patterns.
-func validateEnvExpose(patterns []string) error {
+// validateExposedEnvVars check if all patterns in the exposed_env_vars list are valid glob patterns.
+func validateExposedEnvVars(patterns []string) error {
 	for _, pattern := range patterns {
 		if _, err := filepath.Match(pattern, "anything"); err != nil {
-			return fmt.Errorf("invalid env_expose pattern '%s': %v", pattern, err)
+			return fmt.Errorf("invalid exposed_env_vars pattern '%s': %v", pattern, err)
 		}
 	}
 	return nil

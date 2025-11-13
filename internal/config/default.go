@@ -107,7 +107,7 @@ cwd.blocked = [
 # Do not expose variables that contain sensitive secrets, but other
 # than that, expose all variables needed to ensure convenient work in
 # the Drop environment.
-env_expose = [
+exposed_env_vars = [
   "SHELL",
   "LC_*",
   "XTERM_SHELL",
