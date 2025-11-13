@@ -115,12 +115,12 @@ func TestIsSubDir(t *testing.T) {
 	}
 }
 
-func TestResolveHomeDir(t *testing.T) {
+func TestResolveHomeDirInMounts(t *testing.T) {
 	mounts := []config.Mount{
 		{Source: "~/foo", Target: "~/bar", RW: true},
 		{Source: "/etc", Target: "~/baz", RW: false},
 	}
-	result := resolveHomeDir(mounts, "/home/alice")
+	result := resolveHomeDirInMounts(mounts, "/home/alice")
 	expected := []config.Mount{
 		{Source: "/home/alice/foo", Target: "/home/alice/bar", RW: true},
 		{Source: "/etc", Target: "/home/alice/baz", RW: false},
@@ -130,12 +130,25 @@ func TestResolveHomeDir(t *testing.T) {
 	}
 }
 
-func TestResolveCwd(t *testing.T) {
+func TestResolveHomeDirInPaths(t *testing.T) {
+	paths := []string{
+		"~/foo", "~/bar", "/etc", "~/baz",
+	}
+	result := resolveHomeDirInPaths(paths, "/home/alice")
+	expected := []string{
+		"/home/alice/foo", "/home/alice/bar", "/etc", "/home/alice/baz",
+	}
+	if !slices.Equal(result, expected) {
+		t.Errorf("Expected %+v, got %+v", expected, result)
+	}
+}
+
+func TestResolveCwdInMounts(t *testing.T) {
 	mounts := []config.Mount{
 		{Source: ".", Target: ".", RW: true},
 		{Source: ".git", Target: ".git2", RW: false},
 	}
-	result := resolveCwd(mounts, "/home/alice/project")
+	result := resolveCwdInMounts(mounts, "/home/alice/project")
 	expected := []config.Mount{
 		{Source: "/home/alice/project", Target: "/home/alice/project", RW: true},
 		{Source: "/home/alice/project/.git", Target: "/home/alice/project/.git2", RW: false},

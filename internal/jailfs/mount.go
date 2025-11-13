@@ -433,12 +433,12 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	}
 
 	// Resolve home directory in all mounts and separate by RW flag
-	mounts := resolveHomeDir(cfg.Mounts, paths.HostHome)
+	mounts := resolveHomeDirInMounts(cfg.Mounts, paths.HostHome)
 	// Apply cwd mount configs, but only if cwd is not the home
 	// directory or a parent of it to avoid exposing the original home
 	// directory.
 	if !isSubDirOrSame(paths.Cwd, paths.HostHome) {
-		cwdMounts := resolveCwd(cfg.Cwd.Mounts, paths.Cwd)
+		cwdMounts := resolveCwdInMounts(cfg.Cwd.Mounts, paths.Cwd)
 		mounts = append(mounts, cwdMounts...)
 	}
 
@@ -460,8 +460,9 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
+	cfgBlockedPaths := resolveHomeDirInPaths(cfg.BlockedPaths, paths.HostHome)
 	// Combine always blocked paths with user-configured blocked paths
-	blockedPaths := append(alwaysBlocked, cfg.BlockedPaths...)
+	blockedPaths := append(alwaysBlocked, cfgBlockedPaths...)
 	if err := rt.blockEntries(paths, blockedPaths); err != nil {
 		return err
 	}
@@ -469,9 +470,9 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	return rt.pivot()
 }
 
-// resolveHomeDir returns a copy of mounts with ~/ in Source and
-// Target paths replaced with the homeDir.
-func resolveHomeDir(mounts []config.Mount, homeDir string) []config.Mount {
+// resolveHomeDirInMounts returns a copy of mounts with ~/ prefix in
+// Source and Target paths replaced with the homeDir.
+func resolveHomeDirInMounts(mounts []config.Mount, homeDir string) []config.Mount {
 	out := make([]config.Mount, len(mounts))
 	for i, m := range mounts {
 		out[i] = m
@@ -481,10 +482,20 @@ func resolveHomeDir(mounts []config.Mount, homeDir string) []config.Mount {
 	return out
 }
 
-// resolveCwd returns a copy of mounts with absolute CWD path
+// resolveHomeDirInPaths returns a copy of paths with ~/ prefix
+// replaced with the homeDir.
+func resolveHomeDirInPaths(paths []string, homeDir string) []string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = osutil.TildeToHomeDir(p, homeDir)
+	}
+	return out
+}
+
+// resolveCwdInMounts returns a copy of mounts with absolute CWD path
 // prepended to relative paths in Source and Target to form absolute
 // paths.
-func resolveCwd(mounts []config.Mount, cwd string) []config.Mount {
+func resolveCwdInMounts(mounts []config.Mount, cwd string) []config.Mount {
 	out := make([]config.Mount, len(mounts))
 	for i, m := range mounts {
 		out[i] = m

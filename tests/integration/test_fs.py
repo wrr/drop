@@ -223,7 +223,7 @@ class TestFS(TestBase):
         self.assertSuccess(result)
         self.assertIn('nameserver 169.254.1.1', result.stdout)
 
-    def test_blocked(self):
+    def test_blocked_paths(self):
         # Test that blocked paths are inaccessible
         config = Config(blocked_paths=['/var', '/etc/passwd'])
 
@@ -234,6 +234,20 @@ class TestFS(TestBase):
         result = self.sandbox_run('cat /etc/passwd', config=config)
         self.assertNotEqual(0, result.returncode)
         self.assertIn('Permission denied', result.stderr)
+
+    def test_blocked_home_dir_path(self):
+        exposed_dname = 'drop-test-data'
+        blocked_dname = 'blocked'
+        home_sub_path = HOME_DIR / exposed_dname
+        blocked_path = home_sub_path / blocked_dname
+        with scoped_dir(home_sub_path):
+            os.mkdir(blocked_path)
+            config = Config(
+                mounts=[f'~/{exposed_dname}'],
+                blocked_paths=[f'~/{exposed_dname}/{blocked_dname}'])
+            result = self.sandbox_run(f'ls {blocked_path}', config=config)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('Permission denied', result.stderr)
 
     def test_devices(self):
         # Ensure /dev/null can be written to but its size remains 0
