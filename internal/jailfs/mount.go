@@ -438,7 +438,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	// directory or a parent of it to avoid exposing the original home
 	// directory.
 	if !isSubDirOrSame(paths.Cwd, paths.HostHome) {
-		cwdMounts := resolveCwdInMounts(cfg.Cwd.Mounts, paths.Cwd)
+		cwdMounts := prependCwdToMounts(cfg.Cwd.Mounts, paths.Cwd)
 		mounts = append(mounts, cwdMounts...)
 	}
 
@@ -461,8 +461,10 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	}
 
 	cfgBlockedPaths := resolveHomeDirInPaths(cfg.BlockedPaths, paths.HostHome)
+	cfgCwdBlockedPaths := prependCwdToPaths(cfg.Cwd.BlockedPaths, paths.Cwd)
 	// Combine always blocked paths with user-configured blocked paths
-	blockedPaths := append(alwaysBlocked, cfgBlockedPaths...)
+	blockedPaths := append(alwaysBlocked, append(cfgBlockedPaths, cfgCwdBlockedPaths...)...)
+
 	if err := rt.blockEntries(paths, blockedPaths); err != nil {
 		return err
 	}
@@ -492,15 +494,23 @@ func resolveHomeDirInPaths(paths []string, homeDir string) []string {
 	return out
 }
 
-// resolveCwdInMounts returns a copy of mounts with absolute CWD path
-// prepended to relative paths in Source and Target to form absolute
-// paths.
-func resolveCwdInMounts(mounts []config.Mount, cwd string) []config.Mount {
+// prependCwdToMounts returns a copy of mounts with cwd prepended to
+// relative paths in Source and Target
+func prependCwdToMounts(mounts []config.Mount, cwd string) []config.Mount {
 	out := make([]config.Mount, len(mounts))
 	for i, m := range mounts {
 		out[i] = m
 		out[i].Source = filepath.Join(cwd, m.Source)
 		out[i].Target = filepath.Join(cwd, m.Target)
+	}
+	return out
+}
+
+// prependCwdToPaths returns a copy of paths with cwd prepended
+func prependCwdToPaths(paths []string, cwd string) []string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = filepath.Join(cwd, p)
 	}
 	return out
 }

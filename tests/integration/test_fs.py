@@ -61,6 +61,12 @@ class TestFS(TestBase):
         self.assertEqual(1, result.returncode)
         self.assertIn('Read-only file system', result.stderr)
 
+    def test_cwd_blocked_path(self):
+        config = Config(cwd_blocked_paths=['cmd'])
+        result = self.sandbox_run('cat cmd/drop/main.go', config=config)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('cmd/drop/main.go: Permission denied', result.stderr)
+
     def test_mounts_from_root_dir(self):
         # Expose a path outside of the home dir, normally not
         # available within Drop.
