@@ -461,7 +461,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	}
 
 	// Combine always blocked paths with user-configured blocked paths
-	blockedPaths := append(alwaysBlocked, cfg.Blocked...)
+	blockedPaths := append(alwaysBlocked, cfg.BlockedPaths...)
 	if err := rt.blockEntries(paths, blockedPaths); err != nil {
 		return err
 	}

@@ -91,13 +91,13 @@ mounts = %s
 # to your current user (for example /root). Drop also mounts almost
 # the whole filesystem read-only, so you don't need to include files
 # just to block writing to them.
-blocked = %s
+blocked_paths = %s
 
 cwd.mounts = [
  "./::rw",
  ".git"
 ]
-cwd.blocked = [
+cwd.blocked_paths = [
 ]
 
 # Environment variables to be exposed from process starting Drop to

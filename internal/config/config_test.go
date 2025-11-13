@@ -274,10 +274,10 @@ mounts = [
   "/home/user/work::rw",
   {source = "/media", target = "~/media", rw = true}
 ]
-blocked = ["/mnt", "/root"]
+blocked_paths = ["/mnt", "/root"]
 exposed_env_vars = ["HOME", "PATH", "LC_*"]
 cwd.mounts = [".::rw", ".git"]
-cwd.blocked = [".github"]
+cwd.blocked_paths = [".github"]
 [net]
 mode = "isolated"
 tcp_ports_to_host = ["8080", "3000:3001"]
@@ -292,13 +292,13 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 					{Source: "/home/user/work", Target: "/home/user/work", RW: true},
 					{Source: "/media", Target: "~/media", RW: true},
 				},
-				Blocked: []string{"/mnt", "/root"},
+				BlockedPaths: []string{"/mnt", "/root"},
 				Cwd: Cwd{
 					Mounts: []Mount{
 						{Source: ".", Target: ".", RW: true},
 						{Source: ".git", Target: ".git"},
 					},
-					Blocked: []string{".github"},
+					BlockedPaths: []string{".github"},
 				},
 				ExposedEnvVars: []string{"HOME", "PATH", "LC_*"},
 				Net: Net{
@@ -316,7 +316,7 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			tomlStr: ``,
 			expected: Config{
 				Mounts:         nil,
-				Blocked:        nil,
+				BlockedPaths:   nil,
 				ExposedEnvVars: nil,
 				Net: Net{
 					Mode:             "isolated", // default
@@ -408,10 +408,10 @@ mounts = ["relative/path"]
 		{
 			name: "invalid blocked path",
 			tomlStr: `
-blocked = ["foo"]
+blocked_paths = ["foo"]
 `,
 			expected: Config{},
-			error:    "invalid blocked path 'foo': path must start with / or ~/",
+			error:    "invalid blocked_paths 'foo': path must start with / or ~/",
 		},
 		{
 			name: "invalid cwd.mounts, absolute source path",
@@ -432,18 +432,18 @@ cwd.mounts = ["./.git:../.git"]
 		{
 			name: "invalid cwd.blocked, absolute source path",
 			tomlStr: `
-cwd.blocked = ["/local"]
+cwd.blocked_paths = ["/local"]
 `,
 			expected: Config{},
-			error:    "invalid cwd.blocked path '/local': path must be relative, cannot start with / or ~/",
+			error:    "invalid cwd.blocked_paths '/local': path must be relative, cannot start with / or ~/",
 		},
 		{
 			name: "invalid cwd.blocked, not normalized paths",
 			tomlStr: `
-cwd.blocked = ["../../foo"]
+cwd.blocked_paths = ["../../foo"]
 `,
 			expected: Config{},
-			error:    "invalid cwd.blocked path '../../foo': path is not normalized",
+			error:    "invalid cwd.blocked_paths '../../foo': path is not normalized",
 		},
 	}
 
@@ -462,9 +462,9 @@ cwd.blocked = ["../../foo"]
 			}
 
 			expectMountSlicesEqual(t, "Mounts", result.Mounts, tt.expected.Mounts)
-			expectStringSlicesEqual(t, "Blocked", result.Blocked, tt.expected.Blocked)
+			expectStringSlicesEqual(t, "BlockedPaths", result.BlockedPaths, tt.expected.BlockedPaths)
 			expectMountSlicesEqual(t, "Cwd.Mounts", result.Cwd.Mounts, tt.expected.Cwd.Mounts)
-			expectStringSlicesEqual(t, "Cwd.Blocked", result.Cwd.Blocked, tt.expected.Cwd.Blocked)
+			expectStringSlicesEqual(t, "Cwd.BlockedPaths", result.Cwd.BlockedPaths, tt.expected.Cwd.BlockedPaths)
 			expectStringSlicesEqual(t, "ExposedEnvVars", result.ExposedEnvVars, tt.expected.ExposedEnvVars)
 
 			if result.Net.Mode != tt.expected.Net.Mode {

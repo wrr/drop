@@ -18,9 +18,9 @@ ENV_DIR = env_dir(ENV_ID)
 class Config:
     def __init__(self, *,
                  mounts: List[str] = None,
-                 blocked: List[str] = None,
+                 blocked_paths: List[str] = None,
                  cwd_mounts: List[str] = None,
-                 cwd_blocked: List[str] = None,
+                 cwd_blocked_paths: List[str] = None,
                  exposed_env_vars: List[str] = None,
                  tcp_ports_to_host: List[str] = None,
                  tcp_ports_from_host: List[str] = None,
@@ -31,9 +31,9 @@ class Config:
         # stored, to ensure all tests can write coverage data.
         cover_path = Path(os.getcwd()) /  'cover'
         self.mounts += [str(cover_path) + "::rw"]
-        self.blocked = blocked or []
+        self.blocked_paths = blocked_paths or []
         self.cwd_mounts = cwd_mounts or ['.::rw']
-        self.cwd_blocked = cwd_blocked or []
+        self.cwd_blocked_paths = cwd_blocked_paths or []
         self.exposed_env_vars = exposed_env_vars or []
         self.tcp_ports_to_host = tcp_ports_to_host or []
         self.tcp_ports_from_host = tcp_ports_from_host or []
@@ -44,9 +44,9 @@ class Config:
         """Return configuration as TOML string"""
         toml_lines = [
             f'mounts = {str(self.mounts)}',
-            f'blocked = {str(self.blocked)}',
+            f'blocked_paths = {str(self.blocked_paths)}',
             f'cwd.mounts = {str(self.cwd_mounts)}',
-            f'cwd.blocked = {str(self.cwd_blocked)}',
+            f'cwd.blocked_paths = {str(self.cwd_blocked_paths)}',
             f'exposed_env_vars = {str(self.exposed_env_vars)}',
             '',
             '[net]',

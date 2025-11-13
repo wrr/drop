@@ -225,7 +225,7 @@ class TestFS(TestBase):
 
     def test_blocked(self):
         # Test that blocked paths are inaccessible
-        config = Config(blocked=['/var', '/etc/passwd'])
+        config = Config(blocked_paths=['/var', '/etc/passwd'])
 
         result = self.sandbox_run('ls /var', config=config)
         self.assertNotEqual(0, result.returncode)

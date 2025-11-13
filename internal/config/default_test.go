@@ -34,7 +34,7 @@ func TestWriteDefault(t *testing.T) {
 		t.Errorf("Expected mounts to be not nil")
 	}
 
-	expectEmptyList(t, "cfg.Blocked", cfg.Cwd.Blocked)
+	expectEmptyList(t, "cfg.BlockedPaths", cfg.Cwd.BlockedPaths)
 
 	expected := []Mount{
 		{Source: "./", Target: "./", RW: true, Overlay: false},
@@ -44,7 +44,7 @@ func TestWriteDefault(t *testing.T) {
 		t.Errorf("Expected CWD.Mounts to be %+v, got %+v", expected, cfg.Cwd.Mounts)
 	}
 
-	expectEmptyList(t, "CWD.Blocked", cfg.Cwd.Blocked)
+	expectEmptyList(t, "Cwd.BlockedPaths", cfg.Cwd.BlockedPaths)
 
 	if cfg.ExposedEnvVars == nil {
 		t.Errorf("Expected exposed_env_vars to be not nil")

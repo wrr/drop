@@ -27,13 +27,13 @@ type Mount struct {
 }
 
 type Cwd struct {
-	Mounts  []Mount  `toml:"mounts"`
-	Blocked []string `toml:"blocked"`
+	Mounts       []Mount  `toml:"mounts"`
+	BlockedPaths []string `toml:"blocked_paths"`
 }
 
 type Config struct {
 	Mounts         []Mount  `toml:"mounts"`
-	Blocked        []string `toml:"blocked"`
+	BlockedPaths   []string `toml:"blocked_paths"`
 	Cwd            Cwd      `toml:"cwd"`
 	ExposedEnvVars []string `toml:"exposed_env_vars"`
 	Net            Net      `toml:"net"`
@@ -126,14 +126,14 @@ func Parse(configStr string) (*Config, error) {
 	if err := validateMounts("mounts", config.Mounts, validateAbsOrHomePath); err != nil {
 		return parseError(err)
 	}
-	if err := validatePaths("blocked path", config.Blocked, validateAbsOrHomePath); err != nil {
+	if err := validatePaths("blocked_paths", config.BlockedPaths, validateAbsOrHomePath); err != nil {
 		return parseError(err)
 	}
 
 	if err := validateMounts("cwd.mounts", config.Cwd.Mounts, validateRelPath); err != nil {
 		return parseError(err)
 	}
-	if err := validatePaths("cwd.blocked path", config.Cwd.Blocked, validateRelPath); err != nil {
+	if err := validatePaths("cwd.blocked_paths", config.Cwd.BlockedPaths, validateRelPath); err != nil {
 		return parseError(err)
 	}
 
