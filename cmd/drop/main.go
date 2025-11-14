@@ -82,13 +82,13 @@ Options:
         kept as the original home dir.
   -net, -n value
         Network mode: off, isolated, or unjailed
-  -tcp-to-host, -t value
+  -tcp-ports-to-host, -t value
         Publish TCP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]
-  -tcp-from-host, -T value
+  -tcp-ports-from-host, -T value
         Publish TCP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]
-  -udp-to-host, -u value
+  -udp-ports-to-host, -u value
         Publish UDP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]
-  -udp-from-host, -U value
+  -udp-ports-from-host, -U value
         Publish UDP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]
   -help, -h
         Show help
@@ -102,13 +102,13 @@ Options:
 	flag.BoolVar(&beRoot, "r", false, "")
 	flag.StringVar(&networkMode, "net", "", "")
 	flag.StringVar(&networkMode, "n", "", "")
-	flag.Var((*stringSlice)(&tcpPortsToHost), "tcp-to-host", "")
+	flag.Var((*stringSlice)(&tcpPortsToHost), "tcp-ports-to-host", "")
 	flag.Var((*stringSlice)(&tcpPortsToHost), "t", "")
-	flag.Var((*stringSlice)(&tcpPortsFromHost), "tcp-from-host", "")
+	flag.Var((*stringSlice)(&tcpPortsFromHost), "tcp-ports-from-host", "")
 	flag.Var((*stringSlice)(&tcpPortsFromHost), "T", "")
-	flag.Var((*stringSlice)(&udpPortsToHost), "udp-to-host", "")
+	flag.Var((*stringSlice)(&udpPortsToHost), "udp-ports-to-host", "")
 	flag.Var((*stringSlice)(&udpPortsToHost), "u", "")
-	flag.Var((*stringSlice)(&udpPortsFromHost), "udp-from-host", "")
+	flag.Var((*stringSlice)(&udpPortsFromHost), "udp-ports-from-host", "")
 	flag.Var((*stringSlice)(&udpPortsFromHost), "U", "")
 
 	err = flag.CommandLine.Parse(os.Args[1:])
