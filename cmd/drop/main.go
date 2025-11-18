@@ -34,39 +34,38 @@ func (s *stringSlice) Set(value string) error {
 	return nil
 }
 
-func main() {
-	var exitCode int
-	var err error
-	if len(os.Args) > 1 && os.Args[1] == "-child" {
-		exitCode, err = childProcessEntry()
-	} else {
-		exitCode, err = parentProcessEntry()
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-	}
-	os.Exit(exitCode)
+type CommonFlags struct {
+	envId       string
+	configPath  string
+	networkMode string
 }
 
-func parentProcessEntry() (int, error) {
-	if os.Geteuid() == 0 {
-		return 1, fmt.Errorf("drop should not be run as root")
-	}
+type ParentFlags struct {
+	CommonFlags
+	tcpPortsToHost   []string
+	tcpPortsFromHost []string
+	udpPortsToHost   []string
+	udpPortsFromHost []string
+	beRoot           bool
+}
 
-	// Obtain home dir in the parent, because with -r option child we
-	// be run as root, but we don't want to use /root as the home dir.
-	homeDir, err := currentUserHomeDir()
-	if err != nil {
-		return 1, err
-	}
-	configPath := jailfs.DefaultConfigPath(homeDir)
-	var tcpPortsToHost []string
-	var tcpPortsFromHost []string
-	var udpPortsToHost []string
-	var udpPortsFromHost []string
-	var envId string
-	var networkMode string
-	var beRoot bool
+type ChildFlags struct {
+	CommonFlags
+	runDir  string
+	homeDir string
+}
+
+func registerCommonFlags(flags *CommonFlags) {
+	flag.StringVar(&flags.envId, "env", "", "")
+	flag.StringVar(&flags.envId, "e", "", "")
+	flag.StringVar(&flags.configPath, "config", "", "")
+	flag.StringVar(&flags.configPath, "c", "", "")
+	flag.StringVar(&flags.networkMode, "net", "", "")
+	flag.StringVar(&flags.networkMode, "n", "", "")
+}
+
+func parseParentFlags(homeDir string) (*ParentFlags, error) {
+	defaultConfigPath := jailfs.DefaultConfigPath(homeDir)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Drop limits programs abilities to read and write user's files
 Usage: drop [options] [command...]
@@ -92,97 +91,143 @@ Options:
         Publish UDP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]
   -help, -h
         Show help
-`, configPath)
+`, defaultConfigPath)
 	}
-	flag.StringVar(&envId, "env", "", "")
-	flag.StringVar(&envId, "e", "", "")
-	flag.StringVar(&configPath, "config", configPath, "")
-	flag.StringVar(&configPath, "c", configPath, "")
-	flag.BoolVar(&beRoot, "root", false, "")
-	flag.BoolVar(&beRoot, "r", false, "")
-	flag.StringVar(&networkMode, "net", "", "")
-	flag.StringVar(&networkMode, "n", "", "")
-	flag.Var((*stringSlice)(&tcpPortsToHost), "tcp-ports-to-host", "")
-	flag.Var((*stringSlice)(&tcpPortsToHost), "t", "")
-	flag.Var((*stringSlice)(&tcpPortsFromHost), "tcp-ports-from-host", "")
-	flag.Var((*stringSlice)(&tcpPortsFromHost), "T", "")
-	flag.Var((*stringSlice)(&udpPortsToHost), "udp-ports-to-host", "")
-	flag.Var((*stringSlice)(&udpPortsToHost), "u", "")
-	flag.Var((*stringSlice)(&udpPortsFromHost), "udp-ports-from-host", "")
-	flag.Var((*stringSlice)(&udpPortsFromHost), "U", "")
+	var f ParentFlags
+	registerCommonFlags(&f.CommonFlags)
 
-	err = flag.CommandLine.Parse(os.Args[1:])
+	flag.BoolVar(&f.beRoot, "root", false, "")
+	flag.BoolVar(&f.beRoot, "r", false, "")
+	flag.Var((*stringSlice)(&f.tcpPortsToHost), "tcp-ports-to-host", "")
+	flag.Var((*stringSlice)(&f.tcpPortsToHost), "t", "")
+	flag.Var((*stringSlice)(&f.tcpPortsFromHost), "tcp-ports-from-host", "")
+	flag.Var((*stringSlice)(&f.tcpPortsFromHost), "T", "")
+	flag.Var((*stringSlice)(&f.udpPortsToHost), "udp-ports-to-host", "")
+	flag.Var((*stringSlice)(&f.udpPortsToHost), "u", "")
+	flag.Var((*stringSlice)(&f.udpPortsFromHost), "udp-ports-from-host", "")
+	flag.Var((*stringSlice)(&f.udpPortsFromHost), "U", "")
+	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+		return nil, fmt.Errorf("failed to parse command line: %v", err)
+	}
+	if f.configPath == "" {
+		f.configPath = defaultConfigPath
+	}
+
+	return &f, nil
+}
+
+func parseChildFlags() (*ChildFlags, error) {
+	var f ChildFlags
+	registerCommonFlags(&f.CommonFlags)
+	var child bool
+	flag.BoolVar(&child, "child", false, "")
+	flag.StringVar(&f.runDir, "run-dir", "", "")
+	flag.StringVar(&f.homeDir, "home", "", "")
+	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+		return nil, fmt.Errorf("failed to parse child command line: %v", err)
+	}
+	return &f, nil
+}
+
+func main() {
+	var exitCode int
+	var err error
+	if len(os.Args) > 1 && os.Args[1] == "-child" {
+		exitCode, err = childProcessEntry()
+	} else {
+		exitCode, err = parentProcessEntry()
+	}
 	if err != nil {
-		return 1, fmt.Errorf("failed to parse command line: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	}
+	os.Exit(exitCode)
+}
+
+func parentProcessEntry() (int, error) {
+	if os.Geteuid() == 0 {
+		return 1, fmt.Errorf("drop should not be run as root")
 	}
 
-	if envId == "" {
-		envId, err = jailfs.CwdToEnvId()
+	// Obtain home dir in the parent, because with -r option child we
+	// run as root in the namespace, but we don't want to use /root as the
+	// home dir.
+	homeDir, err := currentUserHomeDir()
+	if err != nil {
+		return 1, err
+	}
+
+	flags, err := parseParentFlags(homeDir)
+	if err != nil {
+		return 1, err
+	}
+
+	if flags.envId == "" {
+		flags.envId, err = jailfs.CwdToEnvId()
 		if err != nil {
 			return 1, err
 		}
 	} else {
-		if !jailfs.IsEnvIdValid(envId) {
+		if !jailfs.IsEnvIdValid(flags.envId) {
 			return 1, fmt.Errorf("invalid character in env ID")
 		}
 	}
 
-	runDir, cleanRunDir, err := jailfs.NewRunDir(homeDir, envId)
+	runDir, cleanRunDir, err := jailfs.NewRunDir(homeDir, flags.envId)
 	if err != nil {
 		return 1, fmt.Errorf("failed to create run dir: %v", err)
 	}
 	defer cleanRunDir()
 
-	if configPath == jailfs.DefaultConfigPath(homeDir) && !osutil.Exists(configPath) {
-		if err := config.WriteDefault(configPath, homeDir); err != nil {
-			return 1, fmt.Errorf("failed to create default config at %v: %v", configPath, err)
+	if defaultConfigNeeded(homeDir, flags.configPath) {
+		if err := config.WriteDefault(flags.configPath, homeDir); err != nil {
+			return 1, fmt.Errorf("failed to create default config at %v: %v", flags.configPath, err)
 		}
-		fmt.Fprintf(os.Stderr, "Wrote default Drop config to %s\n", configPath)
+		fmt.Fprintf(os.Stderr, "Wrote default Drop config to %s\n", flags.configPath)
 	}
 
-	cfg, err := config.Read(configPath)
+	cfg, err := config.Read(flags.configPath)
 	if err != nil {
 		return 1, err
 	}
 
-	if networkMode != "" {
-		if err := config.ValidateNetworkMode(networkMode); err != nil {
+	if flags.networkMode != "" {
+		if err := config.ValidateNetworkMode(flags.networkMode); err != nil {
 			return 1, err
 		}
-		cfg.Net.Mode = networkMode
+		cfg.Net.Mode = flags.networkMode
 	}
 
-	if (len(tcpPortsToHost) > 0 ||
-		len(tcpPortsFromHost) > 0 ||
-		len(udpPortsToHost) > 0 ||
-		len(udpPortsFromHost) > 0) &&
+	if (len(flags.tcpPortsToHost) > 0 ||
+		len(flags.tcpPortsFromHost) > 0 ||
+		len(flags.udpPortsToHost) > 0 ||
+		len(flags.udpPortsFromHost) > 0) &&
 		cfg.Net.Mode != "isolated" {
 		return 1, fmt.Errorf("port forwarding is only supported with isolated network mode (-n isolated)")
 	}
 	// Command line flags take priority over the config file.
-	if len(tcpPortsToHost) > 0 {
-		if err := config.ValidatePortForward(tcpPortsToHost); err != nil {
+	if len(flags.tcpPortsToHost) > 0 {
+		if err := config.ValidatePortForward(flags.tcpPortsToHost); err != nil {
 			return 1, fmt.Errorf("invalid -t flag: %v", err)
 		}
-		cfg.Net.TCPPortsToHost = tcpPortsToHost
+		cfg.Net.TCPPortsToHost = flags.tcpPortsToHost
 	}
-	if len(tcpPortsFromHost) > 0 {
-		if err := config.ValidatePortForward(tcpPortsFromHost); err != nil {
+	if len(flags.tcpPortsFromHost) > 0 {
+		if err := config.ValidatePortForward(flags.tcpPortsFromHost); err != nil {
 			return 1, fmt.Errorf("invalid -T flag: %v", err)
 		}
-		cfg.Net.TCPPortsFromHost = tcpPortsFromHost
+		cfg.Net.TCPPortsFromHost = flags.tcpPortsFromHost
 	}
-	if len(udpPortsToHost) > 0 {
-		if err := config.ValidatePortForward(udpPortsToHost); err != nil {
+	if len(flags.udpPortsToHost) > 0 {
+		if err := config.ValidatePortForward(flags.udpPortsToHost); err != nil {
 			return 1, fmt.Errorf("invalid -u flag: %v", err)
 		}
-		cfg.Net.UDPPortsToHost = udpPortsToHost
+		cfg.Net.UDPPortsToHost = flags.udpPortsToHost
 	}
-	if len(udpPortsFromHost) > 0 {
-		if err := config.ValidatePortForward(udpPortsFromHost); err != nil {
+	if len(flags.udpPortsFromHost) > 0 {
+		if err := config.ValidatePortForward(flags.udpPortsFromHost); err != nil {
 			return 1, fmt.Errorf("invalid -U flag: %v", err)
 		}
-		cfg.Net.UDPPortsFromHost = udpPortsFromHost
+		cfg.Net.UDPPortsFromHost = flags.udpPortsFromHost
 	}
 
 	// Pipe for synchronizing setup with the child process.
@@ -193,10 +238,15 @@ Options:
 
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
-	//
-	// This passes all the arguments correctly also when one of them
-	// (configPath) is an empty string
-	childArgs := append([]string{"-child", envId, configPath, runDir, networkMode, homeDir}, flag.Args()...)
+	childArgs := []string{
+		"-child",
+		"-env", flags.envId,
+		"-config", flags.configPath,
+		"-net", cfg.Net.Mode,
+		"-run-dir", runDir,
+		"-home", homeDir,
+	}
+	childArgs = append(childArgs, flag.Args()...)
 	cmd := exec.Command(os.Args[0], childArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -212,7 +262,7 @@ Options:
 		cloneFlags |= syscall.CLONE_NEWNET
 	}
 	var containerUID, containerGID int
-	if beRoot {
+	if flags.beRoot {
 		containerUID = 0
 		containerGID = 0
 	} else {
@@ -321,15 +371,10 @@ Options:
 }
 
 func childProcessEntry() (int, error) {
-	if len(os.Args) < 7 {
-		return 1, fmt.Errorf("incorrect number of arguments; -child is an internal argument and should not be passed directly")
+	flags, err := parseChildFlags()
+	if err != nil {
+		return 1, err
 	}
-	envId := os.Args[2]
-	configPath := os.Args[3]
-	runDir := os.Args[4]
-	networkMode := os.Args[5]
-	homeDir := os.Args[6]
-	progWithArgs := os.Args[7:]
 
 	// Wait for parent to signal that it has finished setup.
 	// The read end of the pipe is inherited as file descriptor 3
@@ -345,18 +390,18 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	paths, err := jailfs.NewPaths(envId, homeDir, runDir)
+	paths, err := jailfs.NewPaths(flags.envId, flags.homeDir, flags.runDir)
 	if err != nil {
 		return 1, err
 	}
 
-	cfg, err := config.Read(configPath)
+	cfg, err := config.Read(flags.configPath)
 	if err != nil {
 		return 1, err
 	}
 
-	if networkMode != "" {
-		cfg.Net.Mode = networkMode
+	if flags.networkMode != "" {
+		cfg.Net.Mode = flags.networkMode
 	}
 
 	if err := jailfs.WriteEtcFiles(paths); err != nil {
@@ -389,6 +434,7 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
+	progWithArgs := flag.Args()
 	if len(progWithArgs) == 0 {
 		shell := os.Getenv("SHELL")
 		if shell == "" {
@@ -399,7 +445,7 @@ func childProcessEntry() (int, error) {
 
 	// Filter environment variables, then add DROP_ENV and debian_chroot
 	filteredEnv := env.Filter(os.Environ(), cfg.ExposedEnvVars)
-	envVars := env.SetDropVars(filteredEnv, osutil.IsDebianBased(), envId)
+	envVars := env.SetDropVars(filteredEnv, osutil.IsDebianBased(), flags.envId)
 	prog, err := exec.LookPath(progWithArgs[0]) // Searches PATH
 	if err != nil {
 		return 1, fmt.Errorf("command not found: %v", err)
@@ -422,6 +468,10 @@ func childProcessEntry() (int, error) {
 
 	// Should never be reached
 	return 3, fmt.Errorf("exec failed")
+}
+
+func defaultConfigNeeded(homeDir string, configPath string) bool {
+	return configPath == jailfs.DefaultConfigPath(homeDir) && !osutil.Exists(configPath)
 }
 
 // ensureCapSysAdmin returns an error if process doesn't have
