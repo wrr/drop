@@ -1,6 +1,8 @@
 package osutil
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -56,5 +58,92 @@ func TestTildeToHomeDir(t *testing.T) {
 				t.Errorf("TildeToHomeDir(%q, %q) = %q, want %q", tt.path, homeDir, got, tt.want)
 			}
 		})
+	}
+}
+
+func checkError(wantErr string, err error) error {
+	if wantErr == "" {
+		if err != nil {
+			return fmt.Errorf("unexpected error: %v", err)
+		}
+		return nil
+	}
+	if err == nil {
+		return fmt.Errorf("expected error containing %q, got nil", wantErr)
+	}
+	if !strings.Contains(err.Error(), wantErr) {
+		return fmt.Errorf("expected error containing %q, got %q", wantErr, err.Error())
+	}
+	return nil
+}
+
+func TestValidateRootOrHomeSubPath(t *testing.T) {
+	tests := []struct {
+		error string
+		paths []string
+	}{
+		{
+			error: "",
+			paths: []string{"/usr/local", "/usr/local/", "~/tmp/docs", "~/tmp/docs/", "~/.bashrc"},
+		},
+		{
+			error: "path must start with / or ~/",
+			paths: []string{"", "docs/file.txt", "~user", "~"},
+		},
+		{
+			error: "path is not normalized",
+			paths: []string{"/home/../etc/passwd", "~/../secrets", "/home/./user", "/home/user/.", "/home//user"},
+		},
+		{
+			error: "path cannot point to the whole root directory",
+			paths: []string{"/"},
+		},
+		{
+			error: "path cannot point to the whole home directory",
+			paths: []string{"~/"},
+		},
+	}
+
+	for _, tt := range tests {
+		for _, path := range tt.paths {
+			t.Run(fmt.Sprintf("path=%q", path), func(t *testing.T) {
+				err := ValidateRootOrHomeSubPath(path)
+				if terr := checkError(tt.error, err); terr != nil {
+					t.Fatal(terr)
+				}
+			})
+		}
+	}
+}
+
+func TestValidateRelPath(t *testing.T) {
+	tests := []struct {
+		error string
+		paths []string
+	}{
+		{
+			error: "",
+			paths: []string{"local", "local/", "local/bin", "./local", ".", "./"},
+		},
+		{
+			error: "path must be relative",
+			paths: []string{"/local", "~/local"},
+		},
+		{
+			error: "path is not normalized",
+			paths: []string{"", "local/../bin", "local/./bin", "local/bin/.", "local//bin", "../.git"},
+		},
+	}
+
+	for _, tt := range tests {
+		for _, path := range tt.paths {
+			t.Run(fmt.Sprintf("path=%q", path), func(t *testing.T) {
+				err := ValidateRelPath(path)
+				if terr := checkError(tt.error, err); terr != nil {
+					t.Fatal(terr)
+				}
+
+			})
+		}
 	}
 }

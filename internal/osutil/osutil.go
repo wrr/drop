@@ -36,3 +36,47 @@ func TildeToHomeDir(path string, homeDir string) string {
 	}
 	return path
 }
+
+// ValidateRootOrHomeSubPath validates that a path is a subpath of root or
+// of a ~/, and is normalized.
+func ValidateRootOrHomeSubPath(path string) error {
+	if !strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "~/") {
+		return fmt.Errorf("path must start with / or ~/")
+	}
+	if path == "/" {
+		return fmt.Errorf("path cannot point to the whole root directory")
+	}
+	if path == "~/" {
+		return fmt.Errorf("path cannot point to the whole home directory")
+	}
+
+	// Remove ~ for validation with Clean()
+	path = strings.TrimPrefix(path, "~")
+
+	// filepath.Clean() removes trailing / from all paths except /.  We
+	// allow for trailing /, so we remove it before validation.
+	path = strings.TrimSuffix(path, "/")
+
+	if path != filepath.Clean(path) {
+		return fmt.Errorf("path is not normalized")
+	}
+	return nil
+}
+
+// ValidateRelPath validates that path is a relative path and is normalized.
+func ValidateRelPath(path string) error {
+	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~/") {
+		return fmt.Errorf("path must be relative, cannot start with / or ~/")
+	}
+	if path == "." || path == "./" {
+		return nil
+	}
+	// Allow for trailing / and leading ./
+	path = strings.TrimSuffix(path, "/")
+	path = strings.TrimPrefix(path, "./")
+
+	if path != filepath.Clean(path) || strings.HasPrefix(path, "..") {
+		return fmt.Errorf("path is not normalized")
+	}
+	return nil
+}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/wrr/drop/internal/osutil"
 )
 
 type Net struct {
@@ -123,17 +124,17 @@ func Parse(configStr string) (*Config, error) {
 		return parseError(err)
 	}
 
-	if err := validateMounts("mounts", config.Mounts, validateAbsOrHomePath); err != nil {
+	if err := validateMounts("mounts", config.Mounts, osutil.ValidateRootOrHomeSubPath); err != nil {
 		return parseError(err)
 	}
-	if err := validatePaths("blocked_paths", config.BlockedPaths, validateAbsOrHomePath); err != nil {
+	if err := validatePaths("blocked_paths", config.BlockedPaths, osutil.ValidateRootOrHomeSubPath); err != nil {
 		return parseError(err)
 	}
 
-	if err := validateMounts("cwd.mounts", config.Cwd.Mounts, validateRelPath); err != nil {
+	if err := validateMounts("cwd.mounts", config.Cwd.Mounts, osutil.ValidateRelPath); err != nil {
 		return parseError(err)
 	}
-	if err := validatePaths("cwd.blocked_paths", config.Cwd.BlockedPaths, validateRelPath); err != nil {
+	if err := validatePaths("cwd.blocked_paths", config.Cwd.BlockedPaths, osutil.ValidateRelPath); err != nil {
 		return parseError(err)
 	}
 
@@ -222,47 +223,6 @@ func validatePaths(propId string, paths []string, validateFn func(string) error)
 		if err := validateFn(p); err != nil {
 			return fmt.Errorf("invalid %s '%s': %v", propId, p, err)
 		}
-	}
-	return nil
-}
-
-func validateAbsOrHomePath(path string) error {
-	if !strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "~/") {
-		return fmt.Errorf("path must start with / or ~/")
-	}
-	if path == "/" {
-		return fmt.Errorf("cannot expose the whole root directory")
-	}
-	if path == "~/" {
-		return fmt.Errorf("cannot expose the whole home directory")
-	}
-
-	// Remove ~ for validation with Clean()
-	path = strings.TrimPrefix(path, "~")
-
-	// filepath.Clean() removes trailing / from all paths except /.  We
-	// allow for trailing /, so we remove it before validation.
-	path = strings.TrimSuffix(path, "/")
-
-	if path != filepath.Clean(path) {
-		return fmt.Errorf("path is not normalized")
-	}
-	return nil
-}
-
-func validateRelPath(path string) error {
-	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~/") {
-		return fmt.Errorf("path must be relative, cannot start with / or ~/")
-	}
-	if path == "." || path == "./" {
-		return nil
-	}
-	// Allow for trailing / and leading ./
-	path = strings.TrimSuffix(path, "/")
-	path = strings.TrimPrefix(path, "./")
-
-	if path != filepath.Clean(path) || strings.HasPrefix(path, "..") {
-		return fmt.Errorf("path is not normalized")
 	}
 	return nil
 }

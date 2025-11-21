@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/wrr/drop/internal/osutil"
 )
 
 // expectStringSlicesEqual reports error if thw string slices differ
@@ -797,82 +799,11 @@ func TestValidatePaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePaths("test_prop", tt.paths, validateAbsOrHomePath)
+			err := validatePaths("test_prop", tt.paths, osutil.ValidateRootOrHomeSubPath)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
 			}
 		})
-	}
-}
-
-func TestValidateAbsOrHomePath(t *testing.T) {
-	tests := []struct {
-		error string
-		paths []string
-	}{
-		{
-			error: "",
-			paths: []string{"/usr/local", "/usr/local/", "~/tmp/docs", "~/tmp/docs/", "~/.bashrc"},
-		},
-		{
-			error: "path must start with / or ~/",
-			paths: []string{"", "docs/file.txt", "~user", "~"},
-		},
-		{
-			error: "path is not normalized",
-			paths: []string{"/home/../etc/passwd", "~/../secrets", "/home/./user", "/home/user/.", "/home//user"},
-		},
-		{
-			error: "cannot expose the whole root directory",
-			paths: []string{"/"},
-		},
-		{
-			error: "cannot expose the whole home directory",
-			paths: []string{"~/"},
-		},
-	}
-
-	for _, tt := range tests {
-		for _, path := range tt.paths {
-			t.Run(fmt.Sprintf("path=%q", path), func(t *testing.T) {
-				err := validateAbsOrHomePath(path)
-				if terr := checkError(tt.error, err); terr != nil {
-					t.Fatal(terr)
-				}
-			})
-		}
-	}
-}
-
-func TestValidateRelPath(t *testing.T) {
-	tests := []struct {
-		error string
-		paths []string
-	}{
-		{
-			error: "",
-			paths: []string{"local", "local/", "local/bin", "./local", ".", "./"},
-		},
-		{
-			error: "path must be relative",
-			paths: []string{"/local", "~/local"},
-		},
-		{
-			error: "path is not normalized",
-			paths: []string{"", "local/../bin", "local/./bin", "local/bin/.", "local//bin", "../.git"},
-		},
-	}
-
-	for _, tt := range tests {
-		for _, path := range tt.paths {
-			t.Run(fmt.Sprintf("path=%q", path), func(t *testing.T) {
-				err := validateRelPath(path)
-				if terr := checkError(tt.error, err); terr != nil {
-					t.Fatal(terr)
-				}
-
-			})
-		}
 	}
 }
 
