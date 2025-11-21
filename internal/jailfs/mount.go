@@ -208,12 +208,12 @@ func (rt *root) mountRootSubDirs() error {
 // shared by jails with the same environment id.
 func (rt *root) mountHome(paths *Paths) error {
 	// Mount home dir as overlayfs, lowerdir holds only mount points,
-	// upperdir is where the actual files are stored.
-	// xino=off to disable Ubuntu 24.04 dmesg warning 'overlayfs: fs on
-	// '/home/...' does not support file handles, falling back to
-	// xino=off'. It is very unlikely for home dir overlayfs layers to be on
-	// different filesystems (~/.drop dir would need to be placed by the
-	// user on a different filesystem), when layers are on the same fs
+	// upperdir is where the actual files are stored.  xino=off to
+	// disable Ubuntu 24.04 dmesg warning 'overlayfs: fs on '/home/...'
+	// does not support file handles, falling back to xino=off'. It is
+	// very unlikely for home dir overlayfs layers to be on different
+	// filesystems (drop home (by default ~/.drop) would need to be
+	// placed on a different filesystem), when layers are on the same fs
 	// xino=on option does nothing.
 	// https://docs.kernel.org/filesystems/overlayfs.html
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,xino=off", paths.HomeLower, paths.Home, paths.HomeWork)

@@ -1,6 +1,10 @@
 package jailfs
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+)
 
 func TestIsEnvIdValid(t *testing.T) {
 	tests := []struct {
@@ -181,10 +185,85 @@ func TestPathToEnvId(t *testing.T) {
 }
 
 func TestDefaultConfigPath(t *testing.T) {
-	homeDir := "/home/alice"
-	result := DefaultConfigPath(homeDir)
-	expected := "/home/alice/.drop/config"
+	dropHome := "/home/alice/.config/drop"
+	result := DefaultConfigPath(dropHome)
+	expected := "/home/alice/.config/drop/config"
 	if result != expected {
-		t.Errorf("DefaultConfigPath(%q) = %q", homeDir, result)
+		t.Errorf("DefaultConfigPath(%q) = %q", dropHome, result)
+	}
+}
+
+func TestDropHome(t *testing.T) {
+	homeDir := "/home/alice"
+
+	tests := []struct {
+		name      string
+		dropHome  string
+		want      string
+		wantError string
+	}{
+		{
+			name:     "env not set",
+			dropHome: "",
+			want:     "/home/alice/.drop",
+		},
+		{
+			name:     "absolute path",
+			dropHome: "/var/drop-data",
+			want:     "/var/drop-data",
+		},
+		{
+			name:     "tilde path",
+			dropHome: "~/.my-drop",
+			want:     "/home/alice/.my-drop",
+		},
+		{
+			name:      "relative path",
+			dropHome:  "relative/path",
+			wantError: "path must start with / or ~/",
+		},
+		{
+			name:      "not normalized",
+			dropHome:  "/var/../etc/drop",
+			wantError: "path is not normalized",
+		},
+		{
+			name:      "whole root",
+			dropHome:  "/",
+			wantError: "path cannot point to the whole root directory",
+		},
+		{
+			name:      "whole home",
+			dropHome:  "~/",
+			wantError: "path cannot point to the whole home directory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.dropHome != "" {
+				os.Setenv("DROP_HOME", tt.dropHome)
+				defer os.Unsetenv("DROP_HOME")
+			} else {
+				os.Unsetenv("DROP_HOME")
+			}
+
+			got, err := DropHome(homeDir)
+			if tt.wantError != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tt.wantError)
+				}
+				if !strings.Contains(err.Error(), tt.wantError) {
+					t.Fatalf("expected error containing %q, got %q", tt.wantError, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("DropHome(%q) = %q, want %q", homeDir, got, tt.want)
+			}
+		})
 	}
 }

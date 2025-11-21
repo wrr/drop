@@ -1,10 +1,19 @@
 import getpass
 import os
 import re
+import shutil
+import stat
+import tempfile
 
 import base
 
 from base import Config, ENV_DIR
+
+def rm_drop_home(drop_home):
+    # drop_home contains emptyd dir with permissions 000 that rmtree
+    # fails to read and remove
+    os.rmdir(os.path.join(drop_home, "internal", "emptyd"))
+    shutil.rmtree(drop_home)
 
 class TestCore(base.TestBase):
     def test_exit_code_passed(self):
@@ -123,5 +132,26 @@ class TestCore(base.TestBase):
         finally:
             for fd in pass_fds:
                 os.close(fd)
+
+    def test_change_drop_home_dir(self):
+        """Test that DROP_HOME env var is respected"""
+        drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
+        try:
+            env = os.environ.copy()
+            env['DROP_HOME'] = drop_home
+
+            result = self.sandbox_run('ls', env=env)
+            self.assertSuccess(result)
+
+            # Verify env dir was created in custom DROP_HOME
+            expected_env_dir = os.path.join(drop_home, 'envs', base.ENV_ID)
+            self.assertTrue(os.path.exists(expected_env_dir),
+                            f'Drop env was not created in {expected_env_dir}')
+
+            # Verify nothing was created in default ~/.drop
+            self.assertFalse(os.path.exists(ENV_DIR),
+                             f'Drop env should not exist in {ENV_DIR}')
+        finally:
+            rm_drop_home(drop_home)
 
 

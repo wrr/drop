@@ -17,9 +17,9 @@ import (
 type Paths struct {
 	// Cwd is the directory where Drop was started.
 	Cwd string
-	// DotDir is the top-level directory where Drop files are stored
+	// DropHome is the top-level directory where Drop files are stored
 	// (e.g. /home/alice/.drop).
-	DotDir string
+	DropHome string
 	// Env is the entry point for all paths specific to the current
 	// environment. For example, if envId is 'project-foo', Env is
 	// /home/alice/.drop/envs/project-foo.
@@ -70,14 +70,17 @@ func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 	if err != nil {
 		return nil, err
 	}
+	dropHome, err := DropHome(hostHome)
+	if err != nil {
+		return nil, err
+	}
 
-	dotDir := filepath.Join(hostHome, ".drop")
-	env := filepath.Join(dotDir, "envs", envId)
-	internal := filepath.Join(dotDir, "internal")
+	env := filepath.Join(dropHome, "envs", envId)
+	internal := filepath.Join(dropHome, "internal")
 
 	paths := Paths{
 		Cwd:       cwd,
-		DotDir:    dotDir,
+		DropHome:  dropHome,
 		Env:       env,
 		FsRoot:    filepath.Join(runDir, "root"),
 		HostHome:  hostHome,
@@ -113,8 +116,23 @@ func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 	return &paths, nil
 }
 
-func DefaultConfigPath(hostHome string) string {
-	return filepath.Join(hostHome, ".drop", "config")
+func DefaultConfigPath(dropHome string) string {
+	return filepath.Join(dropHome, "config")
+}
+
+// DropHome returns the base directory for Drop data
+// (config file, environment dirs, temporary runtime files). It
+// returns the value of DROP_HOME environment variable if set,
+// otherwise returns homeDir/.drop. DROP_HOME can use ~/ prefix to
+// refer to home directory.
+func DropHome(homeDir string) (string, error) {
+	if dropHome := os.Getenv("DROP_HOME"); dropHome != "" {
+		if err := osutil.ValidateRootOrHomeSubPath(dropHome); err != nil {
+			return "", fmt.Errorf("invalid DROP_HOME environment variable: %v", err)
+		}
+		return osutil.TildeToHomeDir(dropHome, homeDir), nil
+	}
+	return filepath.Join(homeDir, ".drop"), nil
 }
 
 var envIdChars = `a-zA-Z0-9-_\.`
@@ -140,8 +158,8 @@ func CwdToEnvId() (string, error) {
 // files and dirs (for example, the main root file system mount
 // point). The directory can be removed when this jail instance
 // terminates.
-func NewRunDir(homeDir string, envId string) (string, func(), error) {
-	parent := filepath.Join(homeDir, ".drop", "internal", "run")
+func NewRunDir(dropHome string, envId string) (string, func(), error) {
+	parent := filepath.Join(dropHome, "internal", "run")
 
 	if err := osutil.MkdirAll(parent); err != nil {
 		return "", nil, err

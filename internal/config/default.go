@@ -14,7 +14,7 @@ type configFileEntry struct {
 	comment string
 }
 
-// WriteDefault creates a default config in ~/.drop/config.
+// WriteDefault writes a default config file to path.
 func WriteDefault(path string, homeDir string) error {
 	// pathsRODefault contains files to expose from home dir, these
 	// files are included in the generated default config only if they exist

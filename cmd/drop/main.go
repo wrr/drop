@@ -64,8 +64,8 @@ func registerCommonFlags(flags *CommonFlags) {
 	flag.StringVar(&flags.networkMode, "n", "", "")
 }
 
-func parseParentFlags(homeDir string) (*ParentFlags, error) {
-	defaultConfigPath := jailfs.DefaultConfigPath(homeDir)
+func parseParentFlags(dropHome string) (*ParentFlags, error) {
+	defaultConfigPath := jailfs.DefaultConfigPath(dropHome)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Drop limits programs abilities to read and write user's files
 Usage: drop [options] [command...]
@@ -156,7 +156,12 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	flags, err := parseParentFlags(homeDir)
+	dropHome, err := jailfs.DropHome(homeDir)
+	if err != nil {
+		return 1, err
+	}
+
+	flags, err := parseParentFlags(dropHome)
 	if err != nil {
 		return 1, err
 	}
@@ -172,13 +177,13 @@ func parentProcessEntry() (int, error) {
 		}
 	}
 
-	runDir, cleanRunDir, err := jailfs.NewRunDir(homeDir, flags.envId)
+	runDir, cleanRunDir, err := jailfs.NewRunDir(dropHome, flags.envId)
 	if err != nil {
 		return 1, fmt.Errorf("failed to create run dir: %v", err)
 	}
 	defer cleanRunDir()
 
-	if defaultConfigNeeded(homeDir, flags.configPath) {
+	if defaultConfigNeeded(dropHome, flags.configPath) {
 		if err := config.WriteDefault(flags.configPath, homeDir); err != nil {
 			return 1, fmt.Errorf("failed to create default config at %v: %v", flags.configPath, err)
 		}
@@ -470,8 +475,8 @@ func childProcessEntry() (int, error) {
 	return 3, fmt.Errorf("exec failed")
 }
 
-func defaultConfigNeeded(homeDir string, configPath string) bool {
-	return configPath == jailfs.DefaultConfigPath(homeDir) && !osutil.Exists(configPath)
+func defaultConfigNeeded(dropHome string, configPath string) bool {
+	return configPath == jailfs.DefaultConfigPath(dropHome) && !osutil.Exists(configPath)
 }
 
 // ensureCapSysAdmin returns an error if process doesn't have
