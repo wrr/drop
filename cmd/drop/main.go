@@ -34,44 +34,40 @@ func (s *stringSlice) Set(value string) error {
 	return nil
 }
 
-type CommonFlags struct {
+type Flags struct {
 	envId       string
 	configPath  string
 	networkMode string
-}
 
-type ParentFlags struct {
-	CommonFlags
+	// These flags are not currently passed from the parent to the child
+	// process, because child does not use them.
+	beRoot           bool
 	tcpPortsToHost   []string
 	tcpPortsFromHost []string
 	udpPortsToHost   []string
 	udpPortsFromHost []string
-	beRoot           bool
-}
 
-type ChildFlags struct {
-	CommonFlags
+	// Internal flags passed only to the child process.
 	runDir  string
 	homeDir string
 }
 
-func registerCommonFlags(flags *CommonFlags) {
-	flag.StringVar(&flags.envId, "env", "", "")
-	flag.StringVar(&flags.envId, "e", "", "")
-	flag.StringVar(&flags.configPath, "config", "", "")
-	flag.StringVar(&flags.configPath, "c", "", "")
-	flag.StringVar(&flags.networkMode, "net", "", "")
-	flag.StringVar(&flags.networkMode, "n", "", "")
-}
+func parseFlags(defaultConfigPath string, isChild bool) (*Flags, error) {
+	if !isChild {
+		// print usage only when starting parent process, child process is
+		// not started by human.
+		flag.Usage = func() {
+			envId, err := jailfs.CwdToEnvId()
+			defaultEnvId := ""
+			if err == nil {
+				defaultEnvId = fmt.Sprintf(" (default: %s)", envId)
+			}
 
-func parseParentFlags(dropHome string) (*ParentFlags, error) {
-	defaultConfigPath := jailfs.DefaultConfigPath(dropHome)
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Drop limits programs abilities to read and write user's files
+			fmt.Fprintf(os.Stderr, `Drop limits programs abilities to read and write user's files
 Usage: drop [options] [command...]
 Options:
   -env, -e value
-        Environment ID
+        Environment ID%s
   -config, -c value
         Path to config file (default: %s)
   -root, -r
@@ -91,10 +87,16 @@ Options:
         Publish UDP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]
   -help, -h
         Show help
-`, defaultConfigPath)
+`, defaultEnvId, defaultConfigPath)
+		}
 	}
-	var f ParentFlags
-	registerCommonFlags(&f.CommonFlags)
+	var f Flags
+	flag.StringVar(&f.envId, "env", "", "")
+	flag.StringVar(&f.envId, "e", "", "")
+	flag.StringVar(&f.configPath, "config", "", "")
+	flag.StringVar(&f.configPath, "c", "", "")
+	flag.StringVar(&f.networkMode, "net", "", "")
+	flag.StringVar(&f.networkMode, "n", "", "")
 
 	flag.BoolVar(&f.beRoot, "root", false, "")
 	flag.BoolVar(&f.beRoot, "r", false, "")
@@ -106,12 +108,44 @@ Options:
 	flag.Var((*stringSlice)(&f.udpPortsToHost), "u", "")
 	flag.Var((*stringSlice)(&f.udpPortsFromHost), "udp-ports-from-host", "")
 	flag.Var((*stringSlice)(&f.udpPortsFromHost), "U", "")
+
+	if isChild {
+		// child only flags constructed by the parent process.
+		var child bool
+		// Child process always has -child argument
+		flag.BoolVar(&child, "child", false, "")
+		flag.StringVar(&f.runDir, "run-dir", "", "")
+		flag.StringVar(&f.homeDir, "home", "", "")
+	}
+
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, fmt.Errorf("failed to parse command line: %v", err)
 	}
-	if f.configPath == "" {
-		f.configPath = defaultConfigPath
+	if isChild {
+		// Must be present for child process.
+		if f.configPath == "" {
+			return nil, fmt.Errorf("child process -c argument missing")
+		}
+		if f.envId == "" {
+			return nil, fmt.Errorf("child process -e argument missing")
+		}
+	} else {
+		if f.configPath == "" {
+			f.configPath = defaultConfigPath
+		}
+		if f.envId == "" {
+			envId, err := jailfs.CwdToEnvId()
+			if err != nil {
+				return nil, err
+			}
+			f.envId = envId
+		}
 	}
+
+	if !jailfs.IsEnvIdValid(f.envId) {
+		return nil, fmt.Errorf("invalid character in env ID")
+	}
+
 	if f.networkMode != "" {
 		if err := config.ValidateNetworkMode(f.networkMode); err != nil {
 			return nil, err
@@ -140,23 +174,10 @@ Options:
 	return &f, nil
 }
 
-func parseChildFlags() (*ChildFlags, error) {
-	var f ChildFlags
-	registerCommonFlags(&f.CommonFlags)
-	var child bool
-	flag.BoolVar(&child, "child", false, "")
-	flag.StringVar(&f.runDir, "run-dir", "", "")
-	flag.StringVar(&f.homeDir, "home", "", "")
-	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
-		return nil, fmt.Errorf("failed to parse child command line: %v", err)
-	}
-	return &f, nil
-}
-
 // flagsToConfig modifies cfg from a TOML file based on the command
 // line flags. Command line flags, when present, take priority over
 // the config file.
-func flagsToConfig(cfg *config.Config, flags *ParentFlags) {
+func flagsToConfig(cfg *config.Config, flags *Flags) {
 	if flags.networkMode != "" {
 		cfg.Net.Mode = flags.networkMode
 	}
@@ -206,20 +227,11 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	flags, err := parseParentFlags(dropHome)
+	defaultConfigPath := jailfs.DefaultConfigPath(dropHome)
+
+	flags, err := parseFlags(defaultConfigPath, false)
 	if err != nil {
 		return 1, err
-	}
-
-	if flags.envId == "" {
-		flags.envId, err = jailfs.CwdToEnvId()
-		if err != nil {
-			return 1, err
-		}
-	} else {
-		if !jailfs.IsEnvIdValid(flags.envId) {
-			return 1, fmt.Errorf("invalid character in env ID")
-		}
 	}
 
 	runDir, cleanRunDir, err := jailfs.NewRunDir(dropHome, flags.envId)
@@ -228,7 +240,9 @@ func parentProcessEntry() (int, error) {
 	}
 	defer cleanRunDir()
 
-	if defaultConfigNeeded(dropHome, flags.configPath) {
+	if flags.configPath == defaultConfigPath && !osutil.Exists(flags.configPath) {
+		// configPath points to the default config location, but the
+		// config file is missing, write the default config.
 		if err := config.WriteDefault(flags.configPath, homeDir); err != nil {
 			return 1, fmt.Errorf("failed to create default config at %v: %v", flags.configPath, err)
 		}
@@ -265,6 +279,8 @@ func parentProcessEntry() (int, error) {
 		"-net", cfg.Net.Mode,
 		"-run-dir", runDir,
 		"-home", homeDir,
+		// Other flags are not passed because child doesn't use them,
+		// perhaps for clarity it would be better to pass all the flags.
 	}
 	childArgs = append(childArgs, flag.Args()...)
 	cmd := exec.Command(os.Args[0], childArgs...)
@@ -391,7 +407,7 @@ func parentProcessEntry() (int, error) {
 }
 
 func childProcessEntry() (int, error) {
-	flags, err := parseChildFlags()
+	flags, err := parseFlags("", true)
 	if err != nil {
 		return 1, err
 	}
@@ -420,9 +436,7 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	if flags.networkMode != "" {
-		cfg.Net.Mode = flags.networkMode
-	}
+	flagsToConfig(cfg, flags)
 
 	if err := jailfs.WriteEtcFiles(paths); err != nil {
 		return 1, fmt.Errorf("failed to write /etc files: %v", err)
@@ -488,10 +502,6 @@ func childProcessEntry() (int, error) {
 
 	// Should never be reached
 	return 3, fmt.Errorf("exec failed")
-}
-
-func defaultConfigNeeded(dropHome string, configPath string) bool {
-	return configPath == jailfs.DefaultConfigPath(dropHome) && !osutil.Exists(configPath)
 }
 
 // ensureCapSysAdmin returns an error if process doesn't have
