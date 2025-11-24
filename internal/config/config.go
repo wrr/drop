@@ -114,58 +114,60 @@ func Read(path string) (*Config, error) {
 	return Parse(string(content))
 }
 
-func parseError(err error) (*Config, error) {
-	return nil, fmt.Errorf("failed to parse config: %v", err)
+func Parse(configStr string) (*Config, error) {
+	var cfg Config
+	if _, err := toml.Decode(configStr, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %v", err)
+	}
+	if cfg.Net.Mode == "" {
+		cfg.Net.Mode = "isolated"
+	}
+
+	if err := Validate(&cfg); err != nil {
+		return nil, fmt.Errorf("config file: %v", err)
+	}
+
+	return &cfg, nil
 }
 
-func Parse(configStr string) (*Config, error) {
-	var config Config
-	if _, err := toml.Decode(configStr, &config); err != nil {
-		return parseError(err)
+func Validate(cfg *Config) error {
+	if err := validateMounts("mounts", cfg.Mounts, osutil.ValidateRootOrHomeSubPath); err != nil {
+		return err
+	}
+	if err := validatePaths("blocked_paths", cfg.BlockedPaths, osutil.ValidateRootOrHomeSubPath); err != nil {
+		return err
 	}
 
-	if err := validateMounts("mounts", config.Mounts, osutil.ValidateRootOrHomeSubPath); err != nil {
-		return parseError(err)
+	if err := validateMounts("cwd.mounts", cfg.Cwd.Mounts, osutil.ValidateRelPath); err != nil {
+		return err
 	}
-	if err := validatePaths("blocked_paths", config.BlockedPaths, osutil.ValidateRootOrHomeSubPath); err != nil {
-		return parseError(err)
-	}
-
-	if err := validateMounts("cwd.mounts", config.Cwd.Mounts, osutil.ValidateRelPath); err != nil {
-		return parseError(err)
-	}
-	if err := validatePaths("cwd.blocked_paths", config.Cwd.BlockedPaths, osutil.ValidateRelPath); err != nil {
-		return parseError(err)
+	if err := validatePaths("cwd.blocked_paths", cfg.Cwd.BlockedPaths, osutil.ValidateRelPath); err != nil {
+		return err
 	}
 
-	if err := validateExposedEnvVars(config.ExposedEnvVars); err != nil {
-		return parseError(err)
+	if err := validateExposedEnvVars(cfg.ExposedEnvVars); err != nil {
+		return err
+	}
+	if err := validateNetworkMode(cfg.Net.Mode); err != nil {
+		return err
 	}
 
-	if config.Net.Mode == "" {
-		config.Net.Mode = "isolated"
-	}
-	if err := ValidateNetworkMode(config.Net.Mode); err != nil {
-		return parseError(err)
+	if err := validatePortForward(cfg.Net.TCPPortsToHost); err != nil {
+		return fmt.Errorf("invalid tcp_ports_to_host: %v", err)
 	}
 
-	if err := ValidatePortForward(config.Net.TCPPortsToHost); err != nil {
-		return parseError(fmt.Errorf("invalid tcp_ports_to_host: %v", err))
+	if err := validatePortForward(cfg.Net.TCPPortsFromHost); err != nil {
+		return fmt.Errorf("invalid tcp_ports_from_host: %v", err)
 	}
 
-	if err := ValidatePortForward(config.Net.TCPPortsFromHost); err != nil {
-		return parseError(fmt.Errorf("invalid tcp_ports_from_host: %v", err))
+	if err := validatePortForward(cfg.Net.UDPPortsToHost); err != nil {
+		return fmt.Errorf("invalid udp_ports_to_host: %v", err)
 	}
 
-	if err := ValidatePortForward(config.Net.UDPPortsToHost); err != nil {
-		return parseError(fmt.Errorf("invalid udp_ports_to_host: %v", err))
+	if err := validatePortForward(cfg.Net.UDPPortsFromHost); err != nil {
+		return fmt.Errorf("invalid udp_ports_from_host: %v", err)
 	}
-
-	if err := ValidatePortForward(config.Net.UDPPortsFromHost); err != nil {
-		return parseError(fmt.Errorf("invalid udp_ports_from_host: %v", err))
-	}
-
-	return &config, nil
+	return nil
 }
 
 // ParseMount parses mount configuration from a string of a form
@@ -237,8 +239,8 @@ func validateExposedEnvVars(patterns []string) error {
 	return nil
 }
 
-// ValidateNetworkMode validates that the network mode is one of the allowed values.
-func ValidateNetworkMode(mode string) error {
+// validateNetworkMode validates that the network mode is one of the allowed values.
+func validateNetworkMode(mode string) error {
 	switch mode {
 	case "off", "isolated", "unjailed":
 		return nil
@@ -247,7 +249,7 @@ func ValidateNetworkMode(mode string) error {
 	}
 }
 
-// ValidatePortForward validates Pasta-like port forwarding syntax.
+// validatePortForward validates Pasta-like port forwarding syntax.
 //
 // To keep things simple and keep an option of using a different
 // connectivity tool, only the simplest Pasta mapping expressions are
@@ -260,7 +262,7 @@ func ValidateNetworkMode(mode string) error {
 //     host port 8080 bound to IP address 127.0.0.1 to gues port 80
 //   - "none" -> disables port mapping
 //   - "auto" -> automatically forwards all open ports
-func ValidatePortForward(forwardSpecs []string) error {
+func validatePortForward(forwardSpecs []string) error {
 	hasAuto := false
 	hasNone := false
 

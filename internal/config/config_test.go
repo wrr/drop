@@ -162,7 +162,7 @@ func TestValidatePortForward(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidatePortForward(tt.portSpecs)
+			err := validatePortForward(tt.portSpecs)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
 			}
@@ -483,14 +483,14 @@ cwd.blocked_paths = ["../../foo"]
 func TestValidateNetworkMode(t *testing.T) {
 	validModes := []string{"off", "isolated", "unjailed"}
 	for _, mode := range validModes {
-		if err := ValidateNetworkMode(mode); err != nil {
+		if err := validateNetworkMode(mode); err != nil {
 			t.Errorf("expected no error for mode '%s', got: %v", mode, err)
 		}
 	}
 
 	invalidModes := []string{"invalid", "", "OFF"}
 	for _, mode := range invalidModes {
-		err := ValidateNetworkMode(mode)
+		err := validateNetworkMode(mode)
 		if err == nil {
 			t.Errorf("expected error for mode '%s'", mode)
 		} else if !strings.Contains(err.Error(), "invalid network mode") {

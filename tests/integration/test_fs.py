@@ -156,7 +156,7 @@ class TestFS(TestBase):
         result = self.sandbox_run('ls', config=config)
         self.assertEqual(1, result.returncode)
         self.assertEqual(
-            "Error: failed to parse config: "
+            "Error: config file: "
             "invalid mounts '/etc/../usr': path is not normalized\n",
             result.stderr)
 

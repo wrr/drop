@@ -146,38 +146,14 @@ Options:
 		return nil, fmt.Errorf("invalid character in env ID")
 	}
 
-	if f.networkMode != "" {
-		if err := config.ValidateNetworkMode(f.networkMode); err != nil {
-			return nil, err
-		}
-	}
-	if len(f.tcpPortsToHost) > 0 {
-		if err := config.ValidatePortForward(f.tcpPortsToHost); err != nil {
-			return nil, fmt.Errorf("invalid -t flag: %v", err)
-		}
-	}
-	if len(f.tcpPortsFromHost) > 0 {
-		if err := config.ValidatePortForward(f.tcpPortsFromHost); err != nil {
-			return nil, fmt.Errorf("invalid -T flag: %v", err)
-		}
-	}
-	if len(f.udpPortsToHost) > 0 {
-		if err := config.ValidatePortForward(f.udpPortsToHost); err != nil {
-			return nil, fmt.Errorf("invalid -u flag: %v", err)
-		}
-	}
-	if len(f.udpPortsFromHost) > 0 {
-		if err := config.ValidatePortForward(f.udpPortsFromHost); err != nil {
-			return nil, fmt.Errorf("invalid -U flag: %v", err)
-		}
-	}
 	return &f, nil
 }
 
-// flagsToConfig modifies cfg from a TOML file based on the command
-// line flags. Command line flags, when present, take priority over
-// the config file.
-func flagsToConfig(cfg *config.Config, flags *Flags) {
+// flagsToConfig modifies cfg from a TOML file with values passed via
+// command line flags. Command line flags, when present, take priority
+// over the config file. The function validates config after the
+// modification.
+func flagsToConfig(cfg *config.Config, flags *Flags) error {
 	if flags.networkMode != "" {
 		cfg.Net.Mode = flags.networkMode
 	}
@@ -193,6 +169,13 @@ func flagsToConfig(cfg *config.Config, flags *Flags) {
 	if len(flags.udpPortsFromHost) > 0 {
 		cfg.Net.UDPPortsFromHost = flags.udpPortsFromHost
 	}
+	// Validate config again, all errors detected should be related to
+	// entries modified by this function, because cfg read from a file
+	// and passed to this function was already validated during reading.
+	if err := config.Validate(cfg); err != nil {
+		return fmt.Errorf("command line flags: %v", err)
+	}
+	return nil
 }
 
 func main() {
@@ -254,7 +237,9 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	flagsToConfig(cfg, flags)
+	if err := flagsToConfig(cfg, flags); err != nil {
+		return 1, err
+	}
 
 	if (len(flags.tcpPortsToHost) > 0 ||
 		len(flags.tcpPortsFromHost) > 0 ||
@@ -436,7 +421,9 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	flagsToConfig(cfg, flags)
+	if err := flagsToConfig(cfg, flags); err != nil {
+		return 1, err
+	}
 
 	if err := jailfs.WriteEtcFiles(paths); err != nil {
 		return 1, fmt.Errorf("failed to write /etc files: %v", err)

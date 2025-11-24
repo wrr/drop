@@ -133,20 +133,28 @@ class TestNet(TestBase):
         test_cases = [
             {
                 'args': '-t foo',
-                'expected': 'invalid -t flag: invalid port number \'foo\''
+                'expected': ('Error: command line flags: '
+                             'invalid tcp_ports_to_host: '
+                             'invalid port number \'foo\'')
             },
             {
                 'args': '-T 0',
-                'expected': 'invalid -T flag: port number out of range: 0'
+                'expected': ('Error: command line flags: '
+                             'invalid tcp_ports_from_host: '
+                             'port number out of range: 0')
             },
             {
                 'args': '-u auto -u 8080',
-                'expected': ('invalid -u flag: "auto" must be the only '
+                'expected': ('Error: command line flags: '
+                             'invalid udp_ports_to_host: '
+                             '"auto" must be the only '
                              'port forwarding rule')
             },
             {
                 'args': '-U foo.ip/8080:80',
-                'expected': ('invalid -U flag: invalid port forwarding '
+                'expected': ('Error: command line flags: '
+                             'invalid udp_ports_from_host: '
+                             'invalid port forwarding '
                              'IP address: foo.ip')
             }
         ]
