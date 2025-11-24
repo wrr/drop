@@ -112,7 +112,31 @@ Options:
 	if f.configPath == "" {
 		f.configPath = defaultConfigPath
 	}
-
+	if f.networkMode != "" {
+		if err := config.ValidateNetworkMode(f.networkMode); err != nil {
+			return nil, err
+		}
+	}
+	if len(f.tcpPortsToHost) > 0 {
+		if err := config.ValidatePortForward(f.tcpPortsToHost); err != nil {
+			return nil, fmt.Errorf("invalid -t flag: %v", err)
+		}
+	}
+	if len(f.tcpPortsFromHost) > 0 {
+		if err := config.ValidatePortForward(f.tcpPortsFromHost); err != nil {
+			return nil, fmt.Errorf("invalid -T flag: %v", err)
+		}
+	}
+	if len(f.udpPortsToHost) > 0 {
+		if err := config.ValidatePortForward(f.udpPortsToHost); err != nil {
+			return nil, fmt.Errorf("invalid -u flag: %v", err)
+		}
+	}
+	if len(f.udpPortsFromHost) > 0 {
+		if err := config.ValidatePortForward(f.udpPortsFromHost); err != nil {
+			return nil, fmt.Errorf("invalid -U flag: %v", err)
+		}
+	}
 	return &f, nil
 }
 
@@ -127,6 +151,27 @@ func parseChildFlags() (*ChildFlags, error) {
 		return nil, fmt.Errorf("failed to parse child command line: %v", err)
 	}
 	return &f, nil
+}
+
+// flagsToConfig modifies cfg from a TOML file based on the command
+// line flags. Command line flags, when present, take priority over
+// the config file.
+func flagsToConfig(cfg *config.Config, flags *ParentFlags) {
+	if flags.networkMode != "" {
+		cfg.Net.Mode = flags.networkMode
+	}
+	if len(flags.tcpPortsToHost) > 0 {
+		cfg.Net.TCPPortsToHost = flags.tcpPortsToHost
+	}
+	if len(flags.tcpPortsFromHost) > 0 {
+		cfg.Net.TCPPortsFromHost = flags.tcpPortsFromHost
+	}
+	if len(flags.udpPortsToHost) > 0 {
+		cfg.Net.UDPPortsToHost = flags.udpPortsToHost
+	}
+	if len(flags.udpPortsFromHost) > 0 {
+		cfg.Net.UDPPortsFromHost = flags.udpPortsFromHost
+	}
 }
 
 func main() {
@@ -195,12 +240,7 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	if flags.networkMode != "" {
-		if err := config.ValidateNetworkMode(flags.networkMode); err != nil {
-			return 1, err
-		}
-		cfg.Net.Mode = flags.networkMode
-	}
+	flagsToConfig(cfg, flags)
 
 	if (len(flags.tcpPortsToHost) > 0 ||
 		len(flags.tcpPortsFromHost) > 0 ||
@@ -208,31 +248,6 @@ func parentProcessEntry() (int, error) {
 		len(flags.udpPortsFromHost) > 0) &&
 		cfg.Net.Mode != "isolated" {
 		return 1, fmt.Errorf("port forwarding is only supported with isolated network mode (-n isolated)")
-	}
-	// Command line flags take priority over the config file.
-	if len(flags.tcpPortsToHost) > 0 {
-		if err := config.ValidatePortForward(flags.tcpPortsToHost); err != nil {
-			return 1, fmt.Errorf("invalid -t flag: %v", err)
-		}
-		cfg.Net.TCPPortsToHost = flags.tcpPortsToHost
-	}
-	if len(flags.tcpPortsFromHost) > 0 {
-		if err := config.ValidatePortForward(flags.tcpPortsFromHost); err != nil {
-			return 1, fmt.Errorf("invalid -T flag: %v", err)
-		}
-		cfg.Net.TCPPortsFromHost = flags.tcpPortsFromHost
-	}
-	if len(flags.udpPortsToHost) > 0 {
-		if err := config.ValidatePortForward(flags.udpPortsToHost); err != nil {
-			return 1, fmt.Errorf("invalid -u flag: %v", err)
-		}
-		cfg.Net.UDPPortsToHost = flags.udpPortsToHost
-	}
-	if len(flags.udpPortsFromHost) > 0 {
-		if err := config.ValidatePortForward(flags.udpPortsFromHost); err != nil {
-			return 1, fmt.Errorf("invalid -U flag: %v", err)
-		}
-		cfg.Net.UDPPortsFromHost = flags.udpPortsFromHost
 	}
 
 	// Pipe for synchronizing setup with the child process.
