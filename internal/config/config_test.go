@@ -499,7 +499,7 @@ func TestValidateNetworkMode(t *testing.T) {
 	}
 }
 
-func TestParseMount(t *testing.T) {
+func TestParseMountCompact(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -595,7 +595,7 @@ func TestParseMount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := ParseMount(tt.input)
+			result, err := ParseMountCompact(tt.input)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
 			}

@@ -199,7 +199,7 @@ Networking options:
 // modification.
 func flagsToConfig(cfg *config.Config, flags *Flags) error {
 	for _, m := range flags.mounts {
-		mount, err := config.ParseMount(m)
+		mount, err := config.ParseMountCompact(m)
 		if err != nil {
 			return fmt.Errorf("command line -mount flag: %v", err)
 		}

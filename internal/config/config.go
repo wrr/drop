@@ -55,7 +55,7 @@ type PortForward struct {
 func (m *Mount) UnmarshalTOML(data any) error {
 	switch v := data.(type) {
 	case string:
-		parsed, err := ParseMount(v)
+		parsed, err := ParseMountCompact(v)
 		if err != nil {
 			return err
 		}
@@ -170,12 +170,12 @@ func Validate(cfg *Config) error {
 	return nil
 }
 
-// ParseMount parses mount configuration from a string of a form
+// ParseMountCompact parses mount configuration from a string of a form
 // source:target:options, where target and options are optional. If
 // target is not given or empty, it equals source.  Options are comma
 // separated and can be "rw" and "overlay". Valid strings: "~/go",
 // "~/go:~/host-go" "~/go:~/host-go:ro", "~/go::ro,overlay
-func ParseMount(str string) (*Mount, error) {
+func ParseMountCompact(str string) (*Mount, error) {
 	var m Mount
 	parts := strings.Split(str, ":")
 	parts_cnt := len(parts)
