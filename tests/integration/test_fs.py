@@ -67,6 +67,20 @@ class TestFS(TestBase):
         self.assertEqual(1, result.returncode)
         self.assertIn('cmd/drop/main.go: Permission denied', result.stderr)
 
+    def test_no_cwd_flag(self):
+        """Test -no-cwd flag prevents CWD from being mounted"""
+        # With cwd.mounts in config, CWD should be accessible by default
+        config = Config(cwd_mounts=['.'])
+        cwd = os.getcwd()
+        result = self.sandbox_run(f'cat {cwd}/go.mod', config=config)
+        self.assertSuccess(result)
+
+        # With -no-cwd flag, CWD should not be accessible
+        result = self.sandbox_run(f'cat {cwd}/go.mod', config=config,
+                                  drop_extra_args='-no-cwd')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('No such file or directory', result.stderr)
+
     def test_mounts_from_root_dir(self):
         # Expose a path outside of the home dir, normally not
         # available within Drop.

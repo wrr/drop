@@ -39,6 +39,7 @@ type Flags struct {
 	configPath  string
 	networkMode string
 
+	noCwd  bool
 	mounts []string
 
 	// These flags are not currently passed from the parent to the child
@@ -76,8 +77,11 @@ func (f *Flags) toChildArgs(runDir string, homeDir string) []string {
 	if f.networkMode != "" {
 		childArgs = append(childArgs, "-net", f.networkMode)
 	}
+	if f.noCwd {
+		childArgs = append(childArgs, "-no-cwd")
+	}
 	for _, m := range f.mounts {
-		childArgs = append(childArgs, "-m", m)
+		childArgs = append(childArgs, "-mount", m)
 	}
 	// flag.Args() returns remaining command line arguments not
 	// recognized as flags (if any): a command to execute with its flags
@@ -109,6 +113,10 @@ Options:
         kept as the original home dir.
 
 Mounts related options:
+  -no-cwd, -nc
+        Ignore cwd.mounts entries from config - do not make the current
+        working directory available in the sandbox unless some other mount
+        entry exposes the CWD.
   -mount, -m value
         Add a mount to the list of mounts from the TOML config file.
         The flag can be passed multiple times.
@@ -137,13 +145,16 @@ Networking options:
 	flag.StringVar(&f.envId, "e", "", "")
 	flag.StringVar(&f.configPath, "config", "", "")
 	flag.StringVar(&f.configPath, "c", "", "")
+
+	flag.BoolVar(&f.noCwd, "no-cwd", false, "")
+	flag.BoolVar(&f.noCwd, "nc", false, "")
 	flag.Var((*stringSlice)(&f.mounts), "mount", "")
 	flag.Var((*stringSlice)(&f.mounts), "m", "")
-	flag.StringVar(&f.networkMode, "net", "", "")
-	flag.StringVar(&f.networkMode, "n", "", "")
 
 	flag.BoolVar(&f.beRoot, "root", false, "")
 	flag.BoolVar(&f.beRoot, "r", false, "")
+	flag.StringVar(&f.networkMode, "net", "", "")
+	flag.StringVar(&f.networkMode, "n", "", "")
 	flag.Var((*stringSlice)(&f.tcpPortsToHost), "tcp-ports-to-host", "")
 	flag.Var((*stringSlice)(&f.tcpPortsToHost), "t", "")
 	flag.Var((*stringSlice)(&f.tcpPortsFromHost), "tcp-ports-from-host", "")
@@ -220,6 +231,9 @@ func flagsToConfig(cfg *config.Config, flags *Flags) error {
 	}
 	if len(flags.udpPortsFromHost) > 0 {
 		cfg.Net.UDPPortsFromHost = flags.udpPortsFromHost
+	}
+	if flags.noCwd {
+		cfg.Cwd.Mounts = nil
 	}
 	// Validate config again, all errors detected should be related to
 	// entries modified by this function, because cfg read from a file
