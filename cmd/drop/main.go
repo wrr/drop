@@ -39,6 +39,8 @@ type Flags struct {
 	configPath  string
 	networkMode string
 
+	mounts []string
+
 	// These flags are not currently passed from the parent to the child
 	// process, because child does not use them.
 	beRoot           bool
@@ -50,6 +52,36 @@ type Flags struct {
 	// Internal flags passed only to the child process.
 	runDir  string
 	homeDir string
+}
+
+// toChildArgs constructs command line arguments to be passed to the
+// started child process. The child shares most of the arguments with
+// the parent, but also accepts internal arguments to specify run and
+// home dirs.
+//
+// All of this would not be needed in C, where forked process would
+// simply be able to read copies of the config structs created in the
+// parent, but in Go we need to recreate the structs in the child by
+// passing appropriate flags.
+func (f *Flags) toChildArgs(runDir string, homeDir string) []string {
+	// Other flags are not passed because child doesn't use them,
+	// perhaps for clarity it would be better to pass all the flags.
+	childArgs := []string{
+		"-child",
+		"-env", f.envId,
+		"-config", f.configPath,
+		"-run-dir", runDir,
+		"-home", homeDir,
+	}
+	if f.networkMode != "" {
+		childArgs = append(childArgs, "-net", f.networkMode)
+	}
+	for _, m := range f.mounts {
+		childArgs = append(childArgs, "-m", m)
+	}
+	// flag.Args() returns remaining command line arguments not
+	// recognized as flags (if any): a command to execute with its flags
+	return append(childArgs, flag.Args()...)
 }
 
 func parseFlags(defaultConfigPath string, isChild bool) (*Flags, error) {
@@ -69,12 +101,21 @@ Options:
   -env, -e value
         Environment ID%s
   -config, -c value
-        Path to config file (default: %s)
+        Path to TOML config file (default: %s)
   -root, -r
         Be root (uid 0) in the jail. Useful for running installation scripts that
         require to be run as root. This option doesn't grant any additional privileges to the jailed
         processes. For convenience, the home dir of a root user is not set to /root, but
         kept as the original home dir.
+
+Mounts related options:
+  -mount, -m value
+        Add a mount to the list of mounts from the TOML config file.
+        The flag can be passed multiple times.
+        Format: source[:target][:rw]
+        Examples: -m /mnt -m /tmp:/host-tmp -m ~/my-project::rw
+
+Networking options:
   -net, -n value
         Network mode: off, isolated, or unjailed
   -tcp-ports-to-host, -t value
@@ -85,6 +126,7 @@ Options:
         Publish UDP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]
   -udp-ports-from-host, -U value
         Publish UDP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]
+
   -help, -h
         Show help
 `, defaultEnvId, defaultConfigPath)
@@ -95,6 +137,8 @@ Options:
 	flag.StringVar(&f.envId, "e", "", "")
 	flag.StringVar(&f.configPath, "config", "", "")
 	flag.StringVar(&f.configPath, "c", "", "")
+	flag.Var((*stringSlice)(&f.mounts), "mount", "")
+	flag.Var((*stringSlice)(&f.mounts), "m", "")
 	flag.StringVar(&f.networkMode, "net", "", "")
 	flag.StringVar(&f.networkMode, "n", "", "")
 
@@ -154,6 +198,14 @@ Options:
 // over the config file. The function validates config after the
 // modification.
 func flagsToConfig(cfg *config.Config, flags *Flags) error {
+	for _, m := range flags.mounts {
+		mount, err := config.ParseMount(m)
+		if err != nil {
+			return fmt.Errorf("command line -mount flag: %v", err)
+		}
+		cfg.Mounts = append(cfg.Mounts, *mount)
+	}
+
 	if flags.networkMode != "" {
 		cfg.Net.Mode = flags.networkMode
 	}
@@ -257,18 +309,7 @@ func parentProcessEntry() (int, error) {
 
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
-	childArgs := []string{
-		"-child",
-		"-env", flags.envId,
-		"-config", flags.configPath,
-		"-net", cfg.Net.Mode,
-		"-run-dir", runDir,
-		"-home", homeDir,
-		// Other flags are not passed because child doesn't use them,
-		// perhaps for clarity it would be better to pass all the flags.
-	}
-	childArgs = append(childArgs, flag.Args()...)
-	cmd := exec.Command(os.Args[0], childArgs...)
+	cmd := exec.Command(os.Args[0], flags.toChildArgs(runDir, homeDir)...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

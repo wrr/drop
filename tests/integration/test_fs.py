@@ -191,6 +191,40 @@ class TestFS(TestBase):
         # home dir, but in a disposable overlayfs lower layer.
         self.assertFalse(os.path.exists(ENV_DIR / 'home' / exposed_dname))
 
+    def test_add_mount_flag(self):
+        """Test -m flags"""
+        dir1 = 'drop-test-dir1'
+        dir2 = 'drop-test-dir2'
+        path1 = HOME_DIR / dir1
+        path2 = HOME_DIR / dir2
+        file1 = path1 / 'file1.txt'
+        file2 = path2 / 'file2.txt'
+
+        with scoped_dir(path1), scoped_dir(path2):
+            base.write('hello', file1)
+            base.write('world', file2)
+
+            drop_extra_args = f'-mount ~/{dir1} -m ~/{dir2}::rw'
+
+            cmd = f'bash -c "cat {file1}; cat {file2}"'
+            result = self.sandbox_run(cmd, drop_extra_args=drop_extra_args)
+            self.assertSuccess(result)
+            self.assertEqual('helloworld', result.stdout)
+
+            # dir1 is read-only, writing should fail
+            cmd = f'bash -c "echo bye > {file1}"'
+            result = self.sandbox_run(cmd, drop_extra_args=drop_extra_args)
+            self.assertEqual(1, result.returncode)
+            self.assertIn('Read-only file system', result.stderr)
+            self.assertEqual('hello', base.read(file1))
+
+            # dir2 is read-write, writing should succeed
+            cmd = f'bash -c "echo -n bye > {file2}; cat {file2}"'
+            result = self.sandbox_run(cmd, drop_extra_args=drop_extra_args)
+            self.assertSuccess(result)
+            self.assertEqual('bye', result.stdout)
+            self.assertEqual('bye', base.read(file2))
+
     def test_var(self):
         # Test that /var directory is empty initially and files created
         # in it are stored in the Drop env /var subdirectory
