@@ -133,7 +133,7 @@ Drop environments are easily disposable, you can just remove them and
 all files installed within the env will be removed.
 
 
-Th default Drop config makes the current working directory available
+The default Drop config makes the current working directory available
 for reading and writing (with the exception of the `.git` subdir), so you
 can start Claude Code, ask it to make changes, compile and run the
 project. Claude, like all programs that run in Drop is sandboxed, it can
@@ -228,7 +228,7 @@ This list is intended as a quick overview of how Drop works for readers familiar
 * Uses overlayfs to avoid polluting Drop home dirs with mount points.
 
 Drop environments with the same id:
-* share home dir and (less importanly) /var. By default these are
+* share home dir and (less importantly) /var. By default these are
   mounted from .drop/envs/ENV_ID/{home|var}).
 * share /tmp. /tmp in Drop is a subdir of the host /tmp, so the
   standard /tmp cleanup mechanism applies to it.

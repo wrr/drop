@@ -24,6 +24,7 @@ func WriteDefault(path string, homeDir string) error {
 		{"~/.emacs", ""},
 		{"~/.profile", ""},
 		{"~/.gitconfig", " # Remove if you keep secrets in .gitconfig"},
+		{"~/go", ""},
 		{"~/.nvm", ""},
 		{"~/.screenrc", ""},
 		{"~/.bashrc", " # Ensure there are no secrets in your shell config files"},
@@ -36,19 +37,9 @@ func WriteDefault(path string, homeDir string) error {
 		{"~/.zshrc", ""},
 	}
 
-	// blockedDefault contains paths to block, also included only if
-	// they exist.
-	blockedDefault := []configFileEntry{
-		{"/mnt", ""},
-		{"/media", ""},
-		{"/snap", ""},
-		{"/cdrom", ""},
-	}
-
 	pathsRODefault = keepExistingEntries(pathsRODefault, homeDir)
-	blockedDefault = keepExistingEntries(blockedDefault, homeDir)
 
-	defaultConfig := fmt.Sprintf(`# Drop sandboxing configuration file
+	defaultConfig := fmt.Sprintf(`# Drop sandbox configuration file
 
 # Directories and files exposed to Drop.
 #
@@ -57,8 +48,8 @@ func WriteDefault(path string, homeDir string) error {
 # "~/bin" - expose ~/bin directory as read-only. Directories are
 #           exposed with all content, including sub-directories.
 # "~/bin:~/host-bin" - expose ~/bin directory as read-only ~/host-bin.
-# "~/todo::rw" - expose ~/todo file as writable.
-# "~/todo:~/host-todo:rw" - expose ~/todo file as writable ~/host-todo.
+# "~/plan::rw" - expose ~/plan file as writable.
+# "~/plan:~/host-plan:rw" - expose ~/plan file as writable ~/host-plan.
 #
 # Alternatively, a verbose dictionary syntax can be used; it allows to
 # handle paths with ':' characters. Equivalents of the examples above
@@ -66,47 +57,56 @@ func WriteDefault(path string, homeDir string) error {
 #
 # {source="~/bin"}
 # {source="~/bin", target="~/host-bin"}
-# {source="~/todo", rw=true}
-# {source="~/todo", target="~/host-todo", rw=true}
+# {source="~/plan", rw=true}
+# {source="~/plan", target="~/host-plan", rw=true}
+#
+# All paths must be normalized and either start with / or ~/.
 #
 # Be sure not to expose files with secrets or other sensitive
 # data. Configs without sensitive data are safe to expose as read-only
-# and will ensure the Drop environment doesn't impede work.
+# and make Drop more convienient to use.
 #
 # Use files exposed as read-write carefully and sparingly - untrusted
 # programs should not be able to write files that are executed outside
-# the sandbox. Shell config scripts are executed, so it is safe to
+# of the sandbox. Shell config scripts are executed, so it is safe to
 # expose them as read-only, but not as read-write.  Similarly, entries
 # from ~/.bash_history can be executed, so it is best not to expose
-# history, but allow shells in the Drop environment to create isolated
-# history files in each environment.
-
+# history, but allow shells in Drop environments to create isolated
+# history files, one per each environment.
 mounts = %s
 
-# Paths to dirs or files to block access to. Need to be normalized and
-# either starting with / or ~/
+# Paths to dirs or files to block access to.
 #
-# All host filesystem access restrictions still apply to Drop, so you
-# don't need to block access to files that are already not accessible
-# to your current user (for example /root). Drop also mounts almost
-# the whole filesystem read-only, so you don't need to include files
-# just to block writing to them.
-blocked_paths = %s
+# Host filesystem access restrictions still apply in Drop, so you
+# don't need to block files your current user already can't access
+# (for example /etc/shadow). Drop also mounts almost
+# all dirs read-only, so you don't need to include files just to block
+# writing to them.
+blocked_paths = []
 
+# Directories and files from the current working directory exposed to
+# Drop. All paths need to be relative, but other that that, the syntax
+# is the same as for the 'mounts' above.
+#
+# The CWD mount rules are not applied if:
+# * Drop is started from the user home dir or any ancestor of the home dir
+# * Drop is started with -no-cwd flag
 cwd.mounts = [
- "./::rw",
- ".git"
+ "./::rw", # Expose all files in the CWD in read-write mode
+ ".git"    # Except .git directory which is exposed read-only
 ]
+
+# If any file or a subdir exposed by a generic cwd.mount entry should be
+# blocked, put it here.
 cwd.blocked_paths = [
 ]
 
-# Environment variables to be exposed from process starting Drop to
+# Environment variables to expose from the process starting Drop to
 # the sandbox. You can use glob patterns to expose all variables with
 # common prefix/suffix.
 #
-# Do not expose variables that contain sensitive secrets, but other
-# than that, expose all variables needed to ensure convenient work in
-# the Drop environment.
+# Do not expose variables containing secrets. Expose all
+# other variables needed for convenient work in Drop.
 exposed_env_vars = [
   "SHELL",
   "LC_*",
@@ -128,19 +128,14 @@ exposed_env_vars = [
 
 [net]
 # Network mode:
-# "off" - programs in the sandbox cannot access remote and local
-#         network services. Ports opened by the programs are not
-#         accessible from the host.
+# "off"      - programs in the sandbox cannot access remote and local
+#              network services. Ports opened by the programs are not
+#              accessible from the host.
 # "isolated" - programs in the sandbox can access remote services.
 #              Port mapping settings below determine which services
 #              running in the sandbox can be accessed from the host and
 #              which services running on the host can be accessed from
 #              the sandbox.
-# "unjailed" - Drop shares networking with the host, can access local
-#              and remote services. This can be useful to run trusted
-#              program using Drop filesystem organization, but without
-#              any additional restrictions. It does not provide proper
-#              sandboxing.
 mode = "isolated"
 
 # TCP ports exposed from the Drop sandbox to the host.
@@ -155,15 +150,15 @@ mode = "isolated"
 #                         to loopback interface
 tcp_ports_to_host = ["auto"]
 
-# TCP ports exposed from the host to the Drop sandbox.
+# TCP ports exposed from the host to the sandbox.
 tcp_ports_from_host = []
 
-# UDP ports exposed from the Drop sandbox to the host.
+# UDP ports exposed from the sandbox to the host.
 udp_ports_to_host = []
 
-# UDP ports exposed from the host to the Drop sandbox.
+# UDP ports exposed from the host to the sandbox.
 udp_ports_from_host = []
-`, toTomlString(pathsRODefault), toTomlString(blockedDefault))
+`, toTomlString(pathsRODefault))
 
 	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {
 		return err
