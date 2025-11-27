@@ -221,16 +221,16 @@ func flagsToConfig(cfg *config.Config, flags *Flags) error {
 		cfg.Net.Mode = flags.networkMode
 	}
 	if len(flags.tcpPortsToHost) > 0 {
-		cfg.Net.TCPPortsToHost = flags.tcpPortsToHost
+		cfg.Net.TCPPublish = flags.tcpPortsToHost
 	}
 	if len(flags.tcpPortsFromHost) > 0 {
-		cfg.Net.TCPPortsFromHost = flags.tcpPortsFromHost
+		cfg.Net.TCPFromHost = flags.tcpPortsFromHost
 	}
 	if len(flags.udpPortsToHost) > 0 {
-		cfg.Net.UDPPortsToHost = flags.udpPortsToHost
+		cfg.Net.UDPPublish = flags.udpPortsToHost
 	}
 	if len(flags.udpPortsFromHost) > 0 {
-		cfg.Net.UDPPortsFromHost = flags.udpPortsFromHost
+		cfg.Net.UDPFromHost = flags.udpPortsFromHost
 	}
 	if flags.noCwd {
 		cfg.Cwd.Mounts = nil

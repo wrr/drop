@@ -138,26 +138,38 @@ exposed_env_vars = [
 #              the sandbox.
 mode = "isolated"
 
-# TCP ports exposed from the Drop sandbox to the host.
+# TCP ports published from the sandbox.
+#
+# Entries have the form: [host_ip/][HOST_PORT:]DROP_PORT
+# If host_ip is not specified, it defaults to 127.0.0.1.
+# If HOST_PORT is not specified it equals to DROP_PORT.
 # Empty list means no ports are exposed.
-# Example, valid list items:
-# "auto" - all ports open in the sandbox can be accessed from the host
-#          using the same port number.
-# "8080" - expose port 8080 from the sandbox as port 8080 on the host
-# "8080:8000" - expose port 8000 from the sandbox, map it to port 8080
+# Example valid list items:
+# "8080" - publish port 8080 from the sandbox as 127.0.0.1:8080 on the host
+# "8080:8000" - publish port 8000 from the sandbox as 127.0.0.1:8080
 #               on the host
-# "127.0.0.1/8080:8000" - same as above, but only bind the host port
-#                         to loopback interface
-tcp_ports_to_host = ["auto"]
+# "0.0.0.0/8080:8000" - publish port 8000 from the sandbox as 8080 on
+#                       the host, bind it to all the host's IP
+#                       addresses. This makes the port externally
+#                       accessible if the host has no firewall rules
+#                       to block outside traffic to this port
+# "auto" - all ports open in the sandbox are automatically published
+#          and bound to ALL the host's IP addresses. This is
+#          convienient, but must be used with care, make sure the host
+#          has firewall configured to filter outside traffic.
+tcp_publish = []
 
-# TCP ports exposed from the host to the sandbox.
-tcp_ports_from_host = []
+# Localhost TCP ports open on the host that the sandbox can access.
+# Entries have the form
+# HOST_PORT[:DROP_PORT]
+# If DROP_PORT is not specified, it equals to HOST_PORT
+tcp_from_host = []
 
 # UDP ports exposed from the sandbox to the host.
-udp_ports_to_host = []
+udp_publish = []
 
 # UDP ports exposed from the host to the sandbox.
-udp_ports_from_host = []
+udp_from_host = []
 `, toTomlString(pathsRODefault))
 
 	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {

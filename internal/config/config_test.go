@@ -182,18 +182,18 @@ func TestParseNetConfig(t *testing.T) {
 			tomlStr: `
 [net]
 mode = "isolated"
-tcp_ports_to_host = ["auto"]
-tcp_ports_from_host = ["8080", "3000:3001"]
-udp_ports_to_host = ["5000"]
-udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
+tcp_publish = ["auto"]
+tcp_from_host = ["8080", "3000:3001"]
+udp_publish = ["5000"]
+udp_from_host = ["192.168.1.1/12000:1700", "9000"]
 `,
 			expected: Config{
 				Net: Net{
-					Mode:             "isolated",
-					TCPPortsToHost:   []string{"auto"},
-					TCPPortsFromHost: []string{"8080", "3000:3001"},
-					UDPPortsToHost:   []string{"5000"},
-					UDPPortsFromHost: []string{"192.168.1.1/12000:1700", "9000"},
+					Mode:        "isolated",
+					TCPPublish:  []string{"auto"},
+					TCPFromHost: []string{"8080", "3000:3001"},
+					UDPPublish:  []string{"5000"},
+					UDPFromHost: []string{"192.168.1.1/12000:1700", "9000"},
 				},
 			},
 			error: "",
@@ -203,18 +203,18 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 			tomlStr: `
 [net]
 mode = "off"
-tcp_ports_to_host = []
-tcp_ports_from_host = []
-udp_ports_to_host = []
-udp_ports_from_host = []
+tcp_publish = []
+tcp_from_host = []
+udp_publish = []
+udp_from_host = []
 `,
 			expected: Config{
 				Net: Net{
-					Mode:             "off",
-					TCPPortsToHost:   []string{},
-					TCPPortsFromHost: []string{},
-					UDPPortsToHost:   []string{},
-					UDPPortsFromHost: []string{},
+					Mode:        "off",
+					TCPPublish:  []string{},
+					TCPFromHost: []string{},
+					UDPPublish:  []string{},
+					UDPFromHost: []string{},
 				},
 			},
 			error: "",
@@ -224,11 +224,11 @@ udp_ports_from_host = []
 			tomlStr: ``,
 			expected: Config{
 				Net: Net{
-					Mode:             "isolated", // default
-					TCPPortsToHost:   nil,
-					TCPPortsFromHost: nil,
-					UDPPortsToHost:   nil,
-					UDPPortsFromHost: nil,
+					Mode:        "isolated", // default
+					TCPPublish:  nil,
+					TCPFromHost: nil,
+					UDPPublish:  nil,
+					UDPFromHost: nil,
 				},
 			},
 			error: "",
@@ -252,10 +252,10 @@ udp_ports_from_host = []
 			if got.Mode != expected.Mode {
 				t.Errorf("expected Mode '%s', got '%s'", expected.Mode, got.Mode)
 			}
-			expectStringSlicesEqual(t, "TCPPortsToHost", got.TCPPortsToHost, expected.TCPPortsToHost)
-			expectStringSlicesEqual(t, "TCPPortsFromHost", got.TCPPortsFromHost, expected.TCPPortsFromHost)
-			expectStringSlicesEqual(t, "UDPPortsToHost", got.UDPPortsToHost, expected.UDPPortsToHost)
-			expectStringSlicesEqual(t, "UDPPortsFromHost", got.UDPPortsFromHost, expected.UDPPortsFromHost)
+			expectStringSlicesEqual(t, "TCPPublish", got.TCPPublish, expected.TCPPublish)
+			expectStringSlicesEqual(t, "TCPFromHost", got.TCPFromHost, expected.TCPFromHost)
+			expectStringSlicesEqual(t, "UDPPublish", got.UDPPublish, expected.UDPPublish)
+			expectStringSlicesEqual(t, "UDPFromHost", got.UDPFromHost, expected.UDPFromHost)
 		})
 	}
 }
@@ -282,10 +282,10 @@ cwd.mounts = [".::rw", ".git"]
 cwd.blocked_paths = [".github"]
 [net]
 mode = "isolated"
-tcp_ports_to_host = ["8080", "3000:3001"]
-tcp_ports_from_host = ["auto"]
-udp_ports_to_host = ["5000"]
-udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
+tcp_publish = ["8080", "3000:3001"]
+tcp_from_host = ["auto"]
+udp_publish = ["5000"]
+udp_from_host = ["192.168.1.1/12000:1700", "9000"]
 `,
 			expected: Config{
 				Mounts: []Mount{
@@ -304,11 +304,11 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 				},
 				ExposedEnvVars: []string{"HOME", "PATH", "LC_*"},
 				Net: Net{
-					Mode:             "isolated",
-					TCPPortsToHost:   []string{"8080", "3000:3001"},
-					TCPPortsFromHost: []string{"auto"},
-					UDPPortsToHost:   []string{"5000"},
-					UDPPortsFromHost: []string{"192.168.1.1/12000:1700", "9000"},
+					Mode:        "isolated",
+					TCPPublish:  []string{"8080", "3000:3001"},
+					TCPFromHost: []string{"auto"},
+					UDPPublish:  []string{"5000"},
+					UDPFromHost: []string{"192.168.1.1/12000:1700", "9000"},
 				},
 			},
 			error: "",
@@ -321,11 +321,11 @@ udp_ports_from_host = ["192.168.1.1/12000:1700", "9000"]
 				BlockedPaths:   nil,
 				ExposedEnvVars: nil,
 				Net: Net{
-					Mode:             "isolated", // default
-					TCPPortsToHost:   nil,
-					TCPPortsFromHost: nil,
-					UDPPortsToHost:   nil,
-					UDPPortsFromHost: nil,
+					Mode:        "isolated", // default
+					TCPPublish:  nil,
+					TCPFromHost: nil,
+					UDPPublish:  nil,
+					UDPFromHost: nil,
 				},
 			},
 			error: "",
@@ -347,40 +347,40 @@ home_visible = [invalid syntax
 			error:    "failed to parse config",
 		},
 		{
-			name: "invalid tcp_ports_to_host",
+			name: "invalid tcp_publish",
 			tomlStr: `
 [net]
-tcp_ports_to_host = ["8080", "invalid_port"]
+tcp_publish = ["8080", "invalid_port"]
 `,
 			expected: Config{},
-			error:    "invalid tcp_ports_to_host",
+			error:    "invalid tcp_publish",
 		},
 		{
-			name: "invalid tcp_ports_from_host",
+			name: "invalid tcp_from_host",
 			tomlStr: `
 [net]
-tcp_ports_from_host = ["8080", "auto"]
+tcp_from_host = ["8080", "auto"]
 `,
 			expected: Config{},
-			error:    "invalid tcp_ports_from_host: \"auto\" must be the only port forwarding rule",
+			error:    "invalid tcp_from_host: \"auto\" must be the only port forwarding rule",
 		},
 		{
-			name: "invalid udp_ports_to_host",
+			name: "invalid udp_publish",
 			tomlStr: `
 [net]
-udp_ports_to_host = ["0"]
+udp_publish = ["0"]
 `,
 			expected: Config{},
-			error:    "invalid udp_ports_to_host: port number out of range: 0",
+			error:    "invalid udp_publish: port number out of range: 0",
 		},
 		{
-			name: "invalid udp_ports_from_host",
+			name: "invalid udp_from_host",
 			tomlStr: `
 [net]
-udp_ports_from_host = ["invalid.ip/8080:80"]
+udp_from_host = ["invalid.ip/8080:80"]
 `,
 			expected: Config{},
-			error:    "invalid udp_ports_from_host: invalid port forwarding IP address: invalid.ip",
+			error:    "invalid udp_from_host: invalid port forwarding IP address: invalid.ip",
 		},
 		{
 			name: "invalid net mode",
@@ -472,10 +472,10 @@ cwd.blocked_paths = ["../../foo"]
 			if result.Net.Mode != tt.expected.Net.Mode {
 				t.Errorf("expected Net.Mode '%s', got '%s'", tt.expected.Net.Mode, result.Net.Mode)
 			}
-			expectStringSlicesEqual(t, "Net.TCPPortsToHost", result.Net.TCPPortsToHost, tt.expected.Net.TCPPortsToHost)
-			expectStringSlicesEqual(t, "Net.TCPPortsFromHost", result.Net.TCPPortsFromHost, tt.expected.Net.TCPPortsFromHost)
-			expectStringSlicesEqual(t, "Net.UDPPortsToHost", result.Net.UDPPortsToHost, tt.expected.Net.UDPPortsToHost)
-			expectStringSlicesEqual(t, "Net.UDPPortsFromHost", result.Net.UDPPortsFromHost, tt.expected.Net.UDPPortsFromHost)
+			expectStringSlicesEqual(t, "Net.TCPPublish", result.Net.TCPPublish, tt.expected.Net.TCPPublish)
+			expectStringSlicesEqual(t, "Net.TCPFromHost", result.Net.TCPFromHost, tt.expected.Net.TCPFromHost)
+			expectStringSlicesEqual(t, "Net.UDPPublish", result.Net.UDPPublish, tt.expected.Net.UDPPublish)
+			expectStringSlicesEqual(t, "Net.UDPFromHost", result.Net.UDPFromHost, tt.expected.Net.UDPFromHost)
 		})
 	}
 }

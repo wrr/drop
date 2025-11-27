@@ -57,13 +57,10 @@ func TestWriteDefault(t *testing.T) {
 		t.Errorf("Expected default net mode 'isolated', got %s", net.Mode)
 	}
 
-	if len(net.TCPPortsToHost) != 1 || net.TCPPortsToHost[0] != "auto" {
-		t.Errorf("Expected tcp_ports_to_host to be [\"auto\"], got %v", net.TCPPortsToHost)
-	}
-
-	expectEmptyList(t, "tcp_ports_from_host", net.TCPPortsFromHost)
-	expectEmptyList(t, "udp_ports_to_host", net.UDPPortsToHost)
-	expectEmptyList(t, "udp_ports_from_host", net.UDPPortsFromHost)
+	expectEmptyList(t, "tcp_publish", net.TCPPublish)
+	expectEmptyList(t, "tcp_from_host", net.TCPFromHost)
+	expectEmptyList(t, "udp_publish", net.UDPPublish)
+	expectEmptyList(t, "udp_from_host", net.UDPFromHost)
 }
 
 func TestFilterExistingEntries(t *testing.T) {

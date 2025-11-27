@@ -52,16 +52,16 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 	}
 
 	// TCP ports open in the namespace that are accessible from the host.
-	pastaArgs = append(pastaArgs, portMappingArgs("--tcp-ports", netConfig.TCPPortsToHost)...)
+	pastaArgs = append(pastaArgs, portMappingArgs("--tcp-ports", netConfig.TCPPublish)...)
 	// TCP ports open on the host that are accessible from the namespace.
 	// This mapping is also needed to allow Drop instances to connect
 	// to one another (one instance exposes a port to host with
 	// --tcp-port and the other needs --tcp-ns to be able connect to
 	// this port.
-	pastaArgs = append(pastaArgs, portMappingArgs("--tcp-ns", netConfig.TCPPortsFromHost)...)
+	pastaArgs = append(pastaArgs, portMappingArgs("--tcp-ns", netConfig.TCPFromHost)...)
 	// The same, but for the UDP ports
-	pastaArgs = append(pastaArgs, portMappingArgs("--udp-ports", netConfig.UDPPortsToHost)...)
-	pastaArgs = append(pastaArgs, portMappingArgs("--udp-ns", netConfig.UDPPortsFromHost)...)
+	pastaArgs = append(pastaArgs, portMappingArgs("--udp-ports", netConfig.UDPPublish)...)
+	pastaArgs = append(pastaArgs, portMappingArgs("--udp-ns", netConfig.UDPFromHost)...)
 
 	pastaArgs = append(pastaArgs, fmt.Sprintf("%d", jailedPid))
 

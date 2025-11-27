@@ -45,11 +45,11 @@ class TestNet(TestBase):
         self.assertIn(
             'https://passt.top/passt/about/#availability', result.stderr)
 
-    def test_port_forwarding_to_host(self):
+    def test_port_publish(self):
         # expose TCP port 20112 from the sandbox to the host
         tcp_server = self.sandbox_run_background(
             'bash -c "echo -n "hello" | nc -4 -v -l -p 20112"',
-            config=Config(tcp_ports_to_host=['20112']),
+            config=Config(tcp_publish=['20112']),
         )
         self.wait_port_bound(tcp_server, 20112)
         response = loopback_read_tcp(20112)
@@ -62,7 +62,7 @@ class TestNet(TestBase):
         # expose UDP port 20112 from the sandbox to the host
         udp_server = self.sandbox_run_background(
             'bash -c "echo -n "hello" | nc -4 -v -W 1 -u -l -p 20112"',
-            config=Config(udp_ports_to_host=['20112']),
+            config=Config(udp_publish=['20112']),
         )
         self.wait_port_bound(udp_server, 20112)
         response = loopback_read_udp(20112)
@@ -70,7 +70,7 @@ class TestNet(TestBase):
         self.wait_process_completed(udp_server)
         self.assertEqual(0, result.returncode)
 
-    def test_port_not_exposed_to_host(self):
+    def test_port_not_published(self):
         # Port 20114 is open, but not exposed from the sandbox to
         # the host
         tcp_server = self.sandbox_run_background(
@@ -98,7 +98,7 @@ class TestNet(TestBase):
         self.wait_port_bound(tcp_server, 20113)
         result = self.sandbox_run(
             'bash -c "nc -4 -w 1 127.0.0.1 20113"',
-            config=Config(tcp_ports_from_host=['20113']),
+            config=Config(tcp_from_host=['20113']),
         )
         self.assertSuccess(result)
         self.assertEqual('hello', result.stdout)
@@ -111,7 +111,7 @@ class TestNet(TestBase):
         self.wait_port_bound(udp_server, 20113)
         result = self.sandbox_run(
             'bash -c "echo -n test | nc -4 -w 1 -u 127.0.0.1 20113"',
-            config=Config(udp_ports_from_host=['20113']),
+            config=Config(udp_from_host=['20113']),
         )
         self.assertSuccess(result)
         self.assertEqual('hello', result.stdout)
@@ -134,26 +134,26 @@ class TestNet(TestBase):
             {
                 'args': '-t foo',
                 'expected': ('Error: command line flags: '
-                             'invalid tcp_ports_to_host: '
+                             'invalid tcp_publish: '
                              'invalid port number \'foo\'')
             },
             {
                 'args': '-T 0',
                 'expected': ('Error: command line flags: '
-                             'invalid tcp_ports_from_host: '
+                             'invalid tcp_from_host: '
                              'port number out of range: 0')
             },
             {
                 'args': '-u auto -u 8080',
                 'expected': ('Error: command line flags: '
-                             'invalid udp_ports_to_host: '
+                             'invalid udp_publish: '
                              '"auto" must be the only '
                              'port forwarding rule')
             },
             {
                 'args': '-U foo.ip/8080:80',
                 'expected': ('Error: command line flags: '
-                             'invalid udp_ports_from_host: '
+                             'invalid udp_from_host: '
                              'invalid port forwarding '
                              'IP address: foo.ip')
             }

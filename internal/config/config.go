@@ -13,11 +13,11 @@ import (
 )
 
 type Net struct {
-	Mode             string   `toml:"mode"`
-	TCPPortsToHost   []string `toml:"tcp_ports_to_host"`
-	TCPPortsFromHost []string `toml:"tcp_ports_from_host"`
-	UDPPortsToHost   []string `toml:"udp_ports_to_host"`
-	UDPPortsFromHost []string `toml:"udp_ports_from_host"`
+	Mode        string   `toml:"mode"`
+	TCPPublish  []string `toml:"tcp_publish"`
+	TCPFromHost []string `toml:"tcp_from_host"`
+	UDPPublish  []string `toml:"udp_publish"`
+	UDPFromHost []string `toml:"udp_from_host"`
 }
 
 type Mount struct {
@@ -152,20 +152,20 @@ func Validate(cfg *Config) error {
 		return err
 	}
 
-	if err := validatePortForward(cfg.Net.TCPPortsToHost); err != nil {
-		return fmt.Errorf("invalid tcp_ports_to_host: %v", err)
+	if err := validatePortForward(cfg.Net.TCPPublish); err != nil {
+		return fmt.Errorf("invalid tcp_publish: %v", err)
 	}
 
-	if err := validatePortForward(cfg.Net.TCPPortsFromHost); err != nil {
-		return fmt.Errorf("invalid tcp_ports_from_host: %v", err)
+	if err := validatePortForward(cfg.Net.TCPFromHost); err != nil {
+		return fmt.Errorf("invalid tcp_from_host: %v", err)
 	}
 
-	if err := validatePortForward(cfg.Net.UDPPortsToHost); err != nil {
-		return fmt.Errorf("invalid udp_ports_to_host: %v", err)
+	if err := validatePortForward(cfg.Net.UDPPublish); err != nil {
+		return fmt.Errorf("invalid udp_publish: %v", err)
 	}
 
-	if err := validatePortForward(cfg.Net.UDPPortsFromHost); err != nil {
-		return fmt.Errorf("invalid udp_ports_from_host: %v", err)
+	if err := validatePortForward(cfg.Net.UDPFromHost); err != nil {
+		return fmt.Errorf("invalid udp_from_host: %v", err)
 	}
 	return nil
 }
