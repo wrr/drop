@@ -245,7 +245,7 @@ func validateNetworkMode(mode string) error {
 	case "off", "isolated", "unjailed":
 		return nil
 	default:
-		return fmt.Errorf("invalid network mode '%s': must be 'off', 'isolated', or 'unjailed'", mode)
+		return fmt.Errorf("invalid network mode '%s': must be 'off' or 'isolated'", mode)
 	}
 }
 

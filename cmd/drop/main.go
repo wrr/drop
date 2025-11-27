@@ -125,7 +125,7 @@ Mounts related options:
 
 Networking options:
   -net, -n value
-        Network mode: off, isolated, or unjailed
+        Network mode: off or isolated
   -tcp-ports-to-host, -t value
         Publish TCP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]
   -tcp-ports-from-host, -T value
@@ -587,12 +587,12 @@ func waitParentReady(childEnd *os.File) error {
 	return nil
 }
 
-// discardChildTermInjection checks if any input is pending on
-// the unjailed parent standard input and discards it.
+// discardChildTermInjection checks if any input is pending on the
+// parent standard input and discards it.
 //
-// This is to prevent the terminating jailed process from injecting
-// terminal input to the unjailed parent, thus executing code outside
-// of the jail.
+// This is to prevent the terminating sanboxed process from injecting
+// terminal input to the parent, thus executing code outside of the
+// sandbox.
 //
 // https://www.errno.fr/TTYPushback.html
 // https://www.openwall.com/lists/oss-security/2023/03/14/2

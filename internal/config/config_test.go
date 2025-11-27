@@ -389,7 +389,7 @@ udp_ports_from_host = ["invalid.ip/8080:80"]
 mode = "foo"
 `,
 			expected: Config{},
-			error:    "invalid network mode 'foo': must be 'off', 'isolated', or 'unjailed'",
+			error:    "invalid network mode 'foo': must be 'off' or 'isolated'",
 		},
 		{
 			name: "invalid mounts",
