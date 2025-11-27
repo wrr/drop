@@ -35,7 +35,7 @@ alice@shodan:~/code/web-app$ drop -e claude
 
 Notice that, unlike in Docker, upon entering Drop your username and
 the current path is preserved. You are also still using your
-distribution, so all your distro installed programs are 
+distribution, so all your distro installed programs are
 available. For example, if you have `ack-grep` installed to
 search code, you can use it:
 
@@ -64,17 +64,17 @@ Your home dir has only couple of files:
 
 Drop configuration file (by default stored in `~/.drop/config`)
 specifies which files should be exposed from your home dir to Drop
-home dir. Most or all config files that you expose to Drop should be
+home dir. Config files that you expose to Drop should in most cases be
 exposed read-only. This is because sandboxed programs shouldn't be
-able to write to any files that are executed outside of Drop (such as
-bash configs):
+able to write to any files that are executed outside of a sandbox
+(such as bash configs):
 
 ```console
 (drop)alice@shodan:~/code/web-app$ echo "evil-command" >> ~/.bashrc
 bash: /home/alice/.bashrc: Read-only file system
 ```
 
-Drop configuration also allow-lists which environment variables are
+Drop configuration also specifies which environment variables are
 exposed to Drop. Most environment variables, with the exception of the
 ones that store secrets, are safe to expose:
 ```console
@@ -136,7 +136,7 @@ all files installed within the env will be removed.
 The default Drop config makes the current working directory available
 for reading and writing (with the exception of the `.git` subdir), so you
 can start Claude Code, ask it to make changes, compile and run the
-project. Claude, like all programs that run in Drop is sandboxed, it can
+project. Claude, like all programs that run in Drop, is sandboxed, it can
 mess files in your project directory, but not other files in
 your system. Let's demonstrate this:
 
@@ -200,10 +200,10 @@ alice@shodan:~/code$ drop nc -v -4 localhost 11235
 nc: connect to localhost (127.0.0.1) port 11236 (tcp) failed: Connection refused
 ```
 
-In the examples above, you can see that Drop is started without `-e`
-argument which specifies id of the environment. If `-e` argument is
-missing, the current working directory is used to construct the
-environment id, in this case this will be `home-alice-code`.
+In the examples above, Drop is started without `-e` argument which
+normally specifies id of the environment. If `-e` argument is missing,
+the current working directory is used to construct the environment id,
+in this case the id is `home-alice-code`.
 
 ## Drop technical characteristics
 This list is intended as a quick overview of how Drop works for readers familiar with Linux internals.
@@ -223,9 +223,6 @@ This list is intended as a quick overview of how Drop works for readers familiar
   mode. On modern distros all of them except /etc and /usr are
   symlinks to subdirs of /usr.
 * Uses pasta for networking (requires passt/pasta package to be installed)
-* Mounts done on the host in directories exposed to Drop do not become
-  visible to currently running Drop instances.
-* Uses overlayfs to avoid polluting Drop home dirs with mount points.
 
 Drop environments with the same id:
 * share home dir and (less importantly) /var. By default these are
