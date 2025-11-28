@@ -46,10 +46,10 @@ class TestNet(TestBase):
             'https://passt.top/passt/about/#availability', result.stderr)
 
     def test_port_publish(self):
-        # expose TCP port 20112 from the sandbox to the host
+        # Publish TCP port 20112 from the sandbox
         tcp_server = self.sandbox_run_background(
             'bash -c "echo -n "hello" | nc -4 -v -l -p 20112"',
-            config=Config(tcp_publish=['20112']),
+            config=Config(tcp_published_ports=['20112']),
         )
         self.wait_port_bound(tcp_server, 20112)
         response = loopback_read_tcp(20112)
@@ -59,10 +59,10 @@ class TestNet(TestBase):
         result = self.wait_process_completed(tcp_server)
         self.assertEqual(0, result.returncode)
 
-        # expose UDP port 20112 from the sandbox to the host
+        # publish UDP port 20112 from the sandbox
         udp_server = self.sandbox_run_background(
             'bash -c "echo -n "hello" | nc -4 -v -W 1 -u -l -p 20112"',
-            config=Config(udp_publish=['20112']),
+            config=Config(udp_published_ports=['20112']),
         )
         self.wait_port_bound(udp_server, 20112)
         response = loopback_read_udp(20112)
@@ -71,8 +71,7 @@ class TestNet(TestBase):
         self.assertEqual(0, result.returncode)
 
     def test_port_not_published(self):
-        # Port 20114 is open, but not exposed from the sandbox to
-        # the host
+        # Port 20114 is open, but not published from the sandbox
         tcp_server = self.sandbox_run_background(
             'bash -c "echo -n "hello" | nc -4 -v -l -p 20114"')
         self.wait_port_bound(tcp_server, 20114)
@@ -98,7 +97,7 @@ class TestNet(TestBase):
         self.wait_port_bound(tcp_server, 20113)
         result = self.sandbox_run(
             'bash -c "nc -4 -w 1 127.0.0.1 20113"',
-            config=Config(tcp_from_host=['20113']),
+            config=Config(tcp_host_ports=['20113']),
         )
         self.assertSuccess(result)
         self.assertEqual('hello', result.stdout)
@@ -111,7 +110,7 @@ class TestNet(TestBase):
         self.wait_port_bound(udp_server, 20113)
         result = self.sandbox_run(
             'bash -c "echo -n test | nc -4 -w 1 -u 127.0.0.1 20113"',
-            config=Config(udp_from_host=['20113']),
+            config=Config(udp_host_ports=['20113']),
         )
         self.assertSuccess(result)
         self.assertEqual('hello', result.stdout)
@@ -133,29 +132,25 @@ class TestNet(TestBase):
         test_cases = [
             {
                 'args': '-t foo',
-                'expected': ('Error: command line flags: '
-                             'invalid tcp_publish: '
+                'expected': ('Error: command line -tcp-publish flag: '
                              'invalid port number \'foo\'')
             },
             {
                 'args': '-T 0',
-                'expected': ('Error: command line flags: '
-                             'invalid tcp_from_host: '
+                'expected': ('Error: command line -tcp-from-host flag: '
                              'port number out of range: 0')
             },
             {
                 'args': '-u auto -u 8080',
                 'expected': ('Error: command line flags: '
-                             'invalid udp_publish: '
+                             'invalid udp_published_ports: '
                              '"auto" must be the only '
-                             'port forwarding rule')
+                             'published port entry')
             },
             {
-                'args': '-U foo.ip/8080:80',
-                'expected': ('Error: command line flags: '
-                             'invalid udp_from_host: '
-                             'invalid port forwarding '
-                             'IP address: foo.ip')
+                'args': '-U foo',
+                'expected': ('Error: command line -udp-from-host flag: '
+                             'invalid port number \'foo\'')
             }
         ]
 

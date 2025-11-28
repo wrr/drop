@@ -157,19 +157,17 @@ mode = "isolated"
 #          and bound to ALL the host's IP addresses. This is
 #          convienient, but must be used with care, make sure the host
 #          has firewall configured to filter outside traffic.
-tcp_publish = []
+tcp_published_ports = []
+# UDP ports published exposed from the sandbox.
+udp_published_ports = []
 
 # Localhost TCP ports open on the host that the sandbox can access.
 # Entries have the form
 # HOST_PORT[:DROP_PORT]
 # If DROP_PORT is not specified, it equals to HOST_PORT
-tcp_from_host = []
-
-# UDP ports exposed from the sandbox to the host.
-udp_publish = []
-
-# UDP ports exposed from the host to the sandbox.
-udp_from_host = []
+tcp_host_ports = []
+# Localhost UDP ports open on the host that the sandbox can access.
+udp_host_ports = []
 `, toTomlString(pathsRODefault))
 
 	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {

@@ -8,8 +8,8 @@ import (
 	"github.com/wrr/drop/internal/osutil"
 )
 
-// expectStringSlicesEqual reports error if thw string slices differ
-func expectStringSlicesEqual(t *testing.T, fieldName string, actual, expected []string) {
+// expectSlicesEqual reports error if two slices differ
+func expectSlicesEqual[T comparable](t *testing.T, fieldName string, actual, expected []T) {
 	t.Helper()
 	if len(actual) != len(expected) {
 		t.Errorf("expected %s length %d, got %d", fieldName, len(expected), len(actual))
@@ -17,21 +17,7 @@ func expectStringSlicesEqual(t *testing.T, fieldName string, actual, expected []
 	}
 	for i, expectedItem := range expected {
 		if actual[i] != expectedItem {
-			t.Errorf("expected %s[%d] %s, got %s", fieldName, i, expectedItem, actual[i])
-		}
-	}
-}
-
-// expectMountSlicesEqual reports error if two Mount slices differ
-func expectMountSlicesEqual(t *testing.T, fieldName string, actual, expected []Mount) {
-	t.Helper()
-	if len(actual) != len(expected) {
-		t.Errorf("expected %s length %d, got %d", fieldName, len(expected), len(actual))
-		return
-	}
-	for i, expectedItem := range expected {
-		if actual[i] != expectedItem {
-			t.Errorf("expected %s[%d] = %+v, got %+v", fieldName, i, expectedItem, actual[i])
+			t.Errorf("expected %s[%d] %v, got %v", fieldName, i, expectedItem, actual[i])
 		}
 	}
 }
@@ -52,119 +38,263 @@ func checkError(expected string, got error) error {
 	return nil
 }
 
-func TestValidatePortForward(t *testing.T) {
+func TestParsePort(t *testing.T) {
 	tests := []struct {
-		name      string
-		portSpecs []string
-		error     string
+		name     string
+		input    string
+		expected int
+		error    string
 	}{
 		{
-			name:      "single port",
-			portSpecs: []string{"8080"},
-			error:     "",
+			name:     "valid port - 1",
+			input:    "1",
+			expected: 1,
+			error:    "",
 		},
 		{
-			name:      "host:guest port mapping",
-			portSpecs: []string{"8080:80"},
-			error:     "",
+			name:     "valid port - 65535",
+			input:    "65535",
+			expected: 65535,
+			error:    "",
 		},
 		{
-			name:      "IP/host:guest port mapping",
-			portSpecs: []string{"127.0.0.1/8080:80"},
-			error:     "",
+			name:     "valid port - 4000",
+			input:    "4000",
+			expected: 4000,
+			error:    "",
 		},
 		{
-			name:      "Multiple valid rules",
-			portSpecs: []string{"8080", "8080:80", "127.0.0.1/8080:80", "1200"},
-			error:     "",
+			name:     "invalid port number - non-numeric",
+			input:    "abc",
+			expected: -1,
+			error:    "invalid port number 'abc'",
 		},
 		{
-			name:      "invalid port number - non-numeric",
-			portSpecs: []string{"8080:80", "abc"},
-			error:     "invalid port number 'abc'",
+			name:     "invalid port number - out of range low",
+			input:    "0",
+			expected: -1,
+			error:    "port number out of range: 0",
 		},
 		{
-			name:      "invalid port number - out of range low",
-			portSpecs: []string{"0"},
-			error:     "port number out of range: 0",
-		},
-		{
-			name:      "invalid port number - out of range high",
-			portSpecs: []string{"65536"},
-			error:     "port number out of range: 65536",
-		},
-		{
-			name:      "invalid guest port - non-numeric",
-			portSpecs: []string{"8080:abc"},
-			error:     "invalid port number 'abc'",
-		},
-		{
-			name:      "invalid IP address",
-			portSpecs: []string{"invalid.ip/8080:80"},
-			error:     "invalid port forwarding IP address: invalid.ip",
-		},
-		{
-			name:      "Multiple IP addresses",
-			portSpecs: []string{"127.0.0.1/8080:127.0.0.1/8080"},
-			error:     "invalid port forwarding format",
-		},
-		{
-			name:      "too many parts",
-			portSpecs: []string{"127.0.0.1/8080:80:443"},
-			error:     "invalid port forwarding format",
-		},
-		{
-			name:      "empty string",
-			portSpecs: []string{""},
-			error:     "invalid port number",
-		},
-		{
-			name:      "minimum valid port",
-			portSpecs: []string{"1"},
-			error:     "",
-		},
-		{
-			name:      "maximum valid port",
-			portSpecs: []string{"65535"},
-			error:     "",
-		},
-		{
-			name:      "IP with single port",
-			portSpecs: []string{"192.168.1.1/8000"},
-			error:     "",
-		},
-		{
-			name:      "Three ports",
-			portSpecs: []string{"124:200:8000"},
-			error:     "invalid port forwarding format",
-		},
-		{
-			name:      "auto with other ports",
-			portSpecs: []string{"auto", "8080"},
-			error:     "\"auto\" must be the only port forwarding rule",
-		},
-		{
-			name:      "none with other ports",
-			portSpecs: []string{"none", "8080:80"},
-			error:     "\"none\" must be the only port forwarding rule",
-		},
-		{
-			name:      "auto alone",
-			portSpecs: []string{"auto"},
-			error:     "",
-		},
-		{
-			name:      "none alone",
-			portSpecs: []string{"none"},
-			error:     "",
+			name:     "invalid port number - out of range high",
+			input:    "65536",
+			expected: -1,
+			error:    "port number out of range: 65536",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePortForward(tt.portSpecs)
+			result, err := parsePort(tt.input)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
+			}
+			if result != tt.expected {
+				t.Errorf("expected %d, got %d", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestParsePublishedPort(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected PublishedPort
+		error    string
+	}{
+		{
+			name:  "single port",
+			input: "8080",
+			expected: PublishedPort{
+				HostIP:    "127.0.0.1",
+				HostPort:  8080,
+				GuestPort: 8080,
+			},
+			error: "",
+		},
+		{
+			name:  "host:guest port mapping",
+			input: "8080:80",
+			expected: PublishedPort{
+				HostIP:    "127.0.0.1",
+				HostPort:  8080,
+				GuestPort: 80,
+			},
+			error: "",
+		},
+		{
+			name:  "IP/host:guest port mapping",
+			input: "192.168.1.12/8080:80",
+			expected: PublishedPort{
+				HostIP:    "192.168.1.12",
+				HostPort:  8080,
+				GuestPort: 80,
+			},
+			error: "",
+		},
+		{
+			name:     "invalid port number - non-numeric",
+			input:    "abc",
+			expected: PublishedPort{},
+			error:    "invalid port number 'abc'",
+		},
+		{
+			name:     "invalid port number - out of range low",
+			input:    "0",
+			expected: PublishedPort{},
+			error:    "port number out of range: 0",
+		},
+		{
+			name:     "invalid port number - out of range high",
+			input:    "65536",
+			expected: PublishedPort{},
+			error:    "port number out of range: 65536",
+		},
+		{
+			name:     "invalid guest port - non-numeric",
+			input:    "8080:abc",
+			expected: PublishedPort{},
+			error:    "invalid port number 'abc'",
+		},
+		{
+			name:     "invalid IP address",
+			input:    "invalid.ip/8080:80",
+			expected: PublishedPort{},
+			error:    "invalid port publish IP address: invalid.ip",
+		},
+		{
+			name:     "Multiple IP addresses",
+			input:    "127.0.0.1/8080:127.0.0.1/8080",
+			expected: PublishedPort{},
+			error:    "invalid port publish format",
+		},
+		{
+			name:     "too many parts",
+			input:    "127.0.0.1/8080:80:443",
+			expected: PublishedPort{},
+			error:    "invalid port forwarding format",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: PublishedPort{},
+			error:    "invalid port number",
+		},
+		{
+			name:  "minimum valid port",
+			input: "1",
+			expected: PublishedPort{
+				HostIP:    "127.0.0.1",
+				HostPort:  1,
+				GuestPort: 1,
+			},
+			error: "",
+		},
+		{
+			name:  "maximum valid port",
+			input: "65535",
+			expected: PublishedPort{
+				HostIP:    "127.0.0.1",
+				HostPort:  65535,
+				GuestPort: 65535,
+			},
+			error: "",
+		},
+		{
+			name:  "IP with single port",
+			input: "192.168.1.1/8000",
+			expected: PublishedPort{
+				HostIP:    "192.168.1.1",
+				HostPort:  8000,
+				GuestPort: 8000,
+			},
+			error: "",
+		},
+		{
+			name:  "auto",
+			input: "auto",
+			expected: PublishedPort{
+				Auto: true,
+			},
+			error: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ParsePublishedPort(tt.input)
+			if terr := checkError(tt.error, err); terr != nil {
+				t.Fatal(terr)
+			}
+			if tt.error != "" {
+				return
+			}
+			if result == nil {
+				t.Fatal("expected result but got nil")
+			}
+			if *result != tt.expected {
+				t.Errorf("expected %+v, got %+v", tt.expected, *result)
+			}
+		})
+	}
+}
+
+func TestParseHostPort(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected HostPort
+		error    string
+	}{
+		{
+			name:  "single port",
+			input: "8080",
+			expected: HostPort{
+				HostPort:  8080,
+				GuestPort: 8080,
+			},
+			error: "",
+		},
+		{
+			name:  "host:guest port mapping",
+			input: "3000:8080",
+			expected: HostPort{
+				HostPort:  3000,
+				GuestPort: 8080,
+			},
+			error: "",
+		},
+		{
+			name:  "auto",
+			input: "auto",
+			expected: HostPort{
+				Auto: true,
+			},
+			error: "",
+		},
+		{
+			name:     "invalid port number",
+			input:    "abc",
+			expected: HostPort{},
+			error:    "invalid port number 'abc'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ParseHostPort(tt.input)
+			if terr := checkError(tt.error, err); terr != nil {
+				t.Fatal(terr)
+			}
+			if tt.error != "" {
+				return
+			}
+			if result == nil {
+				t.Fatal("expected result but got nil")
+			}
+			if *result != tt.expected {
+				t.Errorf("expected %+v, got %+v", tt.expected, *result)
 			}
 		})
 	}
@@ -182,18 +312,18 @@ func TestParseNetConfig(t *testing.T) {
 			tomlStr: `
 [net]
 mode = "isolated"
-tcp_publish = ["auto"]
-tcp_from_host = ["8080", "3000:3001"]
-udp_publish = ["5000"]
-udp_from_host = ["192.168.1.1/12000:1700", "9000"]
+tcp_published_ports = ["auto"]
+tcp_host_ports = ["8080", "3000:3001"]
+udp_published_ports = ["5000"]
+udp_host_ports = ["12000:1700", "9000"]
 `,
 			expected: Config{
 				Net: Net{
-					Mode:        "isolated",
-					TCPPublish:  []string{"auto"},
-					TCPFromHost: []string{"8080", "3000:3001"},
-					UDPPublish:  []string{"5000"},
-					UDPFromHost: []string{"192.168.1.1/12000:1700", "9000"},
+					Mode:              "isolated",
+					TCPPublishedPorts: []PublishedPort{{Auto: true}},
+					TCPHostPorts:      []HostPort{{HostPort: 8080, GuestPort: 8080}, {HostPort: 3000, GuestPort: 3001}},
+					UDPPublishedPorts: []PublishedPort{{HostIP: "127.0.0.1", HostPort: 5000, GuestPort: 5000}},
+					UDPHostPorts:      []HostPort{{HostPort: 12000, GuestPort: 1700}, {HostPort: 9000, GuestPort: 9000}},
 				},
 			},
 			error: "",
@@ -203,18 +333,18 @@ udp_from_host = ["192.168.1.1/12000:1700", "9000"]
 			tomlStr: `
 [net]
 mode = "off"
-tcp_publish = []
-tcp_from_host = []
-udp_publish = []
-udp_from_host = []
+tcp_published_ports = []
+tcp_host_ports = []
+udp_published_ports = []
+udp_host_ports = []
 `,
 			expected: Config{
 				Net: Net{
-					Mode:        "off",
-					TCPPublish:  []string{},
-					TCPFromHost: []string{},
-					UDPPublish:  []string{},
-					UDPFromHost: []string{},
+					Mode:              "off",
+					TCPPublishedPorts: []PublishedPort{},
+					TCPHostPorts:      []HostPort{},
+					UDPPublishedPorts: []PublishedPort{},
+					UDPHostPorts:      []HostPort{},
 				},
 			},
 			error: "",
@@ -224,11 +354,11 @@ udp_from_host = []
 			tomlStr: ``,
 			expected: Config{
 				Net: Net{
-					Mode:        "isolated", // default
-					TCPPublish:  nil,
-					TCPFromHost: nil,
-					UDPPublish:  nil,
-					UDPFromHost: nil,
+					Mode:              "isolated", // default
+					TCPPublishedPorts: []PublishedPort{},
+					TCPHostPorts:      nil,
+					UDPPublishedPorts: []PublishedPort{},
+					UDPHostPorts:      nil,
 				},
 			},
 			error: "",
@@ -252,10 +382,10 @@ udp_from_host = []
 			if got.Mode != expected.Mode {
 				t.Errorf("expected Mode '%s', got '%s'", expected.Mode, got.Mode)
 			}
-			expectStringSlicesEqual(t, "TCPPublish", got.TCPPublish, expected.TCPPublish)
-			expectStringSlicesEqual(t, "TCPFromHost", got.TCPFromHost, expected.TCPFromHost)
-			expectStringSlicesEqual(t, "UDPPublish", got.UDPPublish, expected.UDPPublish)
-			expectStringSlicesEqual(t, "UDPFromHost", got.UDPFromHost, expected.UDPFromHost)
+			expectSlicesEqual(t, "TCPPublishedPorts", got.TCPPublishedPorts, expected.TCPPublishedPorts)
+			expectSlicesEqual(t, "TCPHostPorts", got.TCPHostPorts, expected.TCPHostPorts)
+			expectSlicesEqual(t, "UDPPublishedPorts", got.UDPPublishedPorts, expected.UDPPublishedPorts)
+			expectSlicesEqual(t, "UDPHostPorts", got.UDPHostPorts, expected.UDPHostPorts)
 		})
 	}
 }
@@ -282,10 +412,10 @@ cwd.mounts = [".::rw", ".git"]
 cwd.blocked_paths = [".github"]
 [net]
 mode = "isolated"
-tcp_publish = ["8080", "3000:3001"]
-tcp_from_host = ["auto"]
-udp_publish = ["5000"]
-udp_from_host = ["192.168.1.1/12000:1700", "9000"]
+tcp_published_ports = ["8080", "3000:3001"]
+tcp_host_ports = ["auto"]
+udp_published_ports = ["5000"]
+udp_host_ports = ["12000:1700", "9000"]
 `,
 			expected: Config{
 				Mounts: []Mount{
@@ -304,11 +434,14 @@ udp_from_host = ["192.168.1.1/12000:1700", "9000"]
 				},
 				ExposedEnvVars: []string{"HOME", "PATH", "LC_*"},
 				Net: Net{
-					Mode:        "isolated",
-					TCPPublish:  []string{"8080", "3000:3001"},
-					TCPFromHost: []string{"auto"},
-					UDPPublish:  []string{"5000"},
-					UDPFromHost: []string{"192.168.1.1/12000:1700", "9000"},
+					Mode: "isolated",
+					TCPPublishedPorts: []PublishedPort{
+						{HostIP: "127.0.0.1", HostPort: 8080, GuestPort: 8080},
+						{HostIP: "127.0.0.1", HostPort: 3000, GuestPort: 3001},
+					},
+					TCPHostPorts:      []HostPort{{Auto: true}},
+					UDPPublishedPorts: []PublishedPort{{HostIP: "127.0.0.1", HostPort: 5000, GuestPort: 5000}},
+					UDPHostPorts:      []HostPort{{HostPort: 12000, GuestPort: 1700}, {HostPort: 9000, GuestPort: 9000}},
 				},
 			},
 			error: "",
@@ -321,11 +454,11 @@ udp_from_host = ["192.168.1.1/12000:1700", "9000"]
 				BlockedPaths:   nil,
 				ExposedEnvVars: nil,
 				Net: Net{
-					Mode:        "isolated", // default
-					TCPPublish:  nil,
-					TCPFromHost: nil,
-					UDPPublish:  nil,
-					UDPFromHost: nil,
+					Mode:              "isolated", // default
+					TCPPublishedPorts: []PublishedPort{},
+					TCPHostPorts:      nil,
+					UDPPublishedPorts: []PublishedPort{},
+					UDPHostPorts:      nil,
 				},
 			},
 			error: "",
@@ -347,40 +480,85 @@ home_visible = [invalid syntax
 			error:    "failed to parse config",
 		},
 		{
-			name: "invalid tcp_publish",
+			name: "invalid tcp_published_ports, not a string",
 			tomlStr: `
 [net]
-tcp_publish = ["8080", "invalid_port"]
+tcp_published_ports = [8080]
 `,
 			expected: Config{},
-			error:    "invalid tcp_publish",
+			error:    "published port entry should be a string",
 		},
 		{
-			name: "invalid tcp_from_host",
+			name: "invalid tcp_published_ports",
 			tomlStr: `
 [net]
-tcp_from_host = ["8080", "auto"]
+tcp_published_ports = ["8080", "invalid_port"]
 `,
 			expected: Config{},
-			error:    "invalid tcp_from_host: \"auto\" must be the only port forwarding rule",
+			error:    "invalid port number 'invalid_port'",
 		},
 		{
-			name: "invalid udp_publish",
+			name: "invalid tcp_host_ports, not a string",
 			tomlStr: `
 [net]
-udp_publish = ["0"]
+tcp_host_ports = [8080]
 `,
 			expected: Config{},
-			error:    "invalid udp_publish: port number out of range: 0",
+			error:    "host port entry should be a string",
 		},
 		{
-			name: "invalid udp_from_host",
+			name: "invalid tcp_published_ports, auto not the only option",
 			tomlStr: `
 [net]
-udp_from_host = ["invalid.ip/8080:80"]
+tcp_published_ports = ["8080", "auto"]
 `,
 			expected: Config{},
-			error:    "invalid udp_from_host: invalid port forwarding IP address: invalid.ip",
+			error:    "invalid tcp_published_ports: \"auto\" must be the only published port entry",
+		},
+		{
+			name: "invalid udp_published_ports, auto not the only option",
+			tomlStr: `
+[net]
+udp_published_ports = ["8080", "auto"]
+`,
+			expected: Config{},
+			error:    "invalid udp_published_ports: \"auto\" must be the only published port entry",
+		},
+		{
+			name: "invalid tcp_host_ports, auto not the only option",
+			tomlStr: `
+[net]
+tcp_host_ports = ["8080", "auto"]
+`,
+			expected: Config{},
+			error:    "invalid tcp_host_ports: \"auto\" must be the only host port entry",
+		},
+		{
+			name: "invalid udp_host_ports, auto not the only option",
+			tomlStr: `
+[net]
+udp_host_ports = ["8080", "auto"]
+`,
+			expected: Config{},
+			error:    "invalid udp_host_ports: \"auto\" must be the only host port entry",
+		},
+		{
+			name: "invalid udp_published_ports",
+			tomlStr: `
+[net]
+udp_published_ports = ["0"]
+`,
+			expected: Config{},
+			error:    "port number out of range: 0",
+		},
+		{
+			name: "invalid udp_host_ports",
+			tomlStr: `
+[net]
+udp_host_ports = ["abc"]
+`,
+			expected: Config{},
+			error:    "invalid port number 'abc'",
 		},
 		{
 			name: "invalid net mode",
@@ -392,7 +570,15 @@ mode = "foo"
 			error:    "invalid network mode 'foo': must be 'off' or 'isolated'",
 		},
 		{
-			name: "invalid mounts",
+			name: "invalid mount format",
+			tomlStr: `
+mounts = ["/tmp:/tmp2:/tmp3:rw"]
+`,
+			expected: Config{},
+			error:    "mount config has too many parts separated by ':'",
+		},
+		{
+			name: "invalid mounts, not normalized path",
 			tomlStr: `
 mounts = ["/home/../invalid"]
 `,
@@ -463,19 +649,19 @@ cwd.blocked_paths = ["../../foo"]
 				t.Fatalf("expected result but got nil")
 			}
 
-			expectMountSlicesEqual(t, "Mounts", result.Mounts, tt.expected.Mounts)
-			expectStringSlicesEqual(t, "BlockedPaths", result.BlockedPaths, tt.expected.BlockedPaths)
-			expectMountSlicesEqual(t, "Cwd.Mounts", result.Cwd.Mounts, tt.expected.Cwd.Mounts)
-			expectStringSlicesEqual(t, "Cwd.BlockedPaths", result.Cwd.BlockedPaths, tt.expected.Cwd.BlockedPaths)
-			expectStringSlicesEqual(t, "ExposedEnvVars", result.ExposedEnvVars, tt.expected.ExposedEnvVars)
+			expectSlicesEqual(t, "Mounts", result.Mounts, tt.expected.Mounts)
+			expectSlicesEqual(t, "BlockedPaths", result.BlockedPaths, tt.expected.BlockedPaths)
+			expectSlicesEqual(t, "Cwd.Mounts", result.Cwd.Mounts, tt.expected.Cwd.Mounts)
+			expectSlicesEqual(t, "Cwd.BlockedPaths", result.Cwd.BlockedPaths, tt.expected.Cwd.BlockedPaths)
+			expectSlicesEqual(t, "ExposedEnvVars", result.ExposedEnvVars, tt.expected.ExposedEnvVars)
 
 			if result.Net.Mode != tt.expected.Net.Mode {
 				t.Errorf("expected Net.Mode '%s', got '%s'", tt.expected.Net.Mode, result.Net.Mode)
 			}
-			expectStringSlicesEqual(t, "Net.TCPPublish", result.Net.TCPPublish, tt.expected.Net.TCPPublish)
-			expectStringSlicesEqual(t, "Net.TCPFromHost", result.Net.TCPFromHost, tt.expected.Net.TCPFromHost)
-			expectStringSlicesEqual(t, "Net.UDPPublish", result.Net.UDPPublish, tt.expected.Net.UDPPublish)
-			expectStringSlicesEqual(t, "Net.UDPFromHost", result.Net.UDPFromHost, tt.expected.Net.UDPFromHost)
+			expectSlicesEqual(t, "Net.TCPPublishedPorts", result.Net.TCPPublishedPorts, tt.expected.Net.TCPPublishedPorts)
+			expectSlicesEqual(t, "Net.TCPHostPorts", result.Net.TCPHostPorts, tt.expected.Net.TCPHostPorts)
+			expectSlicesEqual(t, "Net.UDPPublishedPorts", result.Net.UDPPublishedPorts, tt.expected.Net.UDPPublishedPorts)
+			expectSlicesEqual(t, "Net.UDPHostPorts", result.Net.UDPHostPorts, tt.expected.Net.UDPHostPorts)
 		})
 	}
 }
@@ -769,7 +955,7 @@ mounts = ["~/.bashrc", {source = "/usr/bin", target = "bin"}]
 			if tt.error != "" {
 				return
 			}
-			expectMountSlicesEqual(t, "Mounts", result.Mounts, tt.expected)
+			expectSlicesEqual(t, "Mounts", result.Mounts, tt.expected)
 		})
 	}
 }

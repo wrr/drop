@@ -44,11 +44,11 @@ type Flags struct {
 
 	// These flags are not currently passed from the parent to the child
 	// process, because child does not use them.
-	beRoot           bool
-	tcpPortsToHost   []string
-	tcpPortsFromHost []string
-	udpPortsToHost   []string
-	udpPortsFromHost []string
+	beRoot            bool
+	tcpPublishedPorts []string
+	tcpHostPorts      []string
+	udpPublishedPorts []string
+	udpHostPorts      []string
 
 	// Internal flags passed only to the child process.
 	runDir  string
@@ -119,21 +119,39 @@ Mounts related options:
         entry exposes the CWD.
   -mount, -m value
         Add a mount to the list of mounts from the TOML config file.
-        The flag can be passed multiple times.
+        The flag can be repeated.
         Format: source[:target][:rw]
         Examples: -m /mnt -m /tmp:/host-tmp -m ~/my-project::rw
 
 Networking options:
   -net, -n value
         Network mode: off or isolated
-  -tcp-ports-to-host, -t value
-        Publish TCP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]
-  -tcp-ports-from-host, -T value
-        Publish TCP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]
-  -udp-ports-to-host, -u value
-        Publish UDP port(s) to the host. Format: [hostIP/]hostPort[:sandboxPort]
-  -udp-ports-from-host, -U value
-        Publish UDP port(s) from the host. Format: [hostIP/]hostPort[:sandboxPort]
+
+  Port publishing from the sandbox:
+    -tcp-publish, -t value
+          Publish a TCP port from the sandbox.
+    -udp-publish, -u value
+          Publish a UDP port from the sandbox.
+     Format: [hostIP/]hostPort[:sandboxPort]
+     By default the published ports are bound only to localhost, to
+     bind a port to all available IP addresses pass 0.0.0.0 as the
+     hostIP.
+     A value "auto" automatically publishes all ports bound in the
+     sandbox on ALL available IP addresses (use "auto" only with
+     firewall blocking external connection to the machine).
+
+  Making host ports bound to localhost available in the sandbox:
+    -tcp-host, -T value
+          Make a TCP port from the host available in the sandbox.
+    -udp-host, -U value
+          Make a UDP port from the host available in the sandbox.
+     Format: hostPort[:sandboxPort]
+     A value "auto" makes all the localhost ports available in the
+     sandbox.
+
+  All port forwarding flags can be repeated.
+  Ports configured via flags add to the ports configured via the
+  config file.
 
   -help, -h
         Show help
@@ -155,14 +173,14 @@ Networking options:
 	flag.BoolVar(&f.beRoot, "r", false, "")
 	flag.StringVar(&f.networkMode, "net", "", "")
 	flag.StringVar(&f.networkMode, "n", "", "")
-	flag.Var((*stringSlice)(&f.tcpPortsToHost), "tcp-ports-to-host", "")
-	flag.Var((*stringSlice)(&f.tcpPortsToHost), "t", "")
-	flag.Var((*stringSlice)(&f.tcpPortsFromHost), "tcp-ports-from-host", "")
-	flag.Var((*stringSlice)(&f.tcpPortsFromHost), "T", "")
-	flag.Var((*stringSlice)(&f.udpPortsToHost), "udp-ports-to-host", "")
-	flag.Var((*stringSlice)(&f.udpPortsToHost), "u", "")
-	flag.Var((*stringSlice)(&f.udpPortsFromHost), "udp-ports-from-host", "")
-	flag.Var((*stringSlice)(&f.udpPortsFromHost), "U", "")
+	flag.Var((*stringSlice)(&f.tcpPublishedPorts), "tcp-publish", "")
+	flag.Var((*stringSlice)(&f.tcpPublishedPorts), "t", "")
+	flag.Var((*stringSlice)(&f.tcpHostPorts), "tcp-host", "")
+	flag.Var((*stringSlice)(&f.tcpHostPorts), "T", "")
+	flag.Var((*stringSlice)(&f.udpPublishedPorts), "udp-publish", "")
+	flag.Var((*stringSlice)(&f.udpPublishedPorts), "u", "")
+	flag.Var((*stringSlice)(&f.udpHostPorts), "udp-host", "")
+	flag.Var((*stringSlice)(&f.udpHostPorts), "U", "")
 
 	if isChild {
 		// child only flags constructed by the parent process.
@@ -220,17 +238,34 @@ func flagsToConfig(cfg *config.Config, flags *Flags) error {
 	if flags.networkMode != "" {
 		cfg.Net.Mode = flags.networkMode
 	}
-	if len(flags.tcpPortsToHost) > 0 {
-		cfg.Net.TCPPublish = flags.tcpPortsToHost
+	if len(flags.tcpPublishedPorts) > 0 {
+		p, err := parsePublishPortFlags(flags.tcpPublishedPorts)
+		if err != nil {
+			return fmt.Errorf("command line -tcp-publish flag: %v", err)
+		}
+		cfg.Net.TCPPublishedPorts = append(cfg.Net.TCPPublishedPorts, p...)
 	}
-	if len(flags.tcpPortsFromHost) > 0 {
-		cfg.Net.TCPFromHost = flags.tcpPortsFromHost
+	if len(flags.tcpHostPorts) > 0 {
+		p, err := parseHostPortFlags(flags.tcpHostPorts)
+		if err != nil {
+			return fmt.Errorf("command line -tcp-host flag: %v", err)
+		}
+		cfg.Net.TCPHostPorts = append(cfg.Net.TCPHostPorts, p...)
+
 	}
-	if len(flags.udpPortsToHost) > 0 {
-		cfg.Net.UDPPublish = flags.udpPortsToHost
+	if len(flags.udpPublishedPorts) > 0 {
+		p, err := parsePublishPortFlags(flags.udpPublishedPorts)
+		if err != nil {
+			return fmt.Errorf("command line -udp-publish flag: %v", err)
+		}
+		cfg.Net.UDPPublishedPorts = append(cfg.Net.UDPPublishedPorts, p...)
 	}
-	if len(flags.udpPortsFromHost) > 0 {
-		cfg.Net.UDPFromHost = flags.udpPortsFromHost
+	if len(flags.udpHostPorts) > 0 {
+		p, err := parseHostPortFlags(flags.udpHostPorts)
+		if err != nil {
+			return fmt.Errorf("command line -udp-host flag: %v", err)
+		}
+		cfg.Net.UDPHostPorts = append(cfg.Net.UDPHostPorts, p...)
 	}
 	if flags.noCwd {
 		cfg.Cwd.Mounts = nil
@@ -242,6 +277,30 @@ func flagsToConfig(cfg *config.Config, flags *Flags) error {
 		return fmt.Errorf("command line flags: %v", err)
 	}
 	return nil
+}
+
+func parsePublishPortFlags(flags []string) ([]config.PublishedPort, error) {
+	var result []config.PublishedPort
+	for _, spec := range flags {
+		p, err := config.ParsePublishedPort(spec)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *p)
+	}
+	return result, nil
+}
+
+func parseHostPortFlags(flags []string) ([]config.HostPort, error) {
+	var result []config.HostPort
+	for _, spec := range flags {
+		p, err := config.ParseHostPort(spec)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *p)
+	}
+	return result, nil
 }
 
 func main() {
@@ -307,10 +366,10 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	if (len(flags.tcpPortsToHost) > 0 ||
-		len(flags.tcpPortsFromHost) > 0 ||
-		len(flags.udpPortsToHost) > 0 ||
-		len(flags.udpPortsFromHost) > 0) &&
+	if (len(flags.tcpPublishedPorts) > 0 ||
+		len(flags.tcpHostPorts) > 0 ||
+		len(flags.udpPublishedPorts) > 0 ||
+		len(flags.udpHostPorts) > 0) &&
 		cfg.Net.Mode != "isolated" {
 		return 1, fmt.Errorf("port forwarding is only supported with isolated network mode (-n isolated)")
 	}

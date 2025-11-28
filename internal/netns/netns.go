@@ -13,20 +13,54 @@ import (
 	"github.com/wrr/drop/internal/config"
 )
 
-// portMappingArgs returns pasta port mapping arguments. If the mappings list
-// is empty, the port mapping is disabled with the "none"
-// argument. Each mapping is translated to a separate pasta argument,
-// for example: --tcp-ports 80:8000 --tcp-ports 5000
-func portMappingArgs(argName string, mappings []string) []string {
+// hostPortArgs and publishedPortArgs return pasta port mapping
+// arguments. If the mappings list is empty, the port mapping is
+// disabled with the "none" argument. Each mapping is translated to a
+// separate pasta argument, for example: --tcp-ns 80:8000
+// --tcp-ns 5000
+func hostPortArgs(argName string, mappings []config.HostPort) []string {
+	if len(mappings) == 0 {
+		return []string{argName, "none"}
+	}
+	var args []string
+	for _, m := range mappings {
+		if m.Auto {
+			args = append(args, argName, "auto")
+		} else {
+			// Note: pasta --tcp-ns and --udp-ns use guest port first
+			// convention(guestPort[:hostPort]), Drop doesn't follow this
+			// convention in its config:
+			portSpec := fmt.Sprintf("%d", m.GuestPort)
+			if m.HostPort != m.GuestPort {
+				portSpec += fmt.Sprintf(":%d", m.HostPort)
+			}
+			args = append(args, argName, portSpec)
+		}
+	}
+	return args
+}
+
+func publishedPortArgs(argName string, mappings []config.PublishedPort) []string {
 	if len(mappings) == 0 {
 		return []string{argName, "none"}
 	}
 
-	var result []string
-	for _, mapping := range mappings {
-		result = append(result, argName, mapping)
+	var args []string
+	for _, m := range mappings {
+		if m.Auto {
+			args = append(args, argName, "auto")
+		} else {
+			// Format: hostIP/hostPort[:guestPort]
+			// Always include HostIP, when it is missing pasta defaults to
+			// all addresses, but Drop defaults to only localhost address.
+			argValue := fmt.Sprintf("%s/%d", m.HostIP, m.HostPort)
+			if m.HostPort != m.GuestPort {
+				argValue += fmt.Sprintf(":%d", m.GuestPort)
+			}
+			args = append(args, argName, argValue)
+		}
 	}
-	return result
+	return args
 }
 
 // StartPasta starts pasta to provide network connectivity
@@ -52,16 +86,16 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 	}
 
 	// TCP ports open in the namespace that are accessible from the host.
-	pastaArgs = append(pastaArgs, portMappingArgs("--tcp-ports", netConfig.TCPPublish)...)
+	pastaArgs = append(pastaArgs, publishedPortArgs("--tcp-ports", netConfig.TCPPublishedPorts)...)
 	// TCP ports open on the host that are accessible from the namespace.
 	// This mapping is also needed to allow Drop instances to connect
 	// to one another (one instance exposes a port to host with
 	// --tcp-port and the other needs --tcp-ns to be able connect to
 	// this port.
-	pastaArgs = append(pastaArgs, portMappingArgs("--tcp-ns", netConfig.TCPFromHost)...)
+	pastaArgs = append(pastaArgs, hostPortArgs("--tcp-ns", netConfig.TCPHostPorts)...)
 	// The same, but for the UDP ports
-	pastaArgs = append(pastaArgs, portMappingArgs("--udp-ports", netConfig.UDPPublish)...)
-	pastaArgs = append(pastaArgs, portMappingArgs("--udp-ns", netConfig.UDPFromHost)...)
+	pastaArgs = append(pastaArgs, publishedPortArgs("--udp-ports", netConfig.UDPPublishedPorts)...)
+	pastaArgs = append(pastaArgs, hostPortArgs("--udp-ns", netConfig.UDPHostPorts)...)
 
 	pastaArgs = append(pastaArgs, fmt.Sprintf("%d", jailedPid))
 

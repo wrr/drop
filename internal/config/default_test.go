@@ -7,11 +7,9 @@ import (
 	"testing"
 )
 
-func expectEmptyList(t *testing.T, name string, l []string) {
+func expectEmptyList[T any](t *testing.T, name string, l []T) {
 	t.Helper()
-	if l == nil {
-		t.Errorf("Expected %s to be not nil", name)
-	} else if len(l) != 0 {
+	if len(l) != 0 {
 		t.Errorf("Expected %s to be empty, got %v", name, l)
 	}
 }
@@ -57,10 +55,10 @@ func TestWriteDefault(t *testing.T) {
 		t.Errorf("Expected default net mode 'isolated', got %s", net.Mode)
 	}
 
-	expectEmptyList(t, "tcp_publish", net.TCPPublish)
-	expectEmptyList(t, "tcp_from_host", net.TCPFromHost)
-	expectEmptyList(t, "udp_publish", net.UDPPublish)
-	expectEmptyList(t, "udp_from_host", net.UDPFromHost)
+	expectEmptyList(t, "tcp_published_ports", net.TCPPublishedPorts)
+	expectEmptyList(t, "tcp_host_ports", net.TCPHostPorts)
+	expectEmptyList(t, "udp_published_ports", net.UDPPublishedPorts)
+	expectEmptyList(t, "udp_host_ports", net.UDPHostPorts)
 }
 
 func TestFilterExistingEntries(t *testing.T) {

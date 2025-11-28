@@ -22,10 +22,10 @@ class Config:
                  cwd_mounts: List[str] = None,
                  cwd_blocked_paths: List[str] = None,
                  exposed_env_vars: List[str] = None,
-                 tcp_publish: List[str] = None,
-                 tcp_from_host: List[str] = None,
-                 udp_publish: List[str] = None,
-                 udp_from_host: List[str] = None):
+                 tcp_published_ports: List[str] = None,
+                 tcp_host_ports: List[str] = None,
+                 udp_published_ports: List[str] = None,
+                 udp_host_ports: List[str] = None):
         self.mounts = mounts or []
         # Always expose the directory where test coverage data is
         # stored, to ensure all tests can write coverage data.
@@ -35,10 +35,10 @@ class Config:
         self.cwd_mounts = cwd_mounts or ['.::rw']
         self.cwd_blocked_paths = cwd_blocked_paths or []
         self.exposed_env_vars = exposed_env_vars or []
-        self.tcp_publish = tcp_publish or []
-        self.tcp_from_host = tcp_from_host or []
-        self.udp_publish = udp_publish or []
-        self.udp_from_host = udp_from_host or []
+        self.tcp_published_ports = tcp_published_ports or []
+        self.tcp_host_ports = tcp_host_ports or []
+        self.udp_published_ports = udp_published_ports or []
+        self.udp_host_ports = udp_host_ports or []
 
     def toml(self) -> str:
         """Return configuration as TOML string"""
@@ -50,10 +50,10 @@ class Config:
             f'exposed_env_vars = {str(self.exposed_env_vars)}',
             '',
             '[net]',
-            f'tcp_publish = {str(self.tcp_publish)}',
-            f'tcp_from_host = {str(self.tcp_from_host)}',
-            f'udp_publish = {str(self.udp_publish)}',
-            f'udp_from_host = {str(self.udp_from_host)}'
+            f'tcp_published_ports = {str(self.tcp_published_ports)}',
+            f'tcp_host_ports = {str(self.tcp_host_ports)}',
+            f'udp_published_ports = {str(self.udp_published_ports)}',
+            f'udp_host_ports = {str(self.udp_host_ports)}'
         ]
         return '\n'.join(toml_lines)
 

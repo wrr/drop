@@ -12,12 +12,12 @@ import (
 	"github.com/wrr/drop/internal/osutil"
 )
 
-type Net struct {
-	Mode        string   `toml:"mode"`
-	TCPPublish  []string `toml:"tcp_publish"`
-	TCPFromHost []string `toml:"tcp_from_host"`
-	UDPPublish  []string `toml:"udp_publish"`
-	UDPFromHost []string `toml:"udp_from_host"`
+type Config struct {
+	Mounts         []Mount  `toml:"mounts"`
+	BlockedPaths   []string `toml:"blocked_paths"`
+	Cwd            Cwd      `toml:"cwd"`
+	ExposedEnvVars []string `toml:"exposed_env_vars"`
+	Net            Net      `toml:"net"`
 }
 
 type Mount struct {
@@ -32,16 +32,26 @@ type Cwd struct {
 	BlockedPaths []string `toml:"blocked_paths"`
 }
 
-type Config struct {
-	Mounts         []Mount  `toml:"mounts"`
-	BlockedPaths   []string `toml:"blocked_paths"`
-	Cwd            Cwd      `toml:"cwd"`
-	ExposedEnvVars []string `toml:"exposed_env_vars"`
-	Net            Net      `toml:"net"`
+type Net struct {
+	Mode              string          `toml:"mode"`
+	TCPPublishedPorts []PublishedPort `toml:"tcp_published_ports"`
+	TCPHostPorts      []HostPort      `toml:"tcp_host_ports"`
+	UDPPublishedPorts []PublishedPort `toml:"udp_published_ports"`
+	UDPHostPorts      []HostPort      `toml:"udp_host_ports"`
 }
 
-type PortForward struct {
+type PublishedPort struct {
+	Auto      bool
 	HostIP    string
+	HostPort  int
+	GuestPort int
+}
+
+// Different from PublishedPort because Pasta, contrary to its man
+// page, doesn't seem to support HostIP for ports forwarded from host
+// to the namespace.
+type HostPort struct {
+	Auto      bool
 	HostPort  int
 	GuestPort int
 }
@@ -106,6 +116,38 @@ func (m *Mount) UnmarshalTOML(data any) error {
 	return nil
 }
 
+// Custom toml.Unmarshaler for PublishedPort field. Input entry is a
+// string in the format [hostIP/][hostPort:]guestPort or "auto" for
+// automatic port forwarding of all ports.
+func (p *PublishedPort) UnmarshalTOML(data any) error {
+	str, ok := data.(string)
+	if !ok {
+		return fmt.Errorf("published port entry should be a string, got %T", data)
+	}
+	parsed, err := ParsePublishedPort(str)
+	if err != nil {
+		return err
+	}
+	*p = *parsed
+	return nil
+}
+
+// Custom toml.Unmarshaler for HostPort field. Input is a string in
+// the format hostPort[:guestPort] or "auto" for automatic port
+// forwarding of all ports.
+func (p *HostPort) UnmarshalTOML(data any) error {
+	str, ok := data.(string)
+	if !ok {
+		return fmt.Errorf("host port entry should be a string, got %T", data)
+	}
+	parsed, err := ParseHostPort(str)
+	if err != nil {
+		return err
+	}
+	*p = *parsed
+	return nil
+}
+
 func Read(path string) (*Config, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -152,20 +194,20 @@ func Validate(cfg *Config) error {
 		return err
 	}
 
-	if err := validatePortForward(cfg.Net.TCPPublish); err != nil {
-		return fmt.Errorf("invalid tcp_publish: %v", err)
+	if err := validatePublishedPorts(cfg.Net.TCPPublishedPorts); err != nil {
+		return fmt.Errorf("invalid tcp_published_ports: %v", err)
 	}
 
-	if err := validatePortForward(cfg.Net.TCPFromHost); err != nil {
-		return fmt.Errorf("invalid tcp_from_host: %v", err)
+	if err := validateHostPorts(cfg.Net.TCPHostPorts); err != nil {
+		return fmt.Errorf("invalid tcp_host_ports: %v", err)
 	}
 
-	if err := validatePortForward(cfg.Net.UDPPublish); err != nil {
-		return fmt.Errorf("invalid udp_publish: %v", err)
+	if err := validatePublishedPorts(cfg.Net.UDPPublishedPorts); err != nil {
+		return fmt.Errorf("invalid udp_published_ports: %v", err)
 	}
 
-	if err := validatePortForward(cfg.Net.UDPFromHost); err != nil {
-		return fmt.Errorf("invalid udp_from_host: %v", err)
+	if err := validateHostPorts(cfg.Net.UDPHostPorts); err != nil {
+		return fmt.Errorf("invalid udp_host_ports: %v", err)
 	}
 	return nil
 }
@@ -202,6 +244,97 @@ func ParseMountCompact(str string) (*Mount, error) {
 		}
 	}
 	return &m, nil
+}
+
+// ParsePublishedPort parses and validates a published port string.
+//
+// To keep things simple and keep an option of using a different
+// connectivity tool, only the simplest Pasta mapping expressions are
+// allowed.
+//
+// Supported format of forwardSpecs items:
+//   - port (e.g., "8080") -> publishes Drop port 8080 as host port
+//     8080 bound to 127.0.0.1 only
+//   - hostPort:guestPort (e.g., "8080:80") -> publishes Drop port 80
+//     as host port 8080 bound to 127.0.0.1 only
+//   - hostIP/hostPort:guestPort (e.g., "192.168.0.3/8080:80") ->
+//     published Drop port 80 as host port 8080 bound to IP address
+//     192.168.0.3
+//   - "auto" -> automatically publishes all open ports and binds them
+//     to ALL available IP addresses
+func ParsePublishedPort(spec string) (*PublishedPort, error) {
+	var p PublishedPort
+
+	spec = strings.TrimSpace(spec)
+	if spec == "auto" {
+		p.Auto = true
+		return &p, nil
+	}
+	p.HostIP = "127.0.0.1"
+	portPart := spec
+
+	// Check if host IP is specified
+	if strings.Contains(spec, "/") {
+		parts := strings.Split(spec, "/")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid port publish format: %s", spec)
+		}
+		p.HostIP = parts[0]
+		portPart = parts[1]
+		if net.ParseIP(p.HostIP) == nil {
+			return nil, fmt.Errorf("invalid port publish IP address: %s", p.HostIP)
+		}
+	}
+
+	hostPort, guestPort, err := parsePortPair(portPart)
+	if err != nil {
+		return nil, err
+	}
+	p.HostPort = hostPort
+	p.GuestPort = guestPort
+	return &p, nil
+}
+
+// ParseHostPort parses host port string. Like ParsePublishedPort,
+// but does not allow to specify hostIP/, only HOST_PORT[:DROP_PORT] or "auto".
+func ParseHostPort(spec string) (*HostPort, error) {
+	var p HostPort
+
+	spec = strings.TrimSpace(spec)
+	if spec == "auto" {
+		p.Auto = true
+		return &p, nil
+	}
+
+	hostPort, guestPort, err := parsePortPair(spec)
+	if err != nil {
+		return nil, err
+	}
+	p.HostPort = hostPort
+	p.GuestPort = guestPort
+	return &p, nil
+}
+
+// parsePortPair is a helper for parsing HOST_PORT[:DROP_PORT] string
+// into two port ints
+func parsePortPair(s string) (int, int, error) {
+	parts := strings.Split(s, ":")
+	if len(parts) == 0 || len(parts) > 2 {
+		return -1, -1, fmt.Errorf("invalid port forwarding format: %s", s)
+	}
+	hostPort, err := parsePort(parts[0])
+	if err != nil {
+		return -1, -1, err
+	}
+	guestPort := hostPort
+	if len(parts) == 2 {
+		guestPort, err = parsePort(parts[1])
+		if err != nil {
+			return -1, -1, err
+		}
+	}
+	return hostPort, guestPort, nil
+
 }
 
 // validateMounts checks if all mount source and target paths pass the
@@ -249,77 +382,39 @@ func validateNetworkMode(mode string) error {
 	}
 }
 
-// validatePortForward validates Pasta-like port forwarding syntax.
-//
-// To keep things simple and keep an option of using a different
-// connectivity tool, only the simplest Pasta mapping expressions are
-// allowed.
-//
-// Supported format of forwardSpecs items:
-//   - port (e.g., "8080") -> maps host port 8080 to guest port 8080
-//   - hostPort:guestPort (e.g., "8080:80") -> maps host port 8080 to guest port 80
-//   - hostIP/hostPort:guestPort (e.g., "127.0.0.1/8080:80") -> maps
-//     host port 8080 bound to IP address 127.0.0.1 to gues port 80
-//   - "none" -> disables port mapping
-//   - "auto" -> automatically forwards all open ports
-func validatePortForward(forwardSpecs []string) error {
-	hasAuto := false
-	hasNone := false
-
-	for _, mapping := range forwardSpecs {
-		mapping = strings.TrimSpace(mapping)
-		if mapping == "auto" {
-			hasAuto = true
-			continue
-		}
-		if mapping == "none" {
-			hasNone = true
-			continue
-		}
-		portPart := mapping
-
-		// Check if host IP is specified
-		if strings.Contains(mapping, "/") {
-			parts := strings.Split(mapping, "/")
-			if len(parts) != 2 {
-				return fmt.Errorf("invalid port forwarding format: %s", mapping)
-			}
-			hostIP := parts[0]
-			portPart = parts[1]
-			if net.ParseIP(hostIP) == nil {
-				return fmt.Errorf("invalid port forwarding IP address: %s", hostIP)
-			}
-		}
-
-		parts := strings.Split(portPart, ":")
-		if len(parts) == 0 || len(parts) > 2 {
-			return fmt.Errorf("invalid port forwarding format: %s", mapping)
-		}
-
-		for i := range len(parts) {
-			if err := validatePort(parts[i]); err != nil {
-				return err
-			}
+// validatePublishedPorts validates published port list. The list
+// individual entries are already validated during PublishedPort items
+// parsing, this function checks only list-level constraints
+// (ensures "auto" is the only rule if present).
+func validatePublishedPorts(mappings []PublishedPort) error {
+	for _, m := range mappings {
+		if m.Auto && len(mappings) > 1 {
+			return fmt.Errorf("\"auto\" must be the only published port entry")
 		}
 	}
-
-	if hasAuto && len(forwardSpecs) > 1 {
-		return fmt.Errorf("\"auto\" must be the only port forwarding rule")
-	}
-	if hasNone && len(forwardSpecs) > 1 {
-		return fmt.Errorf("\"none\" must be the only port forwarding rule")
-	}
-
 	return nil
 }
 
-func validatePort(s string) error {
-	port, err := strconv.Atoi(s)
-	if err != nil {
-		return fmt.Errorf("invalid port number '%s': %v", s, err)
-	}
-	if port < 1 || port > 65535 {
-		return fmt.Errorf("port number out of range: %d", port)
+// validateHostPorts validates host port forwarding list. The list
+// individual entries are already validated during HostPort items
+// parsing, this function checks only list-level constraints (
+// ensures "auto" is the only rule if present).
+func validateHostPorts(mappings []HostPort) error {
+	for _, m := range mappings {
+		if m.Auto && len(mappings) > 1 {
+			return fmt.Errorf("\"auto\" must be the only host port entry")
+		}
 	}
 	return nil
+}
+
+func parsePort(s string) (int, error) {
+	port, err := strconv.Atoi(s)
+	if err != nil {
+		return -1, fmt.Errorf("invalid port number '%s': %v", s, err)
+	}
+	if port < 1 || port > 65535 {
+		return -1, fmt.Errorf("port number out of range: %d", port)
+	}
+	return port, nil
 }
