@@ -8,8 +8,12 @@ fmt:
 vet: fmt
 	go vet ./...
 
+# Use version of the libcap lib that does not use CGO
 build: vet
-	go build ./cmd/drop
+	CGO_ENABLED=0 go build ./cmd/drop
+
+get-deps:
+	go get ./...
 
 # Build a devel binary with race detection
 build-race:

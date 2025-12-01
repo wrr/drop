@@ -20,6 +20,68 @@ programs you've installed are available in the sandbox. Your username
 and filesystem paths are preserved, and selected configuration files
 (like .bashrc) remain readable in the sandbox.
 
+## Installation
+
+### Building from source
+
+Requires [Go compiller](https://go.dev/doc/install)
+
+Clone this repo, download dependencies and build drop:
+
+```console
+git clone git@github.com:wrr/drop.git;
+cd drop
+go get ./...        # or: make get-deps
+go build ./cmd/drop # or: make build
+```
+
+## Running
+
+These are the basic commands to work with Drop:
+
+ * `drop` - starts a sandboxed shell
+ * `drop program args` - runs a sandboxed program, for example `drop ps aux`
+ * `drop -h` - shows help
+
+## Ubuntu 24 - AppArmor config
+Ubuntu uses AppArmor profiles to specify which programs can use Linux user namespaces. To create a profile for Drop (assuming the binary is in `/usr/local/bin/drop`):
+
+```console
+$ sudo tee /etc/apparmor.d/drop << 'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+profile drop /usr/local/bin/drop flags=(unconfined) {
+  userns,
+}
+EOF
+
+$ sudo systemctl reload apparmor.service
+```
+
+Note that to keep the AppArmor mechanism effective, binaries that are
+allowed to use Linux user namespaces should be owned by root and
+writable only by root. If you install `drop` in, for example, `~/bin`
+and keep the binary owned by you, the AppArmor restrictions would be
+easy to bypass by someone who gains access to your user account (by
+replacing `~/bin/drop` with some malicious binary that would
+normally not have access to Linux user namespaces).
+
+## Config file
+Upon the first start Drop creates a default config file in
+`~/.drop/config`. The default config exposes a couple of common config
+files that are present on your system from your home dir to Drop
+environments home dirs. The config also exposes common environment
+variables. Review the defaults, ensure that no files with secrets are
+exposed, expose config files of other programs that you use when
+working with CLI.
+
+## Environment variables
+
+Environment variables that Drop uses are:
+* `DROP_HOME` - use it to change the location where Drop stores all its files - default config, environment dirs, runtime files. If not set, `~/.drop` is used.
+* `DROP_ENV` - set by Drop and available in the sandbox, contains the id of the currently active Drop environment. Allows programs to determine that they are running within Drop. Can be used to modify shell prompt within Drop or to conditionally load some config file that should apply only in Drop or only outside of Drop. The content of this variable should not be trusted as it can be modified by sandboxed programs.
+* `debian_chroot` - set by Drop to modify the default shell prompt on Debian based systems (adds `(drop)` prefix to prompt).
+
 ## Drop tour
 
 In this tutorial we will install and run Claude Code within Drop to
@@ -173,37 +235,42 @@ your system. Let's demonstrate this:
 Drop has two networking modes:
 * `off` - no network access
 * `isolated` (the default) - sandboxed processes can access the
-  internet, but cannot access local ports open on the host. You can
-  allow list local ports that are accessible. Processes on the
-  host by default can access local ports open in the sandbox.
+  internet, but cannot access local ports open on the host. Local ports open in the sandbox are not accessible externally. You can configure which ports from the host and from the sandbox should be be accessible.
 
-To illustrate this, a connection from the host to Drop works:
+To illustrate this, a connection from the host to Drop is not allowed:
 
 ```console
 # Start a background TCP server within Drop:
-alice@shodan:~/code$ drop bash -c "echo hello | nc -4 -l -p 11235"&
+alice@shodan:~/code$ echo "hello" | drop nc -4 -l -p 5000 &
 [1] 1527648
 # Connect to the server from the host:
-alice@shodan:~/code$ nc -v -4 localhost 11235
-Connection to localhost (127.0.0.1) 11235 port [tcp/*] succeeded!
-hello
+alice@shodan:~/code$ nc -v -4 localhost 5000
+nc: connect to localhost (127.0.0.1) port 5000 (tcp) failed: Connection refused
 ```
 
-But a connection from Drop to the host is refused:
+To allow the connection, publish the TCP port 5000 with `-t` flag:
 
 ```console
-# Start a background TCP server on the host:
-alice@shodan:~/code$ echo hello | nc -4 -l -p 11235&
+alice@shodan:~/code$ echo "hello" | drop -t 5000 nc -4 -l -p 5000 &
 [1] 1528265
-# Connect to the server from Drop:
-alice@shodan:~/code$ drop nc -v -4 localhost 11235
-nc: connect to localhost (127.0.0.1) port 11236 (tcp) failed: Connection refused
+alice@shodan:~/code$ nc -v -4 localhost 5000
+Connection to localhost (127.0.0.1) 5000 port [tcp/*] succeeded!
+hello
 ```
 
 In the examples above, Drop is started without `-e` argument which
 normally specifies id of the environment. If `-e` argument is missing,
 the current working directory is used to construct the environment id,
 in this case the id is `home-alice-code`.
+
+## Limitations
+
+* CLI only, X window programs will not run in the sandbox.
+* Only a small set of basic devices is available in the sandbox, not possible to, for example, play/record sound.
+* setuid programs don't run in the sandbox.
+* Running other programs that depend on Linux user namespaces not
+  supported (Podman, programs installed via Snap).
+
 
 ## Drop technical characteristics
 This list is intended as a quick overview of how Drop works for readers familiar with Linux internals.
@@ -232,3 +299,4 @@ Drop environments with the same id:
 * share modifications of /etc. Files stored in .drop/envs/ENV_ID/etc
   are a read-only upper layer of overlayfs over the original /etc and
   take priority over the original content of /etc.
+
