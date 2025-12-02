@@ -117,7 +117,7 @@ func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 }
 
 func DefaultConfigPath(dropHome string) string {
-	return filepath.Join(dropHome, "config")
+	return filepath.Join(dropHome, "config.toml")
 }
 
 // DropHome returns the base directory for Drop data

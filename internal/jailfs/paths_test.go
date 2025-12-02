@@ -187,7 +187,7 @@ func TestPathToEnvId(t *testing.T) {
 func TestDefaultConfigPath(t *testing.T) {
 	dropHome := "/home/alice/.config/drop"
 	result := DefaultConfigPath(dropHome)
-	expected := "/home/alice/.config/drop/config"
+	expected := "/home/alice/.config/drop/config.toml"
 	if result != expected {
 		t.Errorf("DefaultConfigPath(%q) = %q", dropHome, result)
 	}
