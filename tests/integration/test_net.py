@@ -137,7 +137,7 @@ class TestNet(TestBase):
             },
             {
                 'args': '-T 0',
-                'expected': ('Error: command line -tcp-from-host flag: '
+                'expected': ('Error: command line -tcp-host flag: '
                              'port number out of range: 0')
             },
             {
@@ -149,7 +149,7 @@ class TestNet(TestBase):
             },
             {
                 'args': '-U foo',
-                'expected': ('Error: command line -udp-from-host flag: '
+                'expected': ('Error: command line -udp-host flag: '
                              'invalid port number \'foo\'')
             }
         ]
