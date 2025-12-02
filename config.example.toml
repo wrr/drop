@@ -1,45 +1,4 @@
-package config
-
-import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-
-	"github.com/wrr/drop/internal/osutil"
-)
-
-type configFileEntry struct {
-	path    string
-	comment string
-}
-
-// WriteDefault writes a default config file to path.
-func WriteDefault(path string, homeDir string) error {
-	// pathsRODefault contains files to expose from home dir, these
-	// files are included in the generated default config only if they exist
-	// in the user's home.
-	pathsRODefault := []configFileEntry{
-		{"~/.ackrc", ""},
-		{"~/.emacs", ""},
-		{"~/.profile", ""},
-		{"~/.gitconfig", " # Remove if you keep secrets in .gitconfig"},
-		{"~/go", ""},
-		{"~/.nvm", ""},
-		{"~/.screenrc", ""},
-		{"~/.bashrc", " # Ensure there are no secrets in your shell config files"},
-		{"~/.bash_logout", ""},
-		{"~/.bash_profile", ""},
-		{"~/.zshenv", ""},
-		{"~/.zlogin", ""},
-		{"~/.zprofile", ""},
-		{"~/.zlogout", ""},
-		{"~/.zshrc", ""},
-	}
-
-	pathsRODefault = keepExistingEntries(pathsRODefault, homeDir)
-
-	defaultConfig := fmt.Sprintf(`# Drop sandbox configuration file
+# Drop sandbox configuration file
 
 # Directories and files exposed to Drop.
 #
@@ -73,7 +32,16 @@ func WriteDefault(path string, homeDir string) error {
 # from ~/.bash_history can be executed, so it is best not to expose
 # history, but allow shells in Drop environments to create isolated
 # history files, one per each environment.
-mounts = %s
+mounts = [
+  "~/.ackrc",
+  "~/.emacs",
+  "~/.profile",
+  "~/.gitconfig", # Remove if you keep secrets in .gitconfig
+  "~/go",
+  "~/.screenrc",
+  "~/.bashrc", # Ensure there are no secrets in your shell config files
+  "~/.bash_logout",
+]
 
 # Paths to dirs or files to block access to.
 #
@@ -168,39 +136,3 @@ udp_published_ports = []
 tcp_host_ports = []
 # Localhost UDP ports open on the host that the sandbox can access.
 udp_host_ports = []
-`, toTomlString(pathsRODefault))
-
-	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(path, []byte(defaultConfig), 0644); err != nil {
-		return fmt.Errorf("failed to write default config: %v", err)
-	}
-
-	return nil
-}
-
-func keepExistingEntries(entries []configFileEntry, homeDir string) []configFileEntry {
-	var existing []configFileEntry
-	for _, entry := range entries {
-		path := osutil.TildeToHomeDir(entry.path, homeDir)
-		if osutil.Exists(path) {
-			existing = append(existing, entry)
-		}
-	}
-	return existing
-}
-
-func toTomlString(entries []configFileEntry) string {
-	if len(entries) == 0 {
-		return "[]"
-	}
-	lines := []string{"["}
-	for _, entry := range entries {
-		lines = append(lines, fmt.Sprintf("  \"%s\",%s", entry.path, entry.comment))
-	}
-	lines = append(lines, "]")
-
-	return strings.Join(lines, "\n")
-}
