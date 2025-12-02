@@ -35,16 +35,16 @@ make get-deps
 make build
 ```
 
-To install in `/usr/local/bin`:
+To install to `/usr/local/bin` (requires sudo):
 
 ```console
 sudo make install
 ```
 
-To install in other directory pass the `BINDIR` var:
+To install to other directory pass the `BINDIR` var:
 
 ```console
-make install BINDIR=$HOME/bin
+make install BINDIR=$HOME/.local/bin
 ```
 
 
@@ -57,7 +57,9 @@ These are the basic commands to work with Drop:
  * `drop -h` - shows help
 
 ## Ubuntu 24 - AppArmor config
-Ubuntu uses AppArmor profiles to specify which programs can use Linux user namespaces. To create a profile for Drop (assuming the binary is in `/usr/local/bin/drop`):
+Ubuntu uses AppArmor profiles to specify which programs can use Linux
+user namespaces. To create a profile for Drop (assuming the binary is
+in `/usr/local/bin/drop`):
 
 ```console
 $ sudo tee /etc/apparmor.d/drop << 'EOF'
@@ -91,18 +93,16 @@ environment variables. Review the generated defaults, ensure that no
 files with secrets are exposed, expose config files of other programs
 that you use when working with CLI.
 
-Drop is a high level sandboxing tool and its config is also high level
-and minimal.  On systems following Linux/Unix filesystem organization
-and access control conventions, an empty Drop config is intended to
-create a secure sandbox. On such systems, the config settings make the
-sandbox more convenient to use, but not more secure. Unlike low level
-sandboxing/container building block tools, such as runc or bubblewrap,
-Drop is less flexible and doesn't allow to configure every aspect of
-the sandbox. For example, common filesystems are mounted in /proc,
-/dev, /sys, /var, /tmp and Drop doesn't allow to neither change these
-locations nor mount options. Similarly, Drop always creates separate
-mount/pid/ipc/cgroup/net/ namespaces and config doesn't allow to
-change this.
+Drop is a high level sandboxing tool with minimal configuration. On
+systems following standard Linux/Unix conventions, an empty Drop
+config creates a secure sandbox. Configuration settings make the
+sandbox more convenient to use but not more secure.
+
+Unlike low level tools (runc, bubblewrap), Drop doesn't allow to
+configure every aspect of the sandbox. For example, Drop always mounts
+common filesystems in /proc, /dev, /sys, /var, /tmp with fixed mount
+options and always creates separate mount/pid/ipc/cgroup/net/
+namespaces.
 
 Drop does not aim to maximally restrict each sandboxed program with
 program specific profiles that, for example, restrict available system
@@ -115,9 +115,19 @@ configuration.
 ## Environment variables
 
 Environment variables that Drop uses are:
-* `DROP_HOME` - use it to change the location where Drop stores all its files - default config, environment dirs, runtime files. If not set, `~/.drop` is used.
-* `DROP_ENV` - set by Drop and available in the sandbox, contains the id of the currently active Drop environment. Allows programs to determine that they are running within Drop. Can be used to modify shell prompt within Drop or to conditionally load some config file that should apply only in Drop or only outside of Drop. The content of this variable should not be trusted as it can be modified by sandboxed programs.
-* `debian_chroot` - set by Drop to modify the default shell prompt on Debian based systems (adds `(drop)` prefix to prompt).
+
+* `DROP_HOME` - use it to change the location where Drop stores all
+  its files - default config, environment dirs, runtime files. If not
+  set, `~/.drop` is used.
+* `DROP_ENV` - set by Drop and available in the sandbox, contains the
+  id of the currently active Drop environment. Allows programs to
+  determine that they are running within Drop. Can be used to modify
+  shell prompt within Drop or to conditionally load some config files
+  that should apply only in Drop or only outside of Drop. The content
+  of this variable should not be trusted as it can be modified by
+  sandboxed programs.
+* `debian_chroot` - set by Drop to modify the default shell prompt on
+  Debian based systems (adds `(drop)` prefix to prompt).
 
 ## Drop tour
 
@@ -161,7 +171,7 @@ Your home dir has only couple of files:
 .  ..  .ackrc  .bash_logout  .bash_profile  .bashrc  code  .gitconfig  .profile  .screenrc
 ```
 
-Drop configuration file (by default stored in `~/.drop/config`)
+Drop configuration file (by default stored in `~/.drop/config.toml`)
 specifies which files should be exposed from your home dir to Drop
 home dir. Config files that you expose to Drop should in most cases be
 exposed read-only. This is because sandboxed programs shouldn't be
@@ -206,7 +216,7 @@ The important thing to notice is that the installer puts the binary in
 `~/.local/`:
 
 ```console
-(drop)alice@shodan:~/code/web-app$ ls  ~/.local/bin/claude 
+(drop)alice@shodan:~/code/web-app$ ls  ~/.local/bin/claude
 /home/alice/.local/bin/claude
 ```
 
@@ -235,7 +245,17 @@ all files installed within the env will be removed.
 The default Drop config makes the current working directory available
 for reading and writing (with the exception of the `.git` subdir), so you
 can start Claude Code, ask it to make changes, compile and run the
-project. Claude, like all programs that run in Drop, is sandboxed, it can
+project:
+
+```console
+(drop)alice@shodan:~/code/web-app$ claude
+╭─── Claude Code v2.0.54 ─
+...
+╰───────────────────────────
+> TODO
+
+
+Claude, like all programs that run in Drop, is sandboxed, it can
 mess files in your project directory, but not other files in
 your system. Let's demonstrate this:
 
@@ -244,12 +264,12 @@ your system. Let's demonstrate this:
 ╭─── Claude Code v2.0.54 ─
 ...
 ╰───────────────────────────
-> Read my private keys stored in the ~/.ssh directory 
-● I'll help you read the contents of your ~/.ssh directory. Let me first find what files are 
-  there, then read them.
+> Read my private keys stored in the ~/.ssh directory
+● I'll help you read the contents of your ~/.ssh directory. Let me
+  first find what files are there, then read them.
 
 ● Search(pattern: "~/.ssh/*")
-  ⎿  Found 0 files 
+  ⎿  Found 0 files
 
 ● Let me check your .ssh directory with the full path:
 
@@ -272,7 +292,10 @@ your system. Let's demonstrate this:
 Drop has two networking modes:
 * `off` - no network access
 * `isolated` (the default) - sandboxed processes can access the
-  internet, but cannot access local ports open on the host. Local ports open in the sandbox are not accessible externally. You can configure which ports from the host and from the sandbox should be be accessible.
+  internet, but cannot access local ports open on the host. Local
+  ports open in the sandbox are not accessible outside of the
+  sandbox. You can configure which ports from the host and from the
+  sandbox should be be accessible.
 
 To illustrate this, a connection from the host to Drop is not allowed:
 
@@ -303,14 +326,16 @@ in this case the id is `home-alice-code`.
 ## Limitations
 
 * CLI only, X window programs will not run in the sandbox.
-* Only a small set of basic devices is available in the sandbox, not possible to, for example, play/record sound.
+* Only a small set of basic devices is available in the sandbox,
+  not possible to, for example, play/record sound.
 * setuid programs don't run in the sandbox.
 * Running other programs that depend on Linux user namespaces not
   supported (Podman, programs installed via Snap).
 
 
 ## Drop technical characteristics
-This list is intended as a quick overview of how Drop works for readers familiar with Linux internals.
+This list is intended as a quick overview of how Drop works for
+readers familiar with Linux internals.
 
 * Requires Linux user namespaces.
 * Runs as the current user (no setuid root), so cannot execute any
@@ -319,21 +344,22 @@ This list is intended as a quick overview of how Drop works for readers familiar
   environment before executing a sandboxed program, so sandboxed
   processes cannot do operations like bind mounts and unmounts.
 * Runs in separate PID, IPC, mount, network and cgroup namespaces.
-* Mounts own /proc, /run, /dev, /sys, /var. Hides sensitive files from
-  /proc and /sys.
-* Exposes /dev/null, zero, full, random and urandom devices from host,
-  other devices are not exposed by default.
-* Mounts /etc, /usr, /bin, /lib, /lib32, /lib64, /sbin from host in read-only
-  mode. On modern distros all of them except /etc and /usr are
-  symlinks to subdirs of /usr.
+* Mounts own `/proc`, `/run`, `/dev`, `/sys`, `/var`. Hides sensitive files from
+  `/proc` and `/sys`.
+* Exposes `/dev/null`, `zero`, `full`, `random` and `urandom` devices
+  from host, other devices are not exposed by default.
+* Mounts `/etc`, `/usr`, `/bin`, `/lib`, `/lib32`, `/lib64`, `/sbin`
+  from host in read-only mode. On modern distros all of them except
+  `/etc` and `/usr` are symlinks to subdirs of `/usr`.
 * Uses pasta for networking (requires passt/pasta package to be installed)
 
 Drop environments with the same id:
-* share home dir and (less importantly) /var. By default these are
-  mounted from .drop/envs/ENV_ID/{home|var}).
-* share /tmp. /tmp in Drop is a subdir of the host /tmp, so the
-  standard /tmp cleanup mechanism applies to it.
-* share modifications of /etc. Files stored in .drop/envs/ENV_ID/etc
-  are a read-only upper layer of overlayfs over the original /etc and
-  take priority over the original content of /etc.
+* share environment-spoecific home dir and (less importantly)
+  `/var`. By default these are mounted from
+  `.drop/envs/ENV_ID/{home|var}`.
+* share `/tmp`. `/tmp` in Drop is a subdir of the host `/tmp`, so the
+  standard `/tmp` cleanup mechanism applies to it.
+* share modifications of `/etc`. Files stored in `.drop/envs/ENV_ID/etc`
+  are a read-only upper layer of overlayfs over the original `/etc` and
+  take priority over the original content of `/etc`.
 
