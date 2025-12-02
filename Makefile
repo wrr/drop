@@ -2,7 +2,9 @@
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 
-.PHONY: fmt vet get-deps build build-race test test-integration test-race test-all lint cover cover-inspect clean imports vulncheck gen-example-config all
+LDFLAGS_RELEASE = -ldflags "-s -w"
+
+.PHONY: fmt vet get-deps build install uninstall build-release build-race test test-integration test-race test-all lint cover cover-inspect clean imports vulncheck gen-example-config all
 
 fmt:
 	go fmt ./...
@@ -22,6 +24,11 @@ install:
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/drop
+
+build-release:
+	@mkdir -p dist
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS_RELEASE) -o ./dist/drop-linux-amd64 ./cmd/drop
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(LDFLAGS_RELEASE) -o ./dist/drop-linux-arm64 ./cmd/drop
 
 # Build a devel binary with race detection
 build-race:
