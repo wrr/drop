@@ -26,14 +26,27 @@ and filesystem paths are preserved, and selected configuration files
 
 Requires [Go compiler](https://go.dev/doc/install)
 
-Clone this repo, download dependencies and build drop:
+Clone this repo, download dependencies, build drop:
 
 ```console
 git clone git@github.com:wrr/drop.git;
 cd drop
-go get ./...        # or: make get-deps
-go build ./cmd/drop # or: make build
+make get-deps
+make build
 ```
+
+To install in `/usr/local/bin`:
+
+```console
+sudo make install
+```
+
+To install in other directory pass the `BINDIR` var:
+
+```console
+make install BINDIR=$HOME/bin
+```
+
 
 ## Running
 

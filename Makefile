@@ -1,4 +1,6 @@
 .DEFAULT_GOAL := build
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
 
 .PHONY: fmt vet get-deps build build-race test test-integration test-race test-all lint cover cover-inspect clean imports vulncheck gen-example-config all
 
@@ -14,6 +16,12 @@ get-deps:
 # Disable cgo, force version of the libcap lib that does not use it.
 build: vet
 	CGO_ENABLED=0 go build ./cmd/drop
+
+install:
+	install -D -m 0755 drop $(DESTDIR)$(BINDIR)/drop
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/drop
 
 # Build a devel binary with race detection
 build-race:
