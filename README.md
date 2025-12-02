@@ -24,7 +24,7 @@ and filesystem paths are preserved, and selected configuration files
 
 ### Building from source
 
-Requires [Go compiller](https://go.dev/doc/install)
+Requires [Go compiler](https://go.dev/doc/install)
 
 Clone this repo, download dependencies and build drop:
 
@@ -67,13 +67,37 @@ replacing `~/bin/drop` with some malicious binary that would
 normally not have access to Linux user namespaces).
 
 ## Config file
-Upon the first start Drop creates a default config file in
-`~/.drop/config`. The default config exposes a couple of common config
-files that are present on your system from your home dir to Drop
-environments home dirs. The config also exposes common environment
-variables. Review the defaults, ensure that no files with secrets are
-exposed, expose config files of other programs that you use when
-working with CLI.
+
+Upon the first start Drop creates [a default configuration
+file](./config_example.toml) in `~/.drop/config`. The comments in the
+file explain each setting.
+
+The default config exposes several common dotfiles, that are present
+in your home dir to Drop environments. The config also exposes common
+environment variables. Review the generated defaults, ensure that no
+files with secrets are exposed, expose config files of other programs
+that you use when working with CLI.
+
+Drop is a high level sandboxing tool and its config is also high level
+and minimal.  On systems following Linux/Unix filesystem organization
+and access control conventions, an empty Drop config is intended to
+create a secure sandbox. On such systems, the config settings make the
+sandbox more convenient to use, but not more secure. Unlike low level
+sandboxing/container building block tools, such as runc or bubblewrap,
+Drop is less flexible and doesn't allow to configure every aspect of
+the sandbox. For example, common filesystems are mounted in /proc,
+/dev, /sys, /var, /tmp and Drop doesn't allow to neither change these
+locations nor mount options. Similarly, Drop always creates separate
+mount/pid/ipc/cgroup/net/ namespaces and config doesn't allow to
+change this.
+
+Drop does not aim to maximally restrict each sandboxed program with
+program specific profiles that, for example, restrict available system
+calls to the absolute minimum. Creation of such profiles is difficult and
+time-consuming.  Instead, the aim is to apply the same restrictions to
+all sandboxed programs, without requiring extensive program-specific
+configuration.
+
 
 ## Environment variables
 
