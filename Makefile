@@ -2,10 +2,10 @@
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 
-VERSION ?= $(shell git describe --tags --always --dirty)
+VERSION ?= $(shell git describe --tags --always --dirty | sed 's/^v//')
 LDFLAGS_RELEASE = -ldflags "-s -w -X main.Version=$(VERSION)"
 
-.PHONY: fmt vet get-deps build install uninstall build-release build-race test test-integration test-race test-all lint cover cover-inspect clean imports vulncheck gen-example-config all
+.PHONY: fmt vet get-deps build install uninstall build-release build-race test test-integration test-race test-all lint cover clean imports vulncheck gen-example-config all
 
 fmt:
 	go fmt ./...
@@ -28,8 +28,8 @@ uninstall:
 
 build-release:
 	@mkdir -p dist
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS_RELEASE) -o ./dist/drop-$(VERSION)-linux-amd64 ./cmd/drop
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(LDFLAGS_RELEASE) -o ./dist/drop-$(VERSION)-linux-arm64 ./cmd/drop
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS_RELEASE) -o ./dist/drop-linux-amd64 ./cmd/drop
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(LDFLAGS_RELEASE) -o ./dist/drop-linux-arm64 ./cmd/drop
 
 # Build a devel binary with race detection
 build-race:
@@ -85,5 +85,5 @@ gen-example-config: build
 	cp $$DROP_HOME/config.toml config.example.toml && \
 	rm -rf $$DROP_HOME
 
-all: cover-inspect test-race test-integration vulncheck imports lint build
+all: test-race test-integration vulncheck imports lint build
 
