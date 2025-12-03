@@ -1,0 +1,29 @@
+# Program binary
+drop
+
+# Code coverage
+cover
+# Distribution binaries
+dist/
+
+
+# Python related ignores (Python is used to run integration tests for Drop)
+__pycache__/
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+requirements_devel.txt
+
+# LLM stuff
+
+CLAUDE.md
+.claude
+
+# General tools
+.ackrc
+
+# Directory to keep some probably useful things for development
+labs/
