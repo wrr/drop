@@ -35,6 +35,7 @@ func (s *stringSlice) Set(value string) error {
 }
 
 type Flags struct {
+	version     bool
 	envId       string
 	configPath  string
 	networkMode string
@@ -54,6 +55,8 @@ type Flags struct {
 	runDir  string
 	homeDir string
 }
+
+var Version = "dev" // overridden by release binaries linker
 
 // toChildArgs constructs command line arguments to be passed to the
 // started child process. The child shares most of the arguments with
@@ -111,6 +114,8 @@ Options:
         require to be run as root. This option doesn't grant any additional privileges to the jailed
         processes. For convenience, the home dir of a root user is not set to /root, but
         kept as the original home dir.
+  -version
+        Print program version
 
 Mounts related options:
   -no-cwd, -nc
@@ -163,6 +168,7 @@ Networking options:
 	flag.StringVar(&f.envId, "e", "", "")
 	flag.StringVar(&f.configPath, "config", "", "")
 	flag.StringVar(&f.configPath, "c", "", "")
+	flag.BoolVar(&f.version, "version", false, "")
 
 	flag.BoolVar(&f.noCwd, "no-cwd", false, "")
 	flag.BoolVar(&f.noCwd, "nc", false, "")
@@ -340,6 +346,10 @@ func parentProcessEntry() (int, error) {
 	flags, err := parseFlags(defaultConfigPath, false)
 	if err != nil {
 		return 1, err
+	}
+	if flags.version {
+		fmt.Println(Version)
+		return 0, nil
 	}
 
 	runDir, cleanRunDir, err := jailfs.NewRunDir(dropHome, flags.envId)
