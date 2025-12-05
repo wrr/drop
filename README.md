@@ -22,15 +22,33 @@ and filesystem paths are preserved, and selected configuration files
 
 ## Installation
 
-The simplest way to install Drop is to download an executable for
-`amd64' or 'arm64' architectures from GitHub releases and place in in
-your PATH:
+The simplest way to install Drop is to download an executable from
+[GitHub releases](https://github.com/wrr/drop/releases/latest/) and
+place in in your PATH.
+
+Download Drop:
+```
+# Set ARCH to either amd64 or arm64
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+
+curl -o drop -L https://github.com/wrr/drop/releases/latest/download/drop-linux-$ARCH
+```
+
+On Ubuntu 24 which uses AppArmor to control which programs are allowed
+to use user namespaces, it is best to have `drop` executable owned and
+writeable by root only, so, for example, installed to
+`/usr/local/bin`:
 
 ```
-cd /tmp
-# ARCH should be amd64 or arm64
-ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
-curl -L -o drop https://github.com/wrr/drop/releases/latest/download/drop-linux-$ARCH
+sudo install -m 755 drop /usr/local/bin/
+```
+
+Alternatively, on systems that do not use AppArmor, local installation
+which doesn't require root and keeps the executable owned by your
+users is also good:
+
+```
+install -m 755 drop ~/.local/bin/
 ```
 
 ### Building from source
@@ -58,6 +76,30 @@ To install to other directory pass the `BINDIR` var:
 make install BINDIR=$HOME/.local/bin
 ```
 
+## Ubuntu 24 - AppArmor config
+Ubuntu uses AppArmor profiles to specify which programs can use Linux
+user namespaces. To create a profile for Drop (assuming the binary is
+in `/usr/local/bin/drop`):
+
+```
+sudo tee /etc/apparmor.d/drop << 'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+profile drop /usr/local/bin/drop flags=(unconfined) {
+  userns,
+}
+EOF
+
+sudo systemctl reload apparmor.service
+```
+
+Note that to keep the AppArmor mechanism fully effective, it is best if binaries
+that are allowed to use Linux user namespaces are owned by root
+and writable only by root. If you install `drop` in, for example,
+`~/bin` and keep the binary owned by you, someone who gains access to
+your uses account will be able to bypass the AppArmor restrictions (by
+replacing `~/bin/drop` with some other binary that would normally not
+have access to user namespaces).
 
 ## Running
 
@@ -67,30 +109,6 @@ These are the basic commands to work with Drop:
  * `drop program args` - runs a sandboxed program, for example `drop ps aux`
  * `drop -h` - shows help
 
-## Ubuntu 24 - AppArmor config
-Ubuntu uses AppArmor profiles to specify which programs can use Linux
-user namespaces. To create a profile for Drop (assuming the binary is
-in `/usr/local/bin/drop`):
-
-```console
-$ sudo tee /etc/apparmor.d/drop << 'EOF'
-abi <abi/4.0>,
-include <tunables/global>
-profile drop /usr/local/bin/drop flags=(unconfined) {
-  userns,
-}
-EOF
-
-$ sudo systemctl reload apparmor.service
-```
-
-Note that to keep the AppArmor mechanism effective, binaries that are
-allowed to use Linux user namespaces should be owned by root and
-writable only by root. If you install `drop` in, for example, `~/bin`
-and keep the binary owned by you, the AppArmor restrictions would be
-easy to bypass by someone who gains access to your user account (by
-replacing `~/bin/drop` with some malicious binary that would
-normally not have access to Linux user namespaces).
 
 ## Config file
 
