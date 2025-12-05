@@ -22,13 +22,24 @@ and filesystem paths are preserved, and selected configuration files
 
 ## Installation
 
+The simplest way to install Drop is to download an executable for
+`amd64' or 'arm64' architectures from GitHub releases and place in in
+your PATH:
+
+```
+cd /tmp
+# ARCH should be amd64 or arm64
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+curl -L -o drop https://github.com/wrr/drop/releases/latest/download/drop-linux-$ARCH
+```
+
 ### Building from source
 
 Requires [Go compiler](https://go.dev/doc/install)
 
 Clone this repo, download dependencies, build drop:
 
-```console
+```
 git clone git@github.com:wrr/drop.git;
 cd drop
 make get-deps
@@ -37,13 +48,13 @@ make build
 
 To install to `/usr/local/bin` (requires sudo):
 
-```console
+```
 sudo make install
 ```
 
 To install to other directory pass the `BINDIR` var:
 
-```console
+```
 make install BINDIR=$HOME/.local/bin
 ```
 
@@ -253,7 +264,7 @@ project:
 ...
 ╰───────────────────────────
 > TODO
-
+```
 
 Claude, like all programs that run in Drop, is sandboxed, it can
 mess files in your project directory, but not other files in
