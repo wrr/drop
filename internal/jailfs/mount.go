@@ -64,7 +64,7 @@ func (rt *root) mount(src, trg, fstype string, flags uintptr, data string) (err 
 		}
 	}
 	if err := unix.Mount(src, absTrg, fstype, flags, data); err != nil {
-		return fmt.Errorf("mount %v to %v failed: %v", src, absTrg, err)
+		return fmt.Errorf("mount %v to %v failed: %v (dmesg may have more details)", src, absTrg, err)
 	}
 	return nil
 }
