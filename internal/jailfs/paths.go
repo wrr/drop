@@ -154,12 +154,16 @@ func CwdToEnvId() (string, error) {
 	return pathToEnvId(cwd), nil
 }
 
+func runDirsPath(dropHome string) string {
+	return filepath.Join(dropHome, "internal", "run")
+}
+
 // NewRunDir creates a directory to store this jail instance runtime
 // files and dirs (for example, the main root file system mount
 // point). The directory can be removed when this jail instance
 // terminates.
 func NewRunDir(dropHome string, envId string) (string, func(), error) {
-	parent := filepath.Join(dropHome, "internal", "run")
+	parent := runDirsPath(dropHome)
 
 	if err := osutil.MkdirAll(parent); err != nil {
 		return "", nil, err
@@ -203,10 +207,10 @@ const runLockFname string = "lock"
 // with -9, system looses power, etc.). Removes them if they are older
 // than orphanedRemoveAfter thredhols, this is to avoid race when freshly
 // created, but not yet locked run dir would be removed.
-func removeOrphanedRunDirs(runDirParent string) error {
+func removeOrphanedRunDirs(runDirsPath string) error {
 	orphanedRemoveAfter := 1 * time.Minute
 	orphanedRemoveTime := time.Now().Add(-orphanedRemoveAfter)
-	entries, err := os.ReadDir(runDirParent)
+	entries, err := os.ReadDir(runDirsPath)
 	if err != nil {
 		return err
 	}
@@ -214,7 +218,7 @@ func removeOrphanedRunDirs(runDirParent string) error {
 		if !entry.IsDir() {
 			continue
 		}
-		runDir := filepath.Join(runDirParent, entry.Name())
+		runDir := filepath.Join(runDirsPath, entry.Name())
 		locked, err := isRunDirLocked(runDir)
 		if err != nil {
 			return err
@@ -275,6 +279,41 @@ func isRunDirLocked(runDir string) (bool, error) {
 	}
 	// Not locked, release the lock
 	syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	return false, nil
+}
+
+func hasRunningDropInstances(runDirsPath string, envId string) (bool, error) {
+	entries, err := os.ReadDir(runDirsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// dir doesn't exist, no running instances
+			return false, nil
+		}
+		return false, err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		// Check if this run directory belongs to the specified
+		// environment. Run dirs have names: {envId}-{random digits}
+		pattern := fmt.Sprintf(`^%s-\d+$`, envId)
+		re := regexp.MustCompile(pattern)
+		if !re.MatchString(entry.Name()) {
+			continue
+		}
+
+		runDir := filepath.Join(runDirsPath, entry.Name())
+		locked, err := isRunDirLocked(runDir)
+		if err != nil {
+			return false, err
+		}
+		if locked {
+			return true, nil
+		}
+	}
 	return false, nil
 }
 
@@ -398,4 +437,40 @@ func LsEnvs(dropHome string) ([]string, error) {
 		}
 	}
 	return envs, nil
+}
+
+func RmEnv(dropHome string, envId string) error {
+	if !IsEnvIdValid(envId) {
+		return fmt.Errorf("invalid environment ID")
+	}
+
+	envPath := filepath.Join(dropHome, "envs", envId)
+
+	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+		return fmt.Errorf("environment does not exist")
+	}
+
+	removeOrphanedRunDirs(runDirsPath(dropHome))
+
+	// Check if there are any running Drop instances using this environment
+	running, err := hasRunningDropInstances(runDirsPath(dropHome), envId)
+	if err != nil {
+		return err
+	}
+	if running {
+		return fmt.Errorf("environment is used by running drop instances")
+	}
+
+	// Clean up the tmp directory (best effort)
+	tmpSymlink := filepath.Join(envPath, "tmp")
+	if target, err := os.Readlink(tmpSymlink); err == nil {
+		// No error
+		os.RemoveAll(target)
+	}
+
+	if err := os.RemoveAll(envPath); err != nil {
+		return err
+	}
+
+	return nil
 }

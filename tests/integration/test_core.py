@@ -4,6 +4,7 @@ import re
 import shutil
 import stat
 import tempfile
+import time
 
 import base
 
@@ -175,6 +176,60 @@ class TestCore(base.TestBase):
 
             listed_envs = result.stdout.strip().split('\n')
             self.assertCountEqual(env_ids, listed_envs)
+
+        finally:
+            rm_drop_home(drop_home)
+
+    def test_remove_environment(self):
+        """Test removing Drop environments with -rm flag"""
+        drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
+        try:
+            env = os.environ.copy()
+            env['DROP_HOME'] = drop_home
+
+            env_ids = ['env1', 'env2', 'env3']
+            for env_id in env_ids:
+                result = self.sandbox_run('true', env_id=env_id, env=env)
+                self.assertSuccess(result)
+
+            result = self.sandbox_run('', drop_extra_args='-ls', env=env)
+            self.assertSuccess(result)
+            listed_envs = result.stdout.strip().split('\n')
+            self.assertCountEqual(env_ids, listed_envs)
+
+            result = self.sandbox_run('', drop_extra_args='-rm env1', env=env)
+            self.assertSuccess(result)
+
+            result = self.sandbox_run('', drop_extra_args='-ls', env=env)
+            self.assertSuccess(result)
+            listed_envs = result.stdout.strip().split('\n')
+            self.assertCountEqual(['env2', 'env3'], listed_envs)
+
+            # Test removing non-existent environment
+            result = self.sandbox_run('', drop_extra_args='-rm missing',
+                                      env=env)
+            self.assertEqual(1, result.returncode)
+            self.assertIn('environment does not exist', result.stderr)
+
+            # Test removing environment with running instance
+            # Start a background Drop instance in env2
+            process = self.sandbox_run_background('sleep 60', env_id='env2',
+                                                  env=env)
+            result = self.sandbox_run('', drop_extra_args='-rm env2', env=env)
+            self.assertEqual(1, result.returncode)
+            self.assertIn('environment is used by running drop instances',
+                          result.stderr.lower())
+
+            # Clean up the background process
+            self.kill_process(process)
+            # After killing the process, removal should work
+            result = self.sandbox_run('', drop_extra_args='-rm env2', env=env)
+            self.assertSuccess(result)
+
+            # Verify only env3 remains
+            result = self.sandbox_run('', drop_extra_args='-ls', env=env)
+            self.assertSuccess(result)
+            self.assertEqual('env3', result.stdout.strip())
 
         finally:
             rm_drop_home(drop_home)

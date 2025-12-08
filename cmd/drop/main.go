@@ -41,6 +41,7 @@ type Flags struct {
 	networkMode string
 
 	ls bool
+	rm string
 
 	noCwd  bool
 	mounts []string
@@ -122,6 +123,8 @@ Options:
 Environments management:
   -ls, -l
         List available Drop environments
+  -rm
+        Remove Drop environment
 
 Mounts related options:
   -no-cwd, -nc
@@ -178,6 +181,7 @@ Networking options:
 
 	flag.BoolVar(&f.ls, "ls", false, "")
 	flag.BoolVar(&f.ls, "l", false, "")
+	flag.StringVar(&f.rm, "rm", "", "")
 
 	flag.BoolVar(&f.noCwd, "no-cwd", false, "")
 	flag.BoolVar(&f.noCwd, "nc", false, "")
@@ -367,6 +371,12 @@ func parentProcessEntry() (int, error) {
 		}
 		for _, envId := range envs {
 			fmt.Println(envId)
+		}
+		return 0, nil
+	}
+	if flags.rm != "" {
+		if err := jailfs.RmEnv(dropHome, flags.rm); err != nil {
+			return 1, fmt.Errorf("failed to remove environment '%s': %v", flags.rm, err)
 		}
 		return 0, nil
 	}
