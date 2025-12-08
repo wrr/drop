@@ -154,4 +154,29 @@ class TestCore(base.TestBase):
         finally:
             rm_drop_home(drop_home)
 
+    def test_list_environments(self):
+        """Test listing Drop environments with -ls flag"""
+        drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
+        try:
+            env = os.environ.copy()
+            env['DROP_HOME'] = drop_home
+
+            result = self.sandbox_run('', drop_extra_args='-l', env=env)
+            self.assertSuccess(result)
+            self.assertEqual('', result.stdout.strip())
+
+            env_ids = ['env1', 'env2', 'env3']
+            for env_id in env_ids:
+                result = self.sandbox_run('true', env_id=env_id, env=env)
+                self.assertSuccess(result)
+
+            result = self.sandbox_run('', drop_extra_args='-l', env=env)
+            self.assertSuccess(result)
+
+            listed_envs = result.stdout.strip().split('\n')
+            self.assertCountEqual(env_ids, listed_envs)
+
+        finally:
+            rm_drop_home(drop_home)
+
 

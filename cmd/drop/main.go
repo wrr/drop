@@ -40,6 +40,8 @@ type Flags struct {
 	configPath  string
 	networkMode string
 
+	ls bool
+
 	noCwd  bool
 	mounts []string
 
@@ -117,6 +119,10 @@ Options:
   -version
         Print program version
 
+Environments management:
+  -ls, -l
+        List available Drop environments
+
 Mounts related options:
   -no-cwd, -nc
         Ignore cwd.mounts entries from config - do not make the current
@@ -169,6 +175,9 @@ Networking options:
 	flag.StringVar(&f.configPath, "config", "", "")
 	flag.StringVar(&f.configPath, "c", "", "")
 	flag.BoolVar(&f.version, "version", false, "")
+
+	flag.BoolVar(&f.ls, "ls", false, "")
+	flag.BoolVar(&f.ls, "l", false, "")
 
 	flag.BoolVar(&f.noCwd, "no-cwd", false, "")
 	flag.BoolVar(&f.noCwd, "nc", false, "")
@@ -349,6 +358,16 @@ func parentProcessEntry() (int, error) {
 	}
 	if flags.version {
 		fmt.Println(Version)
+		return 0, nil
+	}
+	if flags.ls {
+		envs, err := jailfs.LsEnvs(dropHome)
+		if err != nil {
+			return 1, fmt.Errorf("failed to list environments: %v", err)
+		}
+		for _, envId := range envs {
+			fmt.Println(envId)
+		}
 		return 0, nil
 	}
 

@@ -380,3 +380,22 @@ func initTmpSubDir(envId string, paths *Paths) (string, error) {
 func tmpDirName(envId string) string {
 	return "drop-" + envId + "-"
 }
+
+func LsEnvs(dropHome string) ([]string, error) {
+	envsPath := filepath.Join(dropHome, "envs")
+	entries, err := os.ReadDir(envsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+
+	var envs []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			envs = append(envs, entry.Name())
+		}
+	}
+	return envs, nil
+}
