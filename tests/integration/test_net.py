@@ -30,7 +30,7 @@ class TestNet(TestBase):
         result = self.sandbox_run('nc -zv -w 1 google.com 80',
                                   drop_extra_args='-n off')
         self.assertEqual(1, result.returncode)
-        self.assertIn('Temporary failure in name resolution', result.stderr)
+        self.assertIn('getaddrinfo for host', result.stderr)
 
     def test_pasta_not_found_error(self):
         # Ensure a helpful error message is shown when pasta binary is

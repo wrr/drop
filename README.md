@@ -101,6 +101,47 @@ your uses account will be able to bypass the AppArmor restrictions (by
 replacing `~/bin/drop` with some other binary that would normally not
 have access to user namespaces).
 
+## Fedora - SELinux config
+
+Fedora SELinux policy has rules that allow `passta/pasta` operations
+required by Podman, but the policy does not cover Drop usage. With the
+default policy, starting Drop will result in an error like `failed to
+start pasta: couldn't open log file
+/home/alice/.drop/internal/run/foo-3668310064/pasta.log: Permission
+denied`.
+
+Drop requires `pasta` to be able to write pid and log files to the
+user home directory, and to access namespaces files in
+`/proc/$$/ns`. To create such a policy:
+
+```
+cd $(mktemp -d)
+cat > pasta_allow_drop.te << 'EOF'
+module pasta_allow_drop 1.0;
+require {
+        type pasta_t;
+        type unconfined_t;
+        type user_home_t;
+        class file write;
+        class dir open;
+}
+allow pasta_t unconfined_t:dir open;
+allow pasta_t user_home_t:file write;
+EOF
+```
+
+You can verify that the policy was added by running:
+
+```
+sudo semodule -l | grep pasta
+```
+
+If at anypoint you would like to remove the policy:
+
+```
+sudo semodule -r pasta_allow_drop
+```
+
 ## Running
 
 These are the basic commands to work with Drop:

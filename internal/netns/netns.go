@@ -1,6 +1,7 @@
 package netns
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -75,6 +76,16 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 	pidPath := filepath.Join(runDir, "pasta.pid")
 	logPath := filepath.Join(runDir, "pasta.log")
 
+	// Create empty log and pid files. Pasta version used by Fedora
+	// require these files to exists (perhaps this is some system
+	// policy/mechanism, not directly related to Pasta code).
+	if err := createEmptyFile(logPath); err != nil {
+		return nil, fmt.Errorf("failed to create pasta log file: %v", err)
+	}
+	if err := createEmptyFile(pidPath); err != nil {
+		return nil, fmt.Errorf("failed to create pasta pid file: %v", err)
+	}
+
 	pastaArgs = []string{
 		"--config-net",
 		// Address to be used in the namespace as DNS. Pasta forwards DNS
@@ -105,29 +116,40 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 		Pdeathsig: syscall.SIGKILL,
 	}
 
-	pastaLog := func() string {
+	// stderr contains only short output from before Pasta demonization
+	// (like invalid command line arguments error).
+	var stderrBuf bytes.Buffer
+	pastaCmd.Stderr = &stderrBuf
+
+	pastaOutput := func() string {
+		stderr := ""
+		if stderrBuf.Len() != 0 {
+			stderr = fmt.Sprintf("\n\nPasta stderr:\n%s", stderrBuf.String())
+		}
 		content, err := os.ReadFile(logPath)
 		if err != nil {
-			return ""
+			return stderr
 		}
-		return fmt.Sprintf("\n\nPasta log:\n%s", string(content))
+		return fmt.Sprintf("%s\n\nPasta log:\n%s", stderr, string(content))
 	}
 
 	if err := pastaCmd.Start(); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			return nil, fmt.Errorf("pasta binary for isolated networking not found.\n" +
-				"Please install passt/pasta package, for example, on Debian/Ubuntu: \n\n" +
-				"   $ sudo apt-get install passt\n\n" +
+				"Please install passt/pasta package, for example: \n\n" +
+				"   $ sudo apt-get install passt  # Debian/Ubuntu\n" +
+				"   $ sudo dnf install passt      # Fedora\n" +
+				"   $ sudo pacman -S passt        # Arch\n" +
 				"The package is available on most Linux distributions, see:\n" +
 				"https://passt.top/passt/about/#availability")
 		}
-		return nil, fmt.Errorf("failed to start pasta: %v", err)
+		return nil, fmt.Errorf("failed to start pasta: %v%s", err, pastaOutput())
 	}
 
 	// When started as a daemon, pasta parent process exits after
 	// network setup is done and pid is written to pidPath.
 	if err := pastaCmd.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to start pasta to isolate networking%v", pastaLog())
+		return nil, fmt.Errorf("failed to start pasta to isolate networking: %v%s", err, pastaOutput())
 	}
 
 	var daemonPid int
@@ -144,7 +166,7 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 	daemonPid, err := readDaemonPid(pidPath)
 	if err != nil {
 		cleanup()
-		return nil, fmt.Errorf("failed to read pasta daemon pid: %v%v", err, pastaLog())
+		return nil, fmt.Errorf("failed to read pasta daemon pid: %v%s", err, pastaOutput())
 	}
 
 	return cleanup, nil
@@ -162,4 +184,11 @@ func readDaemonPid(pidPath string) (int, error) {
 		return 0, fmt.Errorf("failed to parse pasta pid: %v", err)
 	}
 	return pid, nil
+}
+
+func createEmptyFile(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return os.WriteFile(path, []byte{}, 0600)
+	}
+	return nil
 }
