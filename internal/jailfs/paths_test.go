@@ -2,7 +2,9 @@ package jailfs
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -265,5 +267,96 @@ func TestDropHome(t *testing.T) {
 				t.Fatalf("DropHome(%q) = %q, want %q", homeDir, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTmpDirExistsWithRightPerms(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "foo")
+	if tmpDirExistsWithRightPerms(path) {
+		t.Fatalf("expected %q to be missing", path)
+	}
+	if err := os.Mkdir(path, 0x755); err != nil {
+		t.Fatalf("mkdir failed %v", err)
+	}
+	if tmpDirExistsWithRightPerms(path) {
+		t.Fatalf("expected %q to have invalid perms", path)
+	}
+	if err := os.Chmod(path, 0700); err != nil {
+		t.Fatalf("chmod failed: %v", err)
+	}
+	if !tmpDirExistsWithRightPerms(path) {
+		t.Fatalf("expected %q to be accepted", path)
+	}
+}
+
+func TestCreateTmpParentDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	origTmpDir := os.Getenv("TMPDIR")
+	os.Setenv("TMPDIR", tmpDir)
+	defer os.Setenv("TMPDIR", origTmpDir)
+
+	path, err := createTmpParentDir("alice")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := filepath.Join(tmpDir, "drop-alice")
+	if path != expected {
+		t.Fatalf("createTmpParentDir returned %q, want %q", path, expected)
+	}
+	stat, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat failed: %v", err)
+	}
+	if !stat.IsDir() {
+		t.Fatal("created path is not a directory")
+	}
+	if stat.Mode().Perm() != 0700 {
+		t.Fatalf("directory perms %o, want 0700", stat.Mode().Perm())
+	}
+
+	if sysStats, ok := stat.Sys().(*syscall.Stat_t); ok {
+		uid := os.Getuid()
+		if int(sysStats.Uid) != uid {
+			t.Fatalf("directory owned by %d, want %d", sysStats.Uid, uid)
+		}
+	}
+
+	// Should reuse the same path
+	path2, err := createTmpParentDir("alice")
+	if err != nil {
+		t.Fatalf("first call failed: %v", err)
+	}
+	if path2 != expected {
+		t.Fatalf("expected path to be reused, got %q want %q", path, expected)
+	}
+
+	// Change permission so the original parent dir is no longer usable
+	// as the parent dir.
+	if err := os.Chmod(path, 0755); err != nil {
+		t.Fatalf("chmod failed: %v", err)
+	}
+	path3, err := createTmpParentDir("alice")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path3 == expected {
+		t.Fatal("expected fallback to random suffix, got same path")
+	}
+
+	expectedPrefix := "drop-alice-"
+	dirName := filepath.Base(path3)
+	if !strings.HasPrefix(dirName, expectedPrefix) {
+		t.Fatalf("path %q doesn't have prefix %q", dirName, expectedPrefix)
+	}
+
+	stat, err = os.Stat(path3)
+	if err != nil {
+		t.Fatalf("fallback directory not created: %v", err)
+	}
+	if stat.Mode().Perm() != 0700 {
+		t.Fatalf("fallback dir perms are %o, want 0700", stat.Mode().Perm())
 	}
 }

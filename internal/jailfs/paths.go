@@ -108,7 +108,7 @@ func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 		return nil, err
 	}
 
-	tmp, err := initTmpSubDir(envId, &paths)
+	tmp, err := initEnvironmentTmpDir(envId, &paths)
 	if err != nil {
 		return nil, err
 	}
@@ -374,37 +374,39 @@ func ensureEmptyFile(path string) error {
 	return file.Close()
 }
 
-// initTmpSubDir checks if a tmp sub directory for the current
+// initEnvironmentTmpDir checks if a tmp directory for the current
 // environment already exists and has correct owner and
-// permissions. If this is not the case, it it creates a new sub
+// permissions. If this is not the case, it creates a new such
 // directory in tmp.
 //
-// In order to keep track of already existing tmp sub directory, a
-// link in the Env directory is created that points to it.
+// Subdirs are created in /tmp/drop-username[-suffix]/ parent dir,
+// which is readable only by the current user. This is to avoid
+// polluting /tmp with a separate dir for each drop environment and to
+// avoid exposing environment ids via /tmp.
 //
-// The function returns a path to the tmp subdirectory
-func initTmpSubDir(envId string, paths *Paths) (string, error) {
+// In order to keep track of already existing tmp sub-directory, a
+// link in the env directory is created that points to it.
+//
+// The function returns a path to the tmp subdirectory.
+func initEnvironmentTmpDir(envId string, paths *Paths) (string, error) {
 	tmpSymlink := filepath.Join(paths.Env, "tmp")
 
 	if target, err := os.Readlink(tmpSymlink); err == nil {
 		// No error - symlink exists
-		tmpSubDir := target
-
-		if stat, err := os.Stat(tmpSubDir); err == nil && stat.IsDir() {
-			// Check if directory exists, is owned by current user, and has 700 permissions
-			if sysStats, ok := stat.Sys().(*syscall.Stat_t); ok {
-				currentUID := os.Getuid()
-				if int(sysStats.Uid) == currentUID && stat.Mode().Perm() == 0700 {
-					return tmpSubDir, nil
-				}
-			}
+		if tmpDirExistsWithRightPerms(target) {
+			return target, nil
 		}
 		// Target directory is missing or invalid, remove the symlink, and
 		// create a new tmp sub dir.
 		os.Remove(tmpSymlink)
 	}
+	userName := filepath.Base(paths.HostHome)
+	parentPath, err := createTmpParentDir(userName)
+	if err != nil {
+		return "", fmt.Errorf("failed to create parent temporary directory: %v", err)
+	}
 
-	tmpSubDir, err := os.MkdirTemp("", tmpDirName(envId))
+	tmpSubDir, err := os.MkdirTemp(parentPath, envId+"-")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary directory: %v", err)
 	}
@@ -416,8 +418,40 @@ func initTmpSubDir(envId string, paths *Paths) (string, error) {
 	return tmpSubDir, nil
 }
 
-func tmpDirName(envId string) string {
-	return "drop-" + envId + "-"
+// createTmpParentDir tries to create /tmp/drop-{USERNAME} dir. If
+// such dir already exists, the function checks if it is owned by the
+// current user and has permissions 0700. If yes, this directory path
+// is returned. Otherwise, a directory
+// /tmp/drop-{USERNAME}-{random-suffix} is created and returned.
+func createTmpParentDir(userName string) (string, error) {
+	parentName := fmt.Sprintf("drop-%s", userName)
+
+	// In most cases the parent dir without a random suffix will be
+	// created and then re-used. The suffixes are only added as a
+	// fallback for cases where some other user created a tmp dir with
+	// name that drop is using.
+	parentPath := filepath.Join(os.TempDir(), parentName)
+	err := os.Mkdir(parentPath, 0700)
+	if err == nil || (os.IsExist(err) && tmpDirExistsWithRightPerms(parentPath)) {
+		return parentPath, nil
+	}
+	return os.MkdirTemp("", parentName+"-")
+}
+
+func tmpDirExistsWithRightPerms(path string) bool {
+	// Check if directory exists, is owned by current user, and has 700 permissions
+	if stat, err := os.Stat(path); err == nil && stat.IsDir() {
+		if sysStats, ok := stat.Sys().(*syscall.Stat_t); ok {
+			// This works also when Drop is run with -r, because linux
+			// correctly maps files owned by the user to have owner uuid of
+			// 0 in the namespace.
+			currentUID := os.Getuid()
+			if int(sysStats.Uid) == currentUID && stat.Mode().Perm() == 0700 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func LsEnvs(dropHome string) ([]string, error) {
