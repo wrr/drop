@@ -65,15 +65,21 @@ class TestBase(unittest.TestCase):
         rmdir(ENV_DIR)
         self.temp_dir = tempfile.mkdtemp(prefix='drop-tests')
         self.background_processes = []
+        self.created_envs = set()
+        self.created_homes = set()
 
     def tearDown(self):
         for process in self.background_processes:
             if process.poll() is None:  # Process is still running
                 process.kill()
 
-        rmdir(ENV_DIR)
+        for (env_id, drop_home) in self.created_envs:
+            self.rm_env(env_id, drop_home)
+
         if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
+        for drop_home in self.created_homes:
+            rm_drop_home(drop_home)
 
     def run_background(self, command, **subprocess_kwargs):
         """Execute a background command.
@@ -94,8 +100,9 @@ class TestBase(unittest.TestCase):
         self.background_processes.append(process)
         return process
 
-    def sandbox_run_background(self, command, config: Config = None,
-                               env_id: str = ENV_ID, drop_extra_args=None,
+    def sandbox_run_background(self, command=None, config: Config = None,
+                               drop_home: str = None, env_id: str = ENV_ID,
+                               drop_extra_args=None,
                                **subprocess_kwargs):
         """Execute a background command in the sandbox.
 
@@ -110,17 +117,26 @@ class TestBase(unittest.TestCase):
         if drop_extra_args:
             cmd_args += shlex.split(drop_extra_args)
         cmd_args += ['-c', config_file]
-        if env_id:
+        if env_id and creates_environment(drop_extra_args):
             cmd_args += ['-e', env_id]
-        cmd_args += shlex.split(command)
+            self.created_envs.add((env_id, drop_home))
+        if command:
+            cmd_args += shlex.split(command)
+        if drop_home:
+            env = subprocess_kwargs.get('env') or os.environ.copy()
+            env['DROP_HOME'] = drop_home
+            subprocess_kwargs['env'] = env
+            self.created_homes.add(drop_home)
         return self.run_background(cmd_args, **subprocess_kwargs)
 
-    def sandbox_run(self, command, config: Config = None,
-                    env_id: str = ENV_ID, drop_extra_args=None,
+    def sandbox_run(self, command=None, config: Config = None,
+                    drop_home: str = None, env_id: str = ENV_ID,
+                    drop_extra_args=None,
                     **subprocess_kwargs):
         """Execute a command in the sandbox and return its result."""
         process = self.sandbox_run_background(
-            command, config, env_id, drop_extra_args, **subprocess_kwargs)
+            command, config, drop_home, env_id, drop_extra_args,
+            **subprocess_kwargs)
         return self.wait_process_completed(process)
 
     def wait_process_completed(self, process):
@@ -143,15 +159,32 @@ class TestBase(unittest.TestCase):
         process.stderr.close()
         process.wait()
 
+    def rm_env(self, env_id, drop_home=None):
+        result = self.sandbox_run(drop_extra_args=f'-rm {env_id}',
+                                  drop_home=drop_home)
+
     def assertSuccess(self, result):
         self.assertTrue(result.stderr == '',
                         f'Unexpected error {result.stderr}')
         self.assertEqual(0, result.returncode)
 
 
+def creates_environment(drop_extra_args):
+    for arg in shlex.split(drop_extra_args or ''):
+        for f in ['-l', '-ls', '-rm', '-version', '-h']:
+            if arg.startswith(f):
+                return False
+    return True
+
 def rmdir(path):
     if os.path.exists(path):
         shutil.rmtree(path)
+
+def rm_drop_home(drop_home):
+    # drop_home contains emptyd dir with permissions 000 that rmtree
+    # fails to read and remove
+    os.rmdir(os.path.join(drop_home, "internal", "emptyd"))
+    shutil.rmtree(drop_home)
 
 def write(content, path: str) -> None:
     """Write content to a file, ensure parent dir exists"""
