@@ -1,0 +1,25 @@
+Drop sandbox
+Copyright 2025 Jan Wrobel <jan@mixedbit.org> and The Drop Authors
+the Apache License, Version 2.0
+https://github.com/wrr/drop
+
+Go language, tools and standard library
+Copyright The Go Authors
+BSD-3-Clause License
+https://github.com/golang/go/
+
+golang.org/x/sys library
+Copyright The Go Authors
+BSD-3-Clause License
+https://go.googlesource.com/sys
+
+kernel.org/pub/linux/libs/security/libcap/cap library
+Andrew G. Morgan <morgan@kernel.org>
+BSD-3-Clause License
+https://sites.google.com/site/fullycapable/
+
+BurntSushi/toml library
+Copyright TOML authors
+MIT License
+https://github.com/BurntSushi/toml/
+
