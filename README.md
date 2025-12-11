@@ -273,7 +273,7 @@ LS_COLORS=...
 Now let's install Claude Code using its .sh installer:
 
 ```console
-(drop)alice@shodan:~/code/web-app$ curl -fsSL https://claude.ai/install.sh | bash
+(drop)alice@shodan:~/code/web-app$ wget -qO- https://claude.ai/install.sh | bash
 Setting up Claude Code...
 
 ✔ Claude Code successfully installed!
