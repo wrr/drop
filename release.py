@@ -142,14 +142,12 @@ def build_binaries(version):
         size = binary.stat().st_size / (1024 * 1024)
         print(f'  - {binary.name} ({size:.2f} MB)')
 
-    return binaries
-
-def create_github_release(version, binaries):
+def create_github_release(version):
     step('Creating GitHub release')
     tag = version_to_tag(version)
 
-    binary_args = ' '.join(str(b) for b in binaries)
-    cmd = f"gh release create {tag} {binary_args} --title 'Release {version}'"
+    cmd = (f"gh release create {tag} --title 'Release {version}' "
+           "dist/drop* LICENSE NOTES")
     run(cmd, capture_output=False)
     print(f'\nGitHub release created: {version}')
 
@@ -173,8 +171,8 @@ def main():
             return 1
 
         add_git_tag_and_push(version)
-        binaries = build_binaries(version)
-        release_url = create_github_release(version, binaries)
+        build_binaries(version)
+        release_url = create_github_release(version)
         print(f'\nRelease created: {release_url}')
         return 0
 
