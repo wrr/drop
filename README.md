@@ -190,14 +190,20 @@ Environment variables that Drop uses are:
   its files - default config, environment dirs, runtime files. If not
   set, `~/.drop` is used.
 * `DROP_ENV` - set by Drop and available in the sandbox, contains the
-  id of the currently active Drop environment. Allows programs to
-  determine that they are running within Drop. Can be used to modify
+  id of the currently active Drop environment. Can be used to modify
   shell prompt within Drop or to conditionally load some config files
-  that should apply only in Drop or only outside of Drop. The content
-  of this variable should not be trusted as it can be modified by
-  sandboxed programs.
+  that should apply only in Drop or only outside of Drop.
 * `debian_chroot` - set by Drop to modify the default shell prompt on
-  Debian based systems (adds `(drop)` prefix to prompt).
+  Debian-based systems (adds `(drop)` prefix to prompt).
+
+To change sanboxed shell prompt on non-Debian-based systems, add the
+following to your shell configuration file, such as `.bashrc`:
+
+```bash
+if [ -n "$DROP_ENV" ]; then
+    export PS1="(drop) $PS1"
+fi
+```
 
 ## Drop tour
 
