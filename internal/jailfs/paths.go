@@ -130,8 +130,19 @@ func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 	return &paths, nil
 }
 
-func DefaultConfigPath(dropHome string) string {
-	return filepath.Join(dropHome, "config.toml")
+// DefaultConfigPath returns default path to a Drop config file.
+// This path is used when -config/-c option is not passed to Drop.
+// If DROP_CONFIG is set, it is used directly, otherwise XDG specification is followed:
+// the config is in (XDG_CONFIG_HOME or "~/.config")/drop/config.toml
+func DefaultConfigPath(userHome string) string {
+	if path := os.Getenv("DROP_CONFIG"); path != "" {
+		return path
+	}
+	parent := os.Getenv("XDG_CONFIG_HOME")
+	if parent == "" {
+		parent = filepath.Join(userHome, ".config")
+	}
+	return filepath.Join(parent, "drop", "config.toml")
 }
 
 // DropHome returns the base directory for Drop data

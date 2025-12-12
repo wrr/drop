@@ -154,8 +154,8 @@ These are the basic commands to work with Drop:
 ## Config file
 
 Upon the first start Drop creates [a default configuration
-file](./config.example.toml) in `~/.drop/config`. The comments in the
-file explain each setting.
+file](./config.example.toml) in `~/.config/drop/config.toml`. The
+comments in the file explain each setting.
 
 The default config exposes several common dotfiles, that are present
 in your home dir to Drop environments. The config also exposes common
@@ -189,6 +189,7 @@ Environment variables that Drop uses are:
 * `DROP_HOME` - use it to change the location where Drop stores all
   its files - default config, environment dirs, runtime files. If not
   set, `~/.drop` is used.
+* `DROP_CONFIG` - overwrites the default config location.
 * `DROP_ENV` - set by Drop and available in the sandbox, contains the
   id of the currently active Drop environment. Can be used to modify
   shell prompt within Drop or to conditionally load some config files

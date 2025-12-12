@@ -201,12 +201,35 @@ func TestPathToEnvId(t *testing.T) {
 }
 
 func TestDefaultConfigPath(t *testing.T) {
-	dropHome := "/home/alice/.config/drop"
-	result := DefaultConfigPath(dropHome)
+	origDropConfig := os.Getenv("DROP_CONFIG")
+	defer os.Setenv("DROP_CONFIG", origDropConfig)
+	os.Unsetenv("DROP_CONFIG")
+
+	origXdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
+	defer os.Setenv("XDG_CONFIG_HOME", origXdgConfigHome)
+	os.Unsetenv("XDG_CONFIG_HOME")
+
+	home := "/home/alice/"
+	result := DefaultConfigPath(home)
 	expected := "/home/alice/.config/drop/config.toml"
 	if result != expected {
-		t.Errorf("DefaultConfigPath(%q) = %q", dropHome, result)
+		t.Errorf("DefaultConfigPath(%q) = %q", home, result)
 	}
+
+	os.Setenv("XDG_CONFIG_HOME", "/home/alice/configs")
+	result = DefaultConfigPath(home)
+	expected = "/home/alice/configs/drop/config.toml"
+	if result != expected {
+		t.Errorf("DefaultConfigPath(%q) = %q", home, result)
+	}
+
+	expected = "/home/alice/drop-config.toml"
+	os.Setenv("DROP_CONFIG", expected)
+	result = DefaultConfigPath(home)
+	if result != expected {
+		t.Errorf("DefaultConfigPath(%q) = %q", home, result)
+	}
+
 }
 
 func TestDropHome(t *testing.T) {

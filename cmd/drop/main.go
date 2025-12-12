@@ -356,12 +356,12 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
+	defaultConfigPath := jailfs.DefaultConfigPath(homeDir)
+
 	dropHome, err := jailfs.DropHome(homeDir)
 	if err != nil {
 		return 1, err
 	}
-
-	defaultConfigPath := jailfs.DefaultConfigPath(dropHome)
 
 	flags, err := parseFlags(defaultConfigPath, false)
 	if err != nil {
