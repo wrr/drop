@@ -154,7 +154,7 @@ These are the basic commands to work with Drop:
 ## Config file
 
 Upon the first start Drop creates [a default configuration
-file](./config_example.toml) in `~/.drop/config`. The comments in the
+file](./config.example.toml) in `~/.drop/config`. The comments in the
 file explain each setting.
 
 The default config exposes several common dotfiles, that are present
