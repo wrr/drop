@@ -94,3 +94,11 @@ func ValidateRelPath(path string) error {
 	}
 	return nil
 }
+
+// CurrentUserHomeDir returns the home directory of the current user.
+func CurrentUserHomeDir() (string, error) {
+	if home := os.Getenv("HOME"); home != "" {
+		return home, nil
+	}
+	return "", fmt.Errorf("failed to determine the current user home directory; HOME environment variable is not set")
+}

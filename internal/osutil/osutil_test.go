@@ -16,6 +16,7 @@ package osutil
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -159,5 +160,23 @@ func TestValidateRelPath(t *testing.T) {
 
 			})
 		}
+	}
+}
+
+func TestCurrentUserHomeDir(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", "/home/alice")
+	home, err := CurrentUserHomeDir()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if home != "/home/alice" {
+		t.Fatalf("Invalid user home dir: %q", home)
+	}
+	os.Unsetenv("HOME")
+	_, err = CurrentUserHomeDir()
+	if terr := checkError("failed to determine the current user home directory", err); terr != nil {
+		t.Fatal(terr)
 	}
 }

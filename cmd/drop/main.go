@@ -20,7 +20,6 @@ import (
 	"math"
 	"os"
 	"os/exec"
-	"os/user"
 	"runtime"
 	"runtime/coverage"
 	"strings"
@@ -69,8 +68,7 @@ type Flags struct {
 	udpHostPorts      []string
 
 	// Internal flags passed only to the child process.
-	runDir  string
-	homeDir string
+	runDir string
 }
 
 var Version = "dev" // overridden by release binaries linker
@@ -84,7 +82,7 @@ var Version = "dev" // overridden by release binaries linker
 // simply be able to read copies of the config structs created in the
 // parent, but in Go we need to recreate the structs in the child by
 // passing appropriate flags.
-func (f *Flags) toChildArgs(runDir string, homeDir string) []string {
+func (f *Flags) toChildArgs(runDir string) []string {
 	// Other flags are not passed because child doesn't use them,
 	// perhaps for clarity it would be better to pass all the flags.
 	childArgs := []string{
@@ -92,7 +90,6 @@ func (f *Flags) toChildArgs(runDir string, homeDir string) []string {
 		"-env", f.envId,
 		"-config", f.configPath,
 		"-run-dir", runDir,
-		"-home", homeDir,
 	}
 	if f.networkMode != "" {
 		childArgs = append(childArgs, "-net", f.networkMode)
@@ -221,7 +218,6 @@ Networking options:
 		// Child process always has -child argument
 		flag.BoolVar(&child, "child", false, "")
 		flag.StringVar(&f.runDir, "run-dir", "", "")
-		flag.StringVar(&f.homeDir, "home", "", "")
 	}
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
@@ -355,10 +351,7 @@ func parentProcessEntry() (int, error) {
 		return 1, fmt.Errorf("drop should not be run as root")
 	}
 
-	// Obtain home dir in the parent, because with -r option child we
-	// run as root in the namespace, but we don't want to use /root as the
-	// home dir.
-	homeDir, err := currentUserHomeDir()
+	homeDir, err := osutil.CurrentUserHomeDir()
 	if err != nil {
 		return 1, err
 	}
@@ -435,7 +428,7 @@ func parentProcessEntry() (int, error) {
 
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
-	cmd := exec.Command(os.Args[0], flags.toChildArgs(runDir, homeDir)...)
+	cmd := exec.Command(os.Args[0], flags.toChildArgs(runDir)...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -563,6 +556,11 @@ func childProcessEntry() (int, error) {
 	if err != nil {
 		return 1, err
 	}
+	homeDir, err := osutil.CurrentUserHomeDir()
+	if err != nil {
+		// Should not happen, already worked in the parent.
+		return 1, err
+	}
 
 	// Wait for parent to signal that it has finished setup.
 	// The read end of the pipe is inherited as file descriptor 3
@@ -578,7 +576,7 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	paths, err := jailfs.NewPaths(flags.envId, flags.homeDir, flags.runDir)
+	paths, err := jailfs.NewPaths(flags.envId, homeDir, flags.runDir)
 	if err != nil {
 		return 1, err
 	}
@@ -761,14 +759,6 @@ func dropAllCaps() error {
 		return fmt.Errorf("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
 	}
 	return nil
-}
-
-func currentUserHomeDir() (string, error) {
-	currentUser, err := user.Current()
-	if err != nil {
-		return "", fmt.Errorf("failed to get current user: %v", err)
-	}
-	return currentUser.HomeDir, nil
 }
 
 // AllFdsCloseOnExec ensures all open file descriptors have O_CLOEXEC
