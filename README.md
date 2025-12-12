@@ -307,12 +307,12 @@ ls: cannot access '/home/alice/.local/bin/claude': No such file or directory
 
 Each Drop environment gets its own home dir. The files created in the
 Drop environment home dir are not available and do not pollute the
-original home dir. Drop home dirs are stored in
-`.drop/envs/ENV-NAME/home`. The `claude` file is indeed there:
+original home dir. Drop home dirs are stored by default in
+`.local/share/drop/envs/ENV-NAME/home`. The `claude` file is indeed there:
 
 ```console
-ls ~/.drop/envs/claude/home/.local/bin/claude 
-/home/alice/.drop/envs/claude/home/.local/bin/claude
+ls ~/.local/share/drop/envs/claude/home/.local/bin/claude 
+/home/alice/.local/share/drop/envs/claude/home/.local/bin/claude
 ```
 
 Drop environments are easily disposable, you can just remove them and

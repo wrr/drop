@@ -236,55 +236,75 @@ func TestDropHome(t *testing.T) {
 	homeDir := "/home/alice"
 
 	tests := []struct {
-		name      string
-		dropHome  string
-		want      string
-		wantError string
+		name        string
+		dropHome    string
+		xdgDataHome string
+		want        string
+		wantError   string
 	}{
 		{
-			name:     "env not set",
-			dropHome: "",
-			want:     "/home/alice/.drop",
+			name: "envs not set",
+			want: "/home/alice/.local/share/drop",
 		},
 		{
-			name:     "absolute path",
+			name:     "absolute DROP_HOME",
 			dropHome: "/var/drop-data",
 			want:     "/var/drop-data",
 		},
 		{
-			name:     "tilde path",
+			name:     "tilde DROP_HOME",
 			dropHome: "~/.my-drop",
 			want:     "/home/alice/.my-drop",
 		},
 		{
-			name:      "relative path",
+			name:        "absolute XDG_DATA_HOME",
+			xdgDataHome: "/home/alice/data",
+			want:        "/home/alice/data/drop",
+		},
+		{
+			name:      "invalid DROP_HOME: relative path",
 			dropHome:  "relative/path",
 			wantError: "path must start with / or ~/",
 		},
 		{
-			name:      "not normalized",
+			name:      "invalid DROP_HOME: not normalized",
 			dropHome:  "/var/../etc/drop",
 			wantError: "path is not normalized",
 		},
 		{
-			name:      "whole root",
+			name:      "invalid DROP_HOME whole root",
 			dropHome:  "/",
 			wantError: "path cannot point to the whole root directory",
 		},
 		{
-			name:      "whole home",
+			name:      "invalid DROP_HOME: whole home",
 			dropHome:  "~/",
 			wantError: "path cannot point to the whole home directory",
+		},
+		{
+			name:        "invalid XDG_DATA_HOME: relative path",
+			xdgDataHome: "ralative/path",
+			wantError:   "path must start with / or ~/",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			origDropHome := os.Getenv("DROP_HOME")
+			defer os.Setenv("DROP_HOME", origDropHome)
+			origXdgDataHome := os.Getenv("XDG_DATA_HOME")
+			defer os.Setenv("XDG_DATA_HOME", origXdgDataHome)
+
 			if tt.dropHome != "" {
 				os.Setenv("DROP_HOME", tt.dropHome)
-				defer os.Unsetenv("DROP_HOME")
 			} else {
 				os.Unsetenv("DROP_HOME")
+			}
+
+			if tt.xdgDataHome != "" {
+				os.Setenv("XDG_DATA_HOME", tt.xdgDataHome)
+			} else {
+				os.Unsetenv("XDG_DATA_HOME")
 			}
 
 			got, err := DropHome(homeDir)

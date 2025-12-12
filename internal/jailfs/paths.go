@@ -32,11 +32,11 @@ type Paths struct {
 	// Cwd is the directory where Drop was started.
 	Cwd string
 	// DropHome is the top-level directory where Drop files are stored
-	// (e.g. /home/alice/.drop).
+	// (e.g. /home/alice/.local/share/drop).
 	DropHome string
 	// Env is the entry point for all paths specific to the current
 	// environment. For example, if envId is 'project-foo', Env is
-	// /home/alice/.drop/envs/project-foo.
+	// /home/alice/.local/share/drop/envs/project-foo.
 	Env string
 	// FsRoot is where the root filesystem is assembled before chroot.
 	FsRoot string
@@ -44,7 +44,7 @@ type Paths struct {
 	// (e.g. /home/alice).
 	HostHome string
 	// Home is the directory mounted as the home directory in the jail
-	// (e.g. /home/alice/.drop/envs/project-foo/home).
+	// (e.g. /home/alice/.local/share/drop/envs/project-foo/home).
 	Home string
 	// Drop home dir can have entries exposed from the host home
 	// directory via paths_ro, paths_rw config. To expose these entries
@@ -58,11 +58,11 @@ type Paths struct {
 	HomeLower string
 	HomeWork  string
 	// Etc is the directory mounted as read-only overlay over /etc in the jail
-	// (e.g. /home/alice/.drop/envs/project-foo/etc).
+	// (e.g. /home/alice/.local/share/drop/envs/project-foo/etc).
 	Etc string
 	// Var is the directory mounted as /var in the jail. The original
 	// /var is hidden
-	// (e.g. /home/alice/.drop/envs/project-foo/var).
+	// (e.g. /home/alice/.local/share/drop/envs/project-foo/var).
 	Var string
 	// Tmp is the directory mounted as /tmp in the jail. It is placed as a
 	// subdir of the host $TMPDIR to allow standard cleanup mechanisms.
@@ -134,22 +134,21 @@ func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 // This path is used when -config/-c option is not passed to Drop.
 // If DROP_CONFIG is set, it is used directly, otherwise XDG specification is followed:
 // the config is in (XDG_CONFIG_HOME or "~/.config")/drop/config.toml
-func DefaultConfigPath(userHome string) string {
+func DefaultConfigPath(homeDir string) string {
 	if path := os.Getenv("DROP_CONFIG"); path != "" {
 		return path
 	}
 	parent := os.Getenv("XDG_CONFIG_HOME")
 	if parent == "" {
-		parent = filepath.Join(userHome, ".config")
+		parent = filepath.Join(homeDir, ".config")
 	}
 	return filepath.Join(parent, "drop", "config.toml")
 }
 
-// DropHome returns the base directory for Drop data
-// (config file, environment dirs, temporary runtime files). It
-// returns the value of DROP_HOME environment variable if set,
-// otherwise returns homeDir/.drop. DROP_HOME can use ~/ prefix to
-// refer to home directory.
+// DropHome returns the base directory for Drop data (environment
+// dirs, internal files, such as mount points). If DROP_HOME is set,
+// it is used directly, otherwise XDG specification is followed:
+// (XDG_DATA_HOME or "~/.local/share")/drop/ is returned
 func DropHome(homeDir string) (string, error) {
 	if dropHome := os.Getenv("DROP_HOME"); dropHome != "" {
 		if err := osutil.ValidateRootOrHomeSubPath(dropHome); err != nil {
@@ -157,7 +156,15 @@ func DropHome(homeDir string) (string, error) {
 		}
 		return osutil.TildeToHomeDir(dropHome, homeDir), nil
 	}
-	return filepath.Join(homeDir, ".drop"), nil
+	parent := os.Getenv("XDG_DATA_HOME")
+	if parent == "" {
+		parent = filepath.Join(homeDir, ".local", "share")
+	}
+	dropHome := filepath.Join(parent, "drop")
+	if err := osutil.ValidateRootOrHomeSubPath(dropHome); err != nil {
+		return "", fmt.Errorf("invalid XDG_DATA_HOME environment variable: %v", err)
+	}
+	return dropHome, nil
 }
 
 var envIdChars = `a-zA-Z0-9-_\.`
@@ -187,6 +194,9 @@ func runDirsPath(dropHome string) string {
 // files and dirs (for example, the main root file system mount
 // point). The directory can be removed when this jail instance
 // terminates.
+//
+// We don't use XDG_RUNTIME_DIR, because it is commonly tmpfs and
+// overlayfs mount points cannot be placed on it.
 func NewRunDir(dropHome string, envId string) (string, func(), error) {
 	parent := runDirsPath(dropHome)
 

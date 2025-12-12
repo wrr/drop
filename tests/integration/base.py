@@ -25,7 +25,7 @@ from typing import List
 ENV_ID = 'drop-tests'
 
 def env_dir(env_id: str) -> Path:
-    return Path.home() / '.drop' / 'envs' / env_id
+    return Path.home() / '.local' / 'share' / 'drop' / 'envs' / env_id
 
 ENV_DIR = env_dir(ENV_ID)
 
