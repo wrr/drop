@@ -122,6 +122,13 @@ cwd.blocked_paths = [
 # Do not expose variables containing secrets. Expose all
 # other variables needed for convenient work in Drop.
 exposed_env_vars = [
+  "XDG_DATA_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_STATE_HOME",
+  "XDG_DATA_DIRS",
+  "XDG_CONFIG_DIRS",
+  "XDG_CACHE_HOME",
+  "XDG_RUNTIME_DIRS",
   "SHELL",
   "LC_*",
   "XTERM_SHELL",
