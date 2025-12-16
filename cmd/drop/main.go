@@ -15,8 +15,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -30,9 +32,11 @@ import (
 
 	"github.com/wrr/drop/internal/config"
 	"github.com/wrr/drop/internal/env"
+	"github.com/wrr/drop/internal/ipc"
 	"github.com/wrr/drop/internal/jailfs"
 	"github.com/wrr/drop/internal/netns"
 	"github.com/wrr/drop/internal/osutil"
+	"github.com/wrr/drop/internal/pty"
 )
 
 // stringSlice implements flag.Value interface for repeated string flags
@@ -420,13 +424,11 @@ func parentProcessEntry() (int, error) {
 		return 1, fmt.Errorf("port forwarding is only supported with isolated network mode (-n isolated)")
 	}
 
-	// Unix socket pair for synchronizing setup with the child process.
-	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	// Socket pair for communicating with the child process.
+	parentEnd, childEnd, err := ipc.NewParentChildSocket()
 	if err != nil {
-		return 1, fmt.Errorf("failed to create socket pair: %v", err)
+		return 1, err
 	}
-	childEnd := os.NewFile(uintptr(fds[0]), "child-socket")
-	parentEnd := os.NewFile(uintptr(fds[1]), "parent-socket")
 
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
@@ -434,7 +436,7 @@ func parentProcessEntry() (int, error) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.ExtraFiles = []*os.File{childEnd}
+	cmd.ExtraFiles = []*os.File{childEnd.Socket}
 
 	cloneFlags := uintptr(syscall.CLONE_NEWNS |
 		syscall.CLONE_NEWIPC |
@@ -512,7 +514,6 @@ func parentProcessEntry() (int, error) {
 	if err := cmd.Start(); err != nil {
 		return 1, fmt.Errorf("jailed process start failed: %v", err)
 	}
-	defer discardChildTermInjection()
 	defer func() {
 		if cmd != nil {
 			cmd.Process.Kill()
@@ -533,12 +534,33 @@ func parentProcessEntry() (int, error) {
 		defer cleanPasta()
 	}
 
-	// Signal child process that setup is finished. This needs to be
-	// done when pasta is running, because only then the child can
-	// successfully run programs that use network.
-	if err := signalParentReady(parentEnd); err != nil {
+	// Notify the child that network setup has finished, so the child
+	// can run programs that use network.
+	if err := parentEnd.NotifyNetworkReady(); err != nil {
 		return 1, err
 	}
+
+	if pty.PtyNeeded() {
+		parentPty, err := parentEnd.RecvPty()
+		if errors.Is(err, io.EOF) {
+			// EOF means child terminated, most likely do to some not socket
+			// related problem which will be reported by the child. Continue
+			// to cmd.Wait to detect the child termination.
+		} else {
+			if err != nil {
+				return 1, err
+			}
+
+			cleanForwardPty, err := pty.ForwardPty(parentPty)
+			parentPty = nil // owned by ForwardPty
+			if err != nil {
+				return 1, err
+			}
+			defer cleanForwardPty()
+		}
+	}
+
+	parentEnd.Close()
 
 	err = cmd.Wait()
 	cmd = nil
@@ -564,18 +586,20 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	// Wait for parent to signal that it has finished setup.
 	// The child end of the socket pair is inherited as file descriptor 3
-	readEnd := os.NewFile(3, "parent-ready-socket")
-	if readEnd == nil {
-		return 1, fmt.Errorf("failed to get socket to parent")
-	}
-	if err := waitParentReady(readEnd); err != nil {
+	childEnd := ipc.NewChildEnd(3)
+	defer childEnd.Close()
+
+	if err := childEnd.WaitNetworkReady(); err != nil {
 		return 1, err
 	}
 
 	if err := ensureCapSysAdmin(); err != nil {
 		return 1, err
+	}
+
+	if _, err := unix.Setsid(); err != nil {
+		return 1, fmt.Errorf("setsid failed: %v", err)
 	}
 
 	paths, err := jailfs.NewPaths(flags.envId, homeDir, flags.runDir)
@@ -612,6 +636,27 @@ func childProcessEntry() (int, error) {
 	}
 	if chdirErr != nil {
 		return 1, fmt.Errorf("failed to chdir to /: %v", chdirErr)
+	}
+
+	if pty.PtyNeeded() {
+		parentPty, childPty, err := pty.NewPty()
+		if err != nil {
+			return 1, err
+		}
+
+		if err := childEnd.SendPty(parentPty); err != nil {
+			return 1, err
+		}
+		parentPty.Close()
+
+		if err := pty.SetControllingTerminal(childPty); err != nil {
+			return 1, err
+		}
+
+		if err := pty.ReplacePty(childPty); err != nil {
+			return 1, err
+		}
+		childPty.Close()
 	}
 
 	// Drop all the capabilities in the user namespace.
@@ -678,76 +723,6 @@ func ensureCapSysAdmin() error {
 			"Is Drop allowed to use user namespaces via AppArmor profile?")
 	}
 	return nil
-}
-
-// signalParentReady writes to the socket to signal that parent setup has finished
-func signalParentReady(parentEnd *os.File) error {
-	defer parentEnd.Close()
-	if _, err := parentEnd.Write([]byte{1}); err != nil {
-		return fmt.Errorf("failed to write to parent ready socket: %v", err)
-	}
-	return nil
-}
-
-// waitParentReady blocks until the parent signals the setup has finished
-func waitParentReady(childEnd *os.File) error {
-	defer childEnd.Close()
-	buf := make([]byte, 1)
-	if _, err := childEnd.Read(buf); err != nil {
-		return fmt.Errorf("failed to read from socket: %v", err)
-	}
-	return nil
-}
-
-// discardChildTermInjection checks if any input is pending on the
-// parent standard input and discards it.
-//
-// This is to prevent the terminating sanboxed process from injecting
-// terminal input to the parent, thus executing code outside of the
-// sandbox.
-//
-// https://www.errno.fr/TTYPushback.html
-// https://www.openwall.com/lists/oss-security/2023/03/14/2
-//
-// Note that since kernel 6.2 'sysctl dev.tty.legacy_tiocsti=0'
-// (default on Ubuntu 24) disables the ioctl TIOCSTI call, which fixes
-// the issue addressed by discardChildTermInjection
-func discardChildTermInjection() {
-	for {
-		// If the child (process 1 in the pid namespace) terminates, all
-		// other process in the namespace are killed and the namespace is
-		// removed (see man pid_namespaces). Based on this, we assume that
-		// when wait() syscall returns, there can be no background
-		// processes left running in the namespace that could write to
-		// parent input terminal with some delay. We just discard whatever
-		// is available after wait() returns.
-
-		readfds := &unix.FdSet{}
-		const stdin int = 0
-		readfds.Zero()
-		readfds.Set(stdin)
-
-		fd_count, err := unix.Select(stdin+1, readfds, nil, nil, &unix.Timeval{Sec: 0, Usec: 0})
-		if err != nil {
-			fmt.Printf("Failed to discard jailed process stdin leftowers: %v", err)
-			return
-		}
-		if fd_count == 0 {
-			// Nothing available
-			return
-		}
-		buf := make([]byte, 128)
-		n, err := unix.Read(stdin, buf)
-		if err != nil {
-			fmt.Printf("Failed to discard jailed process stdin leftowers: %v", err)
-			return
-		}
-		if n == 0 {
-			// EOF
-			return
-		}
-		fmt.Fprintf(os.Stderr, "Discarding %d chars\n", n)
-	}
 }
 
 func dropAllCaps() error {

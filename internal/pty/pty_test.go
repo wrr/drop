@@ -2,6 +2,8 @@ package pty
 
 import (
 	"testing"
+
+	"golang.org/x/term"
 )
 
 func TestNewPty(t *testing.T) {
@@ -11,6 +13,14 @@ func TestNewPty(t *testing.T) {
 	}
 	defer parent.Close()
 	defer child.Close()
+
+	// Set child to raw mode for predictable test behavior
+	// (disables echo and \n replacement with \r\n)
+	oldState, err := term.MakeRaw(int(child.Fd()))
+	if err != nil {
+		t.Fatalf("Failed to set child to raw mode: %v", err)
+	}
+	defer term.Restore(int(child.Fd()), oldState)
 
 	// Test parent -> child communication
 	testMsg1 := []byte("Hello:\nparent\n")

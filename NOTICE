@@ -9,6 +9,7 @@ BSD-3-Clause License
 https://github.com/golang/go/
 
 golang.org/x/sys library
+golang.org/x/term library
 Copyright The Go Authors
 BSD-3-Clause License
 https://go.googlesource.com/sys

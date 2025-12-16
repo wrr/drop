@@ -1,9 +1,5 @@
 // Copyright 2025 Jan Wrobel <jan@mixedbit.org>
 //
-// makeRaw and setONLCR functions are from
-// https://github.com/containerd/console
-// Copyright The containerd Authors.
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,8 +16,14 @@ package pty
 
 import (
 	"fmt"
-	"golang.org/x/sys/unix"
+	"io"
 	"os"
+	"os/signal"
+	"slices"
+	"syscall"
+
+	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 )
 
 func ptyError(format string, a ...any) error {
@@ -33,61 +35,174 @@ func ptyError(format string, a ...any) error {
 func NewPty() (*os.File, *os.File, error) {
 	parent, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
 	if err != nil {
-		return nil, nil, ptyError("failed to open /dev/ptmx: %w", err)
+		return nil, nil, ptyError("failed to open /dev/ptmx: %v", err)
 	}
 	parentFd := int(parent.Fd())
 
 	// Unlock the child PTY
 	if err := unix.IoctlSetPointerInt(parentFd, unix.TIOCSPTLCK, 0); err != nil {
 		parent.Close()
-		return nil, nil, ptyError("failed to unlock PTY: %w", err)
+		return nil, nil, ptyError("failed to unlock PTY: %v", err)
 	}
 
 	// Get the child PTY number
 	ptyNum, err := unix.IoctlGetInt(parentFd, unix.TIOCGPTN)
 	if err != nil {
 		parent.Close()
-		return nil, nil, ptyError("failed to get PTY number: %w", err)
+		return nil, nil, ptyError("failed to get PTY number: %v", err)
 	}
 	childPath := fmt.Sprintf("/dev/pts/%d", ptyNum)
 
 	child, err := os.OpenFile(childPath, os.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
 		parent.Close()
-		return nil, nil, ptyError("failed to open child PTY %s: %w", childPath, err)
-	}
-	childFd := int(child.Fd())
-
-	// Set PTY to raw mode to disable echo and line processing
-	termios, err := unix.IoctlGetTermios(childFd, unix.TCGETS)
-	if err != nil {
-		return nil, nil, ptyError("failed to get termios: %v", err)
-	}
-	makeRaw(termios)
-
-	if err := unix.IoctlSetTermios(childFd, unix.TCSETS, termios); err != nil {
-		return nil, nil, ptyError("failed to set raw mode: %v", err)
+		return nil, nil, ptyError("failed to open child PTY %s: %v", childPath, err)
 	}
 
 	return parent, child, nil
 }
 
-func setONLCR(t *unix.Termios, enable bool) {
-	if enable {
-		// Set +onlcr so we can act like a real terminal
-		t.Oflag |= unix.ONLCR
-	} else {
-		// Set -onlcr so we don't have to deal with \r.
-		t.Oflag &^= unix.ONLCR
-	}
+// PtyNeeded returns true if any of the stdin, stdout, stderr is a
+// terminal. For descriptors that are terminals, Sandbox needs to
+// create own PTY instead of using the original, not sandboxed
+// terminal.
+func PtyNeeded() bool {
+	return slices.ContainsFunc([]int{0, 1, 2}, term.IsTerminal)
 }
 
-func makeRaw(t *unix.Termios) {
-	t.Iflag &^= (unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.ISTRIP | unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON)
-	t.Oflag &^= unix.OPOST
-	t.Lflag &^= (unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN)
-	t.Cflag &^= (unix.CSIZE | unix.PARENB)
-	t.Cflag |= unix.CS8
-	t.Cc[unix.VMIN] = 1
-	t.Cc[unix.VTIME] = 0
+// SetControllingTerminal sets the pty as the controlling terminal for
+// the current process. The process must be a session leader (call
+// setsid() first).
+func SetControllingTerminal(pty *os.File) error {
+	err := unix.IoctlSetPointerInt(int(pty.Fd()), unix.TIOCSCTTY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to set controlling terminal: %v", err)
+	}
+	return nil
+}
+
+// syncWindowSize copies the window size from srcFd to dstFd.
+func syncWindowSize(srcFd, dstFd int) error {
+	ws, err := unix.IoctlGetWinsize(srcFd, unix.TIOCGWINSZ)
+	if err != nil {
+		return err
+	}
+	return unix.IoctlSetWinsize(dstFd, unix.TIOCSWINSZ, ws)
+}
+
+// keepWindowSizeSynced propagates terminal window size from the
+// current process to the termToSync. The function starts a goroutine
+// to propagate also all future terminal window size changes.
+// Returns error if none of stdin, stdout, stderr is a terminal
+// (PtyNeeded returns false).
+//
+// Returns a cleanup function that should be called when program exits.
+func keepWindowSizeSynced(termToSync *os.File) (func(), error) {
+	syncFrom := slices.IndexFunc([]int{0, 1, 2}, term.IsTerminal)
+	if syncFrom == -1 {
+		return nil, fmt.Errorf("sync window size: none of stdin, stdout, stderr is a terminal")
+	}
+	syncTo := int(termToSync.Fd())
+	if err := syncWindowSize(syncFrom, syncTo); err != nil {
+		return nil, fmt.Errorf("sync window size: %v", err)
+	}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGWINCH)
+
+	go func() {
+		for range sigCh {
+			// Ignore errors
+			syncWindowSize(syncFrom, syncTo)
+		}
+	}()
+
+	cleanup := func() {
+		signal.Stop(sigCh)
+		close(sigCh)
+	}
+	return cleanup, nil
+}
+
+// ForwardPty forwards:
+// * terminal input (if any) of the calling process to the dstPty
+// * dstPty terminal output to the calling process terminal
+// * terminal windows size changes from the calling process to the dstPty
+// The function takes ownership of dstPty.
+// This function returns error if none of stdin, stdout,
+// stderr of the calling process is a terminal (PtyNeeded returns false).
+func ForwardPty(dstPty *os.File) (func(), error) {
+	var (
+		origState        *term.State
+		cleanWinSizeSync func()
+		err              error
+	)
+
+	cleanup := func() {
+		if cleanWinSizeSync != nil {
+			cleanWinSizeSync()
+		}
+		if origState != nil {
+			term.Restore(0, origState)
+		}
+		// Terminates io.Copy goroutine that reads from dstPty,
+
+		// The second io.Copy goroutine that reads from os.Stdin can keep
+		// running until program terminates unless there is some os.Stdin
+		// input.
+		dstPty.Close()
+	}
+
+	if term.IsTerminal(0) {
+		// Only terminal used for input must be switched to raw mode.
+		origState, err = term.MakeRaw(0)
+		if err != nil {
+			cleanup()
+			return nil, fmt.Errorf("switch terminal to raw mode: %v", err)
+		}
+	}
+	cleanWinSizeSync, err = keepWindowSizeSynced(dstPty)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+
+	// Start I/O forwarding goroutines
+	if term.IsTerminal(0) {
+		// sandboxed term <- host term
+		go io.Copy(dstPty, os.Stdin)
+	}
+	// host term <- sandboxed term
+	var outputTerm *os.File
+
+	// Find terminal to output to. In a rare case when stdout and
+	// stderr are different terminals, all Drop output goes to the
+	// terminal associated with stdout.
+	if term.IsTerminal(1) {
+		outputTerm = os.Stdout
+	} else if term.IsTerminal(2) {
+		outputTerm = os.Stderr
+	} else {
+		// stdout and stderr are not terminals, but stdin is.
+		// Write PTY output (primarily input echo) back to stdin,
+		// which works because terminal devices are bidirectional.
+		outputTerm = os.Stdin
+	}
+	// host term <- sandboxed term
+	go io.Copy(outputTerm, dstPty)
+
+	return cleanup, nil
+}
+
+// ReplacePty finds which of the stdin, stdout, stderr descriptors
+// point to a terminal, and changes these descriptors to point to the
+// new terminal ptyToUse.
+func ReplacePty(ptyToUse *os.File) error {
+	for _, i := range []int{0, 1, 2} {
+		if term.IsTerminal(i) {
+			if err := unix.Dup3(int(ptyToUse.Fd()), i, 0); err != nil {
+				return fmt.Errorf("replace pty: failed to point fd %d to the new terminal: %v", i, err)
+			}
+		}
+	}
+	return nil
 }
