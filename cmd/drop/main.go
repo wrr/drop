@@ -420,11 +420,13 @@ func parentProcessEntry() (int, error) {
 		return 1, fmt.Errorf("port forwarding is only supported with isolated network mode (-n isolated)")
 	}
 
-	// Pipe for synchronizing setup with the child process.
-	childEnd, parentEnd, err := os.Pipe()
+	// Unix socket pair for synchronizing setup with the child process.
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
-		return 1, fmt.Errorf("failed to create pipe: %v", err)
+		return 1, fmt.Errorf("failed to create socket pair: %v", err)
 	}
+	childEnd := os.NewFile(uintptr(fds[0]), "child-socket")
+	parentEnd := os.NewFile(uintptr(fds[1]), "parent-socket")
 
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
@@ -563,10 +565,10 @@ func childProcessEntry() (int, error) {
 	}
 
 	// Wait for parent to signal that it has finished setup.
-	// The read end of the pipe is inherited as file descriptor 3
-	readEnd := os.NewFile(3, "parent-ready-pipe")
+	// The child end of the socket pair is inherited as file descriptor 3
+	readEnd := os.NewFile(3, "parent-ready-socket")
 	if readEnd == nil {
-		return 1, fmt.Errorf("failed to get pipe to parent")
+		return 1, fmt.Errorf("failed to get socket to parent")
 	}
 	if err := waitParentReady(readEnd); err != nil {
 		return 1, err
@@ -678,11 +680,11 @@ func ensureCapSysAdmin() error {
 	return nil
 }
 
-// signalParentReady writes to the pipe to signal that parent setup has finished
+// signalParentReady writes to the socket to signal that parent setup has finished
 func signalParentReady(parentEnd *os.File) error {
 	defer parentEnd.Close()
 	if _, err := parentEnd.Write([]byte{1}); err != nil {
-		return fmt.Errorf("failed to write to network ready pipe: %v", err)
+		return fmt.Errorf("failed to write to parent ready socket: %v", err)
 	}
 	return nil
 }
@@ -692,7 +694,7 @@ func waitParentReady(childEnd *os.File) error {
 	defer childEnd.Close()
 	buf := make([]byte, 1)
 	if _, err := childEnd.Read(buf); err != nil {
-		return fmt.Errorf("failed to read from pipe: %v", err)
+		return fmt.Errorf("failed to read from socket: %v", err)
 	}
 	return nil
 }
