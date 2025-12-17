@@ -148,7 +148,7 @@ func (rt *root) bindAll(mounts []config.Mount, flags uintptr) error {
 					return err
 				}
 			} else {
-				if trgInfo != nil && !trgInfo.Mode().IsRegular() {
+				if trgInfo != nil && trgInfo.IsDir() {
 					log.Info(infoHeader+"but is a directory not a file", src)
 					continue
 				}
@@ -266,6 +266,12 @@ func (rt *root) mountDev() error {
 		return err
 	}
 
+	opts := "mode=600,newinstance,ptmxmode=666"
+	flags = uintptr(unix.MS_NOEXEC | unix.MS_NOSUID)
+	if err := rt.mount("devpts", "/dev/pts", "devpts", flags, opts); err != nil {
+		return err
+	}
+
 	// mkdev is not allowed in the container when running as a user,
 	// even if unix.CAP_MKNOD is passed, so we map some host devices to
 	// the container /dev instead.
@@ -275,20 +281,18 @@ func (rt *root) mountDev() error {
 		{Source: "/dev/full", Target: "/dev/full"},
 		{Source: "/dev/random", Target: "/dev/random"},
 		{Source: "/dev/urandom", Target: "/dev/urandom"},
+		// /dev/ptmx is not bind-mounted from host, but from the container
+		// /dev/pts/ptmx.
+		// This is prefered to a symlink, because symlinks can be changed
+		// by sandboxed processes, while bind-mounted /dev/ptmx cannot.
+		{Source: rt.fsRoot + "/dev/pts/ptmx", Target: "/dev/ptmx"},
 	}
 	flags = uintptr(unix.MS_NOEXEC | unix.MS_NOSUID)
 	if err := rt.bindAll(devices, flags); err != nil {
 		return err
 	}
 
-	opts := "mode=600,newinstance,ptmxmode=666"
-	flags = uintptr(unix.MS_NOEXEC | unix.MS_NOSUID)
-	if err := rt.mount("devpts", "/dev/pts", "devpts", flags, opts); err != nil {
-		return err
-	}
-
 	symlinks := map[string]string{
-		"ptmx":   "pts/ptmx",
 		"stdin":  "/proc/self/fd/0",
 		"stdout": "/proc/self/fd/1",
 		"stderr": "/proc/self/fd/2",
