@@ -28,6 +28,7 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 
 	"github.com/wrr/drop/internal/config"
@@ -433,9 +434,33 @@ func parentProcessEntry() (int, error) {
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
 	cmd := exec.Command(os.Args[0], flags.toChildArgs(runDir)...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// 1) If stdin is a terminal, we pass it as-is to the child, so the
+	// child is also able to detect that stdin is a terminal. The terminal
+	// is then replaced with a new PTY created in the sandbox.
+	//
+	// 2) If stdin is not a terminal, it is wrapped with io.Reader
+	// interface. Such wrapped stdin is no longer os.File and cmd will
+	// replace it with a pipe and create a goroutine to read from the
+	// io.Reader and write to the pipe. This way, the original file is
+	// not passed directly to the sandboxed process, and the sandboxed
+	// process cannot access and modify it via /proc/self/fd/0.
+	//
+	// We then do equivalent wrapping for stdout and stderr.
+	if term.IsTerminal(0) {
+		cmd.Stdin = os.Stdin
+	} else {
+		cmd.Stdin = struct{ io.Reader }{os.Stdin}
+	}
+	if term.IsTerminal(1) {
+		cmd.Stdout = os.Stdout
+	} else {
+		cmd.Stdout = struct{ io.Writer }{os.Stdout}
+	}
+	if term.IsTerminal(2) {
+		cmd.Stderr = os.Stderr
+	} else {
+		cmd.Stderr = struct{ io.Writer }{os.Stderr}
+	}
 	cmd.ExtraFiles = []*os.File{childEnd.Socket}
 
 	cloneFlags := uintptr(syscall.CLONE_NEWNS |
@@ -653,7 +678,7 @@ func childProcessEntry() (int, error) {
 			return 1, err
 		}
 
-		if err := pty.ReplacePty(childPty); err != nil {
+		if err := pty.ReplaceTerminal(childPty); err != nil {
 			return 1, err
 		}
 		childPty.Close()

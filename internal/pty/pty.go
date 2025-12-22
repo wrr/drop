@@ -193,14 +193,14 @@ func ForwardPty(dstPty *os.File) (func(), error) {
 	return cleanup, nil
 }
 
-// ReplacePty finds which of the stdin, stdout, stderr descriptors
+// ReplaceTerminal finds which of the stdin, stdout, stderr descriptors
 // point to a terminal, and changes these descriptors to point to the
-// new terminal ptyToUse.
-func ReplacePty(ptyToUse *os.File) error {
+// new pseudoterminal ptyToUse.
+func ReplaceTerminal(ptyToUse *os.File) error {
 	for _, i := range []int{0, 1, 2} {
 		if term.IsTerminal(i) {
 			if err := unix.Dup3(int(ptyToUse.Fd()), i, 0); err != nil {
-				return fmt.Errorf("replace pty: failed to point fd %d to the new terminal: %v", i, err)
+				return fmt.Errorf("replace terminal: failed to point fd %d to the new PTY: %v", i, err)
 			}
 		}
 	}

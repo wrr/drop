@@ -108,9 +108,13 @@ class TestBase(unittest.TestCase):
             cmd_args = shlex.split(command)
         else:
             cmd_args = command
-        process = subprocess.Popen(cmd_args, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, text=True,
-                                   **subprocess_kwargs)
+
+        if 'stdout' not in subprocess_kwargs:
+            subprocess_kwargs['stdout'] = subprocess.PIPE
+        if 'stderr' not in subprocess_kwargs:
+            subprocess_kwargs['stderr'] = subprocess.PIPE
+
+        process = subprocess.Popen(cmd_args, text=True, **subprocess_kwargs)
         self.background_processes.append(process)
         return process
 
@@ -178,8 +182,7 @@ class TestBase(unittest.TestCase):
                                   drop_home=drop_home)
 
     def assertSuccess(self, result):
-        self.assertTrue(result.stderr == '',
-                        f'Unexpected error {result.stderr}')
+        self.assertTrue(not result.stderr, f'Unexpected error {result.stderr}')
         self.assertEqual(0, result.returncode)
 
 

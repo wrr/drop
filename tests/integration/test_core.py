@@ -174,6 +174,31 @@ class TestCore(base.TestBase):
         listed_envs = result.stdout.strip().split('\n')
         self.assertCountEqual(env_ids, listed_envs)
 
+    def test_cannot_overwrite_input_files_passed_via_std_streams(self):
+        """Test that sandboxed process cannot modify files passed via stdin.
+
+        When a file is passed to drop via stream redirection, a sandboxed
+        process should not be able to modify the original file by writing
+        to /proc/self/fd/N.
+        """
+        original_content = b'original'
+        with tempfile.NamedTemporaryFile() as input_file:
+            input_file.write(original_content)
+            input_file.seek(0)
+
+            # Try to overwrite the file via /proc/self/fd/0 from inside sandbox
+            result = self.sandbox_run(
+                'bash -c "echo -n modified > /proc/self/fd/0"',
+                stdin=input_file)
+            self.assertSuccess(result)
+
+            # The write should either fail or be redirected elsewhere.
+            # The original file must remain unchanged.
+            input_file.seek(0)
+            actual_content = input_file.read()
+
+        self.assertEqual(original_content, actual_content)
+
     def test_remove_environment(self):
         """Test removing Drop environments with -rm flag"""
         drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
