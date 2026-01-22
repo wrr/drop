@@ -109,6 +109,8 @@ class TestBase(unittest.TestCase):
         else:
             cmd_args = command
 
+        if 'stdin' not in subprocess_kwargs:
+            subprocess_kwargs['stdin'] = subprocess.DEVNULL
         if 'stdout' not in subprocess_kwargs:
             subprocess_kwargs['stdout'] = subprocess.PIPE
         if 'stderr' not in subprocess_kwargs:

@@ -27,25 +27,23 @@ class TestPty(TestBase):
                 "PTY test cases must be run from a terminal, skipping")
 
     def test_has_terminal(self):
-        # sandbox_run redirects stdout and stderr to a pipe, but stdin
-        # is still a terminal, so tty should be allocated in the sandbox
-        result = self.sandbox_run('tty')
+        # pass terminal as stdin, then tty should be allocated in the sandbox
+        result = self.sandbox_run('tty', stdin=sys.stdin)
         self.assertSuccess(result)
         self.assertEqual('/dev/pts/0', result.stdout.strip())
 
         # processes should have a controlling terminal, reported in ps
         # output (if process has not controlling terminal, ps reports
         # ? as the TTY)
-        result = self.sandbox_run('ps -o tty=')
+        result = self.sandbox_run('ps -o tty=', stdin=sys.stdin)
         self.assertSuccess(result)
         self.assertEqual('pts/0', result.stdout.strip())
 
     def test_no_terminal_when_streams_redirected(self):
         # When all 3 streams are not terminals, tty should not be
         # allocated in the sanbox
-        with tempfile.NamedTemporaryFile() as stdin_f:
-            tty_result = self.sandbox_run('tty', stdin=stdin_f)
-            ps_result = self.sandbox_run('ps -o tty=', stdin=stdin_f)
+        tty_result = self.sandbox_run('tty')
+        ps_result = self.sandbox_run('ps -o tty=')
 
         # tty returns exit code 1 when not connected to a terminal
         self.assertEqual(1, tty_result.returncode)
@@ -56,7 +54,8 @@ class TestPty(TestBase):
         self.assertEqual('?', ps_result.stdout.strip())
 
     def test_only_terminal_fds_are_terminals_in_sandbox(self):
-        result = self.sandbox_run('readlink /proc/self/fd/0')
+        result = self.sandbox_run('readlink /proc/self/fd/0',
+                                  stdin=sys.stdin)
         self.assertSuccess(result)
         self.assertEqual('/dev/pts/0', result.stdout.strip())
 
