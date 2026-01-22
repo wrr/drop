@@ -5,7 +5,7 @@ BINDIR ?= $(PREFIX)/bin
 VERSION ?= $(shell git describe --tags --always --dirty | sed 's/^v//')
 LDFLAGS_RELEASE = -ldflags "-s -w -X main.Version=$(VERSION)"
 
-.PHONY: fmt vet get-deps build install uninstall build-release build-race test test-integration test-race test-all lint cover clean imports vulncheck gen-example-config all
+.PHONY: fmt vet get-deps build install uninstall build-release build-race test test-integration test-select test-race test-all lint cover clean imports vulncheck gen-example-config all
 
 fmt:
 	go fmt ./...
@@ -48,6 +48,15 @@ lint: build
 test-integration: build
 	mkdir -p cover
 	python3 -m unittest discover tests/integration/
+
+LAST_ARG := $(lastword $(MAKECMDGOALS))
+test-one: build
+	python3 -m unittest discover tests/integration/ -p "$(LAST_ARG)"
+
+# Prevent make from treating the test file argument as a target
+%.py:
+	@:
+
 
 test-all: test test-integration 
 
