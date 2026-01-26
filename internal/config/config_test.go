@@ -421,9 +421,11 @@ mounts = [
   {source = "/media", target = "~/media", rw = true}
 ]
 blocked_paths = ["/mnt", "/root"]
-exposed_env_vars = ["HOME", "PATH", "LC_*"]
 cwd.mounts = [".::rw", ".git"]
 cwd.blocked_paths = [".github"]
+[environ]
+exposed_vars = ["HOME", "PATH", "LC_*"]
+set_vars = ["FOO=foobar", "BAR=baz"]
 [net]
 mode = "isolated"
 tcp_published_ports = ["8080", "3000:3001"]
@@ -446,7 +448,13 @@ udp_host_ports = ["12000:1700", "9000"]
 					},
 					BlockedPaths: []string{".github"},
 				},
-				ExposedEnvVars: []string{"HOME", "PATH", "LC_*"},
+				Environ: Environ{
+					ExposedVars: []string{"HOME", "PATH", "LC_*"},
+					SetVars: []EnvVar{
+						{Name: "FOO", Value: "foobar"},
+						{Name: "BAR", Value: "baz"},
+					},
+				},
 				Net: Net{
 					Mode: "isolated",
 					TCPPublishedPorts: []PublishedPort{
@@ -464,9 +472,8 @@ udp_host_ports = ["12000:1700", "9000"]
 			name:    "empty config",
 			tomlStr: ``,
 			expected: Config{
-				Mounts:         nil,
-				BlockedPaths:   nil,
-				ExposedEnvVars: nil,
+				Mounts:       nil,
+				BlockedPaths: nil,
 				Net: Net{
 					Mode:              "isolated", // default
 					TCPPublishedPorts: []PublishedPort{},
@@ -478,22 +485,24 @@ udp_host_ports = ["12000:1700", "9000"]
 			error: "",
 		},
 		{
-			name: "invalid exposed_env_vars pattern",
+			name: "invalid exposed_vars pattern",
 			tomlStr: `
-exposed_env_vars = ["HOME", "INVALID["]
+environ.exposed_vars = ["HOME", "INVALID["]
 `,
 			expected: Config{},
 			error:    "invalid exposed_env_vars pattern 'INVALID['",
 		},
 		{
-			name: "valid set_env_vars",
+			name: "valid set_vars",
 			tomlStr: `
-set_env_vars = ["FOO=bar", "BAZ=qux=123"]
+environ.set_vars = ["FOO=bar", "BAZ=qux=123"]
 `,
 			expected: Config{
-				SetEnvVars: []EnvVar{
-					{Name: "FOO", Value: "bar"},
-					{Name: "BAZ", Value: "qux=123"},
+				Environ: Environ{
+					SetVars: []EnvVar{
+						{Name: "FOO", Value: "bar"},
+						{Name: "BAZ", Value: "qux=123"},
+					},
 				},
 				Net: Net{
 					Mode: "isolated",
@@ -502,17 +511,17 @@ set_env_vars = ["FOO=bar", "BAZ=qux=123"]
 			error: "",
 		},
 		{
-			name: "invalid set_env_vars - missing equals",
+			name: "invalid set_vars - missing equals",
 			tomlStr: `
-set_env_vars = ["FOO"]
+environ.set_vars = ["FOO"]
 `,
 			expected: Config{},
 			error:    "environment variable should have a name=value form",
 		},
 		{
-			name: "invalid set_env_vars - empty name",
+			name: "invalid set_vars - empty name",
 			tomlStr: `
-set_env_vars = ["=value"]
+environ.set_vars = ["=value"]
 `,
 			expected: Config{},
 			error:    "environment variable name should not be empty",
@@ -699,8 +708,8 @@ cwd.blocked_paths = ["../../foo"]
 			expectSlicesEqual(t, "BlockedPaths", result.BlockedPaths, tt.expected.BlockedPaths)
 			expectSlicesEqual(t, "Cwd.Mounts", result.Cwd.Mounts, tt.expected.Cwd.Mounts)
 			expectSlicesEqual(t, "Cwd.BlockedPaths", result.Cwd.BlockedPaths, tt.expected.Cwd.BlockedPaths)
-			expectSlicesEqual(t, "ExposedEnvVars", result.ExposedEnvVars, tt.expected.ExposedEnvVars)
-			expectSlicesEqual(t, "SetEnvVars", result.SetEnvVars, tt.expected.SetEnvVars)
+			expectSlicesEqual(t, "Environ.ExposedVars", result.Environ.ExposedVars, tt.expected.Environ.ExposedVars)
+			expectSlicesEqual(t, "Environ.SetVars", result.Environ.SetVars, tt.expected.Environ.SetVars)
 
 			if result.Net.Mode != tt.expected.Net.Mode {
 				t.Errorf("expected Net.Mode '%s', got '%s'", tt.expected.Net.Mode, result.Net.Mode)
@@ -1100,7 +1109,7 @@ func TestValidateExposedEnvVars(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateExposedEnvVars(tt.patterns)
+			err := validateEnvironExposedVars(tt.patterns)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
 			}

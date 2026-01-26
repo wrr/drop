@@ -115,13 +115,14 @@ cwd.mounts = [
 cwd.blocked_paths = [
 ]
 
+[environ]
 # Environment variables to expose from the process starting Drop to
 # the sandbox. You can use glob patterns to expose all variables with
 # common prefix/suffix.
 #
 # Do not expose variables containing secrets. Expose all
 # other variables needed for convenient work in Drop.
-exposed_env_vars = [
+exposed_vars = [
   "XDG_DATA_HOME",
   "XDG_CONFIG_HOME",
   "XDG_STATE_HOME",

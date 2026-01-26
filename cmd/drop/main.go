@@ -702,8 +702,8 @@ func childProcessEntry() (int, error) {
 	}
 
 	// Filter environment variables, then add DROP_ENV and debian_chroot
-	filteredEnv := env.Filter(os.Environ(), cfg.ExposedEnvVars)
-	envVars := env.SetVars(filteredEnv, cfg.SetEnvVars, flags.envId)
+	filteredEnv := env.Filter(os.Environ(), cfg.Environ.ExposedVars)
+	envVars := env.SetVars(filteredEnv, cfg.Environ.SetVars, flags.envId)
 	prog, err := exec.LookPath(progWithArgs[0]) // Searches PATH
 	if err != nil {
 		return 1, fmt.Errorf("command not found: %v", err)

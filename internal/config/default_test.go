@@ -58,10 +58,10 @@ func TestWriteDefault(t *testing.T) {
 
 	expectEmptyList(t, "Cwd.BlockedPaths", cfg.Cwd.BlockedPaths)
 
-	if cfg.ExposedEnvVars == nil {
-		t.Errorf("Expected exposed_env_vars to be not nil")
-	} else if l := len(cfg.ExposedEnvVars); l < 10 {
-		t.Errorf("Expected exposed_env_vars to have at least 10 elements, got %d", l)
+	if cfg.Environ.ExposedVars == nil {
+		t.Errorf("Expected environ.exposed_vars to be not nil")
+	} else if l := len(cfg.Environ.ExposedVars); l < 10 {
+		t.Errorf("Expected environ.exposed_vars to have at least 10 elements, got %d", l)
 	}
 
 	net := cfg.Net

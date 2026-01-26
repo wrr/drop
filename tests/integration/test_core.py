@@ -95,7 +95,7 @@ class TestCore(base.TestBase):
         self.assertTrue(re.match(ps_process, ps_lines[2]),
                         f'Unexpected ps output: {ps_lines[2]}')
 
-    def test_exposed_env_vars(self):
+    def test_environ_exposed_vars(self):
         os.environ['FOO'] = 'bar'
 
         try:
@@ -105,7 +105,7 @@ class TestCore(base.TestBase):
             self.assertSuccess(result)
             self.assertEqual('', result.stdout.strip())
 
-            config = Config(exposed_env_vars=['FOO'])
+            config = Config(environ_exposed_vars=['FOO'])
             result = self.sandbox_run(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('bar', result.stdout.strip())
@@ -113,11 +113,11 @@ class TestCore(base.TestBase):
         finally:
             del os.environ['FOO']
 
-    def test_set_env_vars(self):
+    def test_environ_set_vars(self):
         os.environ['FOO'] = 'bar'
 
         try:
-            config = Config(set_env_vars=['FOO=baz'])
+            config = Config(environ_set_vars=['FOO=baz'])
             result = self.sandbox_run('bash -c "echo $FOO"', config=config)
             self.assertSuccess(result)
             self.assertEqual('baz', result.stdout.strip())

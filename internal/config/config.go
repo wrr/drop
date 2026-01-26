@@ -27,12 +27,11 @@ import (
 )
 
 type Config struct {
-	Mounts         []Mount  `toml:"mounts"`
-	BlockedPaths   []string `toml:"blocked_paths"`
-	Cwd            Cwd      `toml:"cwd"`
-	ExposedEnvVars []string `toml:"exposed_env_vars"`
-	SetEnvVars     []EnvVar `toml:"set_env_vars"`
-	Net            Net      `toml:"net"`
+	Mounts       []Mount  `toml:"mounts"`
+	BlockedPaths []string `toml:"blocked_paths"`
+	Cwd          Cwd      `toml:"cwd"`
+	Environ      Environ  `toml:"environ"`
+	Net          Net      `toml:"net"`
 }
 
 type Mount struct {
@@ -45,6 +44,11 @@ type Mount struct {
 type Cwd struct {
 	Mounts       []Mount  `toml:"mounts"`
 	BlockedPaths []string `toml:"blocked_paths"`
+}
+
+type Environ struct {
+	ExposedVars []string `toml:"exposed_vars"`
+	SetVars     []EnvVar `toml:"set_vars"`
 }
 
 type EnvVar struct {
@@ -230,7 +234,7 @@ func Validate(cfg *Config) error {
 		return err
 	}
 
-	if err := validateExposedEnvVars(cfg.ExposedEnvVars); err != nil {
+	if err := validateEnvironExposedVars(cfg.Environ.ExposedVars); err != nil {
 		return err
 	}
 	if err := validateNetworkMode(cfg.Net.Mode); err != nil {
@@ -405,8 +409,9 @@ func validatePaths(propId string, paths []string, validateFn func(string) error)
 	return nil
 }
 
-// validateExposedEnvVars check if all patterns in the exposed_env_vars list are valid glob patterns.
-func validateExposedEnvVars(patterns []string) error {
+// validateEnvironExposedVars check if all patterns in the
+// exposed_vars list are valid glob patterns.
+func validateEnvironExposedVars(patterns []string) error {
 	for _, pattern := range patterns {
 		if _, err := filepath.Match(pattern, "anything"); err != nil {
 			return fmt.Errorf("invalid exposed_env_vars pattern '%s': %v", pattern, err)
