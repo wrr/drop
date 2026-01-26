@@ -113,6 +113,18 @@ class TestCore(base.TestBase):
         finally:
             del os.environ['FOO']
 
+    def test_set_env_vars(self):
+        os.environ['FOO'] = 'bar'
+
+        try:
+            config = Config(set_env_vars=['FOO=baz'])
+            result = self.sandbox_run('bash -c "echo $FOO"', config=config)
+            self.assertSuccess(result)
+            self.assertEqual('baz', result.stdout.strip())
+
+        finally:
+            del os.environ['FOO']
+
     def test_drop_env_set(self):
         """Test that DROP_ENV is set correctly"""
         cmd = 'bash -c "echo $DROP_ENV"'

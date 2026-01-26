@@ -31,6 +31,7 @@ type Config struct {
 	BlockedPaths   []string `toml:"blocked_paths"`
 	Cwd            Cwd      `toml:"cwd"`
 	ExposedEnvVars []string `toml:"exposed_env_vars"`
+	SetEnvVars     []EnvVar `toml:"set_env_vars"`
 	Net            Net      `toml:"net"`
 }
 
@@ -44,6 +45,11 @@ type Mount struct {
 type Cwd struct {
 	Mounts       []Mount  `toml:"mounts"`
 	BlockedPaths []string `toml:"blocked_paths"`
+}
+
+type EnvVar struct {
+	Name  string
+	Value string
 }
 
 type Net struct {
@@ -126,6 +132,29 @@ func (m *Mount) UnmarshalTOML(data any) error {
 		}
 	default:
 		return fmt.Errorf("mount entry should be a string or an object, got %T", data)
+	}
+	return nil
+}
+
+func (e *EnvVar) Expand(mapping func(string) string) string {
+	return fmt.Sprintf("%s=%s", e.Name, os.Expand(e.Value, mapping))
+}
+
+func (e *EnvVar) UnmarshalTOML(data any) error {
+	switch v := data.(type) {
+	case string:
+		name, value, found := strings.Cut(v, "=")
+		if !found {
+			return fmt.Errorf("environment variable should have a name=value form, got %s", v)
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return fmt.Errorf("environment variable name should not be empty, got %s", v)
+		}
+		e.Name = name
+		e.Value = value
+	default:
+		return fmt.Errorf("environment variable should be a string, got %T", data)
 	}
 	return nil
 }

@@ -36,6 +36,7 @@ class Config:
                  cwd_mounts: List[str] = None,
                  cwd_blocked_paths: List[str] = None,
                  exposed_env_vars: List[str] = None,
+                 set_env_vars: List[str] = None,
                  tcp_published_ports: List[str] = None,
                  tcp_host_ports: List[str] = None,
                  udp_published_ports: List[str] = None,
@@ -49,6 +50,7 @@ class Config:
         self.cwd_mounts = cwd_mounts or ['.::rw']
         self.cwd_blocked_paths = cwd_blocked_paths or []
         self.exposed_env_vars = exposed_env_vars or []
+        self.set_env_vars = set_env_vars or []
         self.tcp_published_ports = tcp_published_ports or []
         self.tcp_host_ports = tcp_host_ports or []
         self.udp_published_ports = udp_published_ports or []
@@ -62,6 +64,7 @@ class Config:
             f'cwd.mounts = {str(self.cwd_mounts)}',
             f'cwd.blocked_paths = {str(self.cwd_blocked_paths)}',
             f'exposed_env_vars = {str(self.exposed_env_vars)}',
+            f'set_env_vars = {str(self.set_env_vars)}',
             '',
             '[net]',
             f'tcp_published_ports = {str(self.tcp_published_ports)}',

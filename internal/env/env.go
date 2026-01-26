@@ -15,8 +15,11 @@
 package env
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/wrr/drop/internal/config"
 )
 
 // Filter returns a subset of environment variables configured to be
@@ -27,30 +30,44 @@ func Filter(env []string, expose []string) []string {
 	return doFilter(env, expose, true)
 }
 
-// SetDropVars sets DROP_ENV environment variable to contain envId -
-// id of the current Drop environment. If setDebianChroot is true,
-// also sets debian_chroot variable to "drop".
-func SetDropVars(env []string, setDebianChroot bool, envId string) []string {
+// SetVars sets and expands envrionment variables configured by the
+// user in config.toml. If any of these variables is empty, SetVars
+// removes it. The function also sets DROP_ENV variable to
+// contain envId - id of the current Drop environment. This can be
+// changed by setting DROP_ENV in config.toml to some other value or
+// to an empty string.
+func SetVars(env []string, varsToSet []config.EnvVar, envId string) []string {
 	filterOut := []string{"DROP_ENV"}
-	if setDebianChroot {
-		filterOut = append(filterOut, "debian_chroot")
+	for _, envVar := range varsToSet {
+		filterOut = append(filterOut, envVar.Name)
 	}
 	env = doFilter(env, filterOut, false)
-	if setDebianChroot {
-		env = append(env, "debian_chroot=drop")
+
+	setDefaultDropEnv := true
+	for _, envVar := range varsToSet {
+		// Allow the config to remove DROP_ENV or to set it to
+		// non-default value.
+		if envVar.Name == "DROP_ENV" {
+			setDefaultDropEnv = false
+		}
+		if envVar.Value != "" {
+			env = append(env, envVar.Expand(os.Getenv))
+		}
 	}
-	return append(env, "DROP_ENV="+envId)
+	if setDefaultDropEnv {
+		env = append(env, "DROP_ENV="+envId)
+	}
+	return env
 }
 
 func doFilter(env []string, patterns []string, keepMatched bool) []string {
 	var filtered []string
 
 	for _, envVar := range env {
-		parts := strings.SplitN(envVar, "=", 2)
-		if len(parts) < 2 {
+		varName, _, found := strings.Cut(envVar, "=")
+		if !found {
 			continue // Malformed
 		}
-		varName := parts[0]
 
 		matched := false
 		for _, pattern := range patterns {

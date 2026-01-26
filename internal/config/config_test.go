@@ -486,6 +486,38 @@ exposed_env_vars = ["HOME", "INVALID["]
 			error:    "invalid exposed_env_vars pattern 'INVALID['",
 		},
 		{
+			name: "valid set_env_vars",
+			tomlStr: `
+set_env_vars = ["FOO=bar", "BAZ=qux=123"]
+`,
+			expected: Config{
+				SetEnvVars: []EnvVar{
+					{Name: "FOO", Value: "bar"},
+					{Name: "BAZ", Value: "qux=123"},
+				},
+				Net: Net{
+					Mode: "isolated",
+				},
+			},
+			error: "",
+		},
+		{
+			name: "invalid set_env_vars - missing equals",
+			tomlStr: `
+set_env_vars = ["FOO"]
+`,
+			expected: Config{},
+			error:    "environment variable should have a name=value form",
+		},
+		{
+			name: "invalid set_env_vars - empty name",
+			tomlStr: `
+set_env_vars = ["=value"]
+`,
+			expected: Config{},
+			error:    "environment variable name should not be empty",
+		},
+		{
 			name: "invalid TOML syntax",
 			tomlStr: `
 home_visible = [invalid syntax
@@ -668,6 +700,7 @@ cwd.blocked_paths = ["../../foo"]
 			expectSlicesEqual(t, "Cwd.Mounts", result.Cwd.Mounts, tt.expected.Cwd.Mounts)
 			expectSlicesEqual(t, "Cwd.BlockedPaths", result.Cwd.BlockedPaths, tt.expected.Cwd.BlockedPaths)
 			expectSlicesEqual(t, "ExposedEnvVars", result.ExposedEnvVars, tt.expected.ExposedEnvVars)
+			expectSlicesEqual(t, "SetEnvVars", result.SetEnvVars, tt.expected.SetEnvVars)
 
 			if result.Net.Mode != tt.expected.Net.Mode {
 				t.Errorf("expected Net.Mode '%s', got '%s'", tt.expected.Net.Mode, result.Net.Mode)
@@ -1070,6 +1103,125 @@ func TestValidateExposedEnvVars(t *testing.T) {
 			err := validateExposedEnvVars(tt.patterns)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
+			}
+		})
+	}
+}
+
+func TestEnvVarUnmarshalTOML(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    any
+		expected EnvVar
+		error    string
+	}{
+		{
+			name:     "valid name=value",
+			input:    "FOO=bar",
+			expected: EnvVar{Name: "FOO", Value: "bar"},
+			error:    "",
+		},
+		{
+			name:     "empty value",
+			input:    "FOO=",
+			expected: EnvVar{Name: "FOO", Value: ""},
+			error:    "",
+		},
+		{
+			name:     "value with equals sign",
+			input:    "FOO=bar=baz",
+			expected: EnvVar{Name: "FOO", Value: "bar=baz"},
+			error:    "",
+		},
+		{
+			name:     "name with spaces trimmed",
+			input:    "  FOO  =bar",
+			expected: EnvVar{Name: "FOO", Value: "bar"},
+			error:    "",
+		},
+		{
+			name:     "missing equals sign",
+			input:    "FOO",
+			expected: EnvVar{},
+			error:    "environment variable should have a name=value form",
+		},
+		{
+			name:     "empty name",
+			input:    "=bar",
+			expected: EnvVar{},
+			error:    "environment variable name should not be empty",
+		},
+		{
+			name:     "whitespace-only name",
+			input:    "   =bar",
+			expected: EnvVar{},
+			error:    "environment variable name should not be empty",
+		},
+		{
+			name:     "wrong type",
+			input:    123,
+			expected: EnvVar{},
+			error:    "environment variable should be a string",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var e EnvVar
+			err := e.UnmarshalTOML(tt.input)
+			if terr := checkError(tt.error, err); terr != nil {
+				t.Fatal(terr)
+			}
+			if tt.error == "" {
+				if e.Name != tt.expected.Name {
+					t.Errorf("expected Name '%s', got '%s'", tt.expected.Name, e.Name)
+				}
+				if e.Value != tt.expected.Value {
+					t.Errorf("expected Value '%s', got '%s'", tt.expected.Value, e.Value)
+				}
+			}
+		})
+	}
+}
+
+func TestEnvVarExpand(t *testing.T) {
+	tests := []struct {
+		name     string
+		envVar   EnvVar
+		mapping  func(string) string
+		expected string
+	}{
+		{
+			name:     "no expansion needed",
+			envVar:   EnvVar{Name: "FOO", Value: "bar"},
+			mapping:  func(s string) string { return "" },
+			expected: "FOO=bar",
+		},
+		{
+			name:     "expand variable",
+			envVar:   EnvVar{Name: "PATH", Value: "/home/$USER/bin"},
+			mapping:  func(s string) string { return "alice" },
+			expected: "PATH=/home/alice/bin",
+		},
+		{
+			name:     "empty value",
+			envVar:   EnvVar{Name: "EMPTY", Value: ""},
+			mapping:  func(s string) string { return "" },
+			expected: "EMPTY=",
+		},
+		{
+			name:     "expand with braces syntax",
+			envVar:   EnvVar{Name: "MSG", Value: "Hello ${NAME}!"},
+			mapping:  func(s string) string { return "World" },
+			expected: "MSG=Hello World!",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.envVar.Expand(tt.mapping)
+			if result != tt.expected {
+				t.Errorf("expected '%s', got '%s'", tt.expected, result)
 			}
 		})
 	}

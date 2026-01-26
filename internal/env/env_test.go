@@ -18,6 +18,8 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+
+	"github.com/wrr/drop/internal/config"
 )
 
 func TestFilter(t *testing.T) {
@@ -102,65 +104,95 @@ func TestFilter(t *testing.T) {
 	}
 }
 
-func TestSetDropVars(t *testing.T) {
+func TestSetVars(t *testing.T) {
 	tests := []struct {
-		name            string
-		envIn           []string
-		setDebianChroot bool
-		envId           string
-		envOut          []string
+		name      string
+		envIn     []string
+		varsToSet []config.EnvVar
+		envId     string
+		envOut    []string
 	}{
 		{
-			name: "both variables set",
+			name: "Add and modify env",
 			envIn: []string{
 				"PATH=/usr/bin",
 				"USER=alice",
+				"EDITOR=ed",
 			},
-			setDebianChroot: true,
-			envId:           "test-env-id",
+			varsToSet: []config.EnvVar{
+				config.EnvVar{
+					Name:  "PATH",
+					Value: "/bin",
+				},
+				config.EnvVar{
+					Name:  "FOO",
+					Value: "bar",
+				},
+				config.EnvVar{
+					Name:  "EDITOR",
+					Value: "ed",
+				},
+			},
+			envId: "test-env-id",
 			envOut: []string{
-				"PATH=/usr/bin",
+				"PATH=/bin",
 				"USER=alice",
-				"debian_chroot=drop",
+				"FOO=bar",
+				"EDITOR=ed",
 				"DROP_ENV=test-env-id",
 			},
 		},
 		{
-			name: "only drop env set",
-			envIn: []string{
-				"PATH=/usr/bin",
-				"USER=alice",
-			},
-			setDebianChroot: false,
-			envId:           "foo",
-			envOut: []string{
-				"PATH=/usr/bin",
-				"USER=alice",
-				"DROP_ENV=foo",
-			},
-		},
-		{
-			name: "overwrite existing variables",
+			name: "overwrite DROP_ENV",
 			envIn: []string{
 				"PATH=/usr/bin",
 				"DROP_ENV=old-env-id",
-				"debian_chroot=old-chroot",
 				"USER=alice",
 			},
-			setDebianChroot: true,
-			envId:           "new-env-id",
+			varsToSet: []config.EnvVar{
+				config.EnvVar{
+					Name:  "PATH",
+					Value: "",
+				},
+				config.EnvVar{
+					Name:  "USER",
+					Value: "",
+				},
+			},
+
+			envId: "new-env-id",
+			envOut: []string{
+				"DROP_ENV=new-env-id",
+			},
+		},
+		{
+			name: "expand variables, remove DROP_ENV_VAR",
+			envIn: []string{
+				"PATH=/usr/bin",
+			},
+			varsToSet: []config.EnvVar{
+				config.EnvVar{
+					Name:  "PATH2",
+					Value: "$TEST_VAR/bin:${TEST_VAR}/usr/bin",
+				},
+				config.EnvVar{
+					Name:  "DROP_ENV",
+					Value: "",
+				},
+			},
+			envId: "test-env-id",
 			envOut: []string{
 				"PATH=/usr/bin",
-				"USER=alice",
-				"debian_chroot=drop",
-				"DROP_ENV=new-env-id",
+				"PATH2=/test/bin:/test/usr/bin",
 			},
 		},
 	}
 
+	t.Setenv("TEST_VAR", "/test")
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := SetDropVars(tt.envIn, tt.setDebianChroot, tt.envId)
+			result := SetVars(tt.envIn, tt.varsToSet, tt.envId)
 
 			sort.Strings(result)
 			sort.Strings(tt.envOut)
