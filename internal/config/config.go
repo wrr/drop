@@ -198,22 +198,31 @@ func (p *HostPort) UnmarshalTOML(data any) error {
 func Read(path string) (*Config, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config: %v", err)
+		return nil, fmt.Errorf("failed to read config %s: %v", path, err)
 	}
-	return Parse(string(content))
+	config, err := Parse(string(content))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config %s: %v", path, err)
+	}
+	return config, nil
 }
 
 func Parse(configStr string) (*Config, error) {
 	var cfg Config
-	if _, err := toml.Decode(configStr, &cfg); err != nil {
+	meta, err := toml.Decode(configStr, &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("failed to parse config: %v", err)
 	}
+	if undecoded := meta.Undecoded(); len(undecoded) > 0 {
+		return nil, fmt.Errorf("unrecognized key: %s", undecoded[0].String())
+	}
+
 	if cfg.Net.Mode == "" {
 		cfg.Net.Mode = "isolated"
 	}
 
 	if err := Validate(&cfg); err != nil {
-		return nil, fmt.Errorf("config file: %v", err)
+		return nil, err
 	}
 
 	return &cfg, nil

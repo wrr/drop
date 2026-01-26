@@ -183,9 +183,8 @@ class TestFS(TestBase):
         config = Config(mounts=['/etc/../usr'])
         result = self.sandbox_run('ls', config=config)
         self.assertEqual(1, result.returncode)
-        self.assertEqual(
-            "Error: config file: "
-            "invalid mounts '/etc/../usr': path is not normalized\n",
+        self.assertIn(
+            "invalid mounts '/etc/../usr': path is not normalized",
             result.stderr)
 
     def test_mount_read_write(self):

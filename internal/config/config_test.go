@@ -688,6 +688,14 @@ cwd.blocked_paths = ["../../foo"]
 			expected: Config{},
 			error:    "invalid cwd.blocked_paths '../../foo': path is not normalized",
 		},
+		{
+			name: "unrecognized key",
+			tomlStr: `
+mount = []
+`,
+			expected: Config{},
+			error:    "unrecognized key: mount",
+		},
 	}
 
 	for _, tt := range tests {
