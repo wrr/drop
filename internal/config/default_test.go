@@ -37,7 +37,7 @@ func TestWriteDefault(t *testing.T) {
 		t.Fatalf("WriteDefault failed: %v", err)
 	}
 
-	cfg, err := Read(configPath)
+	cfg, err := Read(configPath, "/test-home-dir/")
 	if err != nil {
 		t.Fatalf("Failed to read created default config: %v", err)
 	}

@@ -51,10 +51,14 @@ func TildeToHomeDir(path string, homeDir string) string {
 	return path
 }
 
+func IsRootOrHomeSubPath(path string) bool {
+	return strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~/")
+}
+
 // ValidateRootOrHomeSubPath validates that a path is a subpath of root or
 // of a ~/, and is normalized.
 func ValidateRootOrHomeSubPath(path string) error {
-	if !strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "~/") {
+	if !IsRootOrHomeSubPath(path) {
 		return fmt.Errorf("path must start with / or ~/")
 	}
 	if path == "/" {

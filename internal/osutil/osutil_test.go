@@ -92,6 +92,47 @@ func checkError(wantErr string, err error) error {
 	return nil
 }
 
+func TestIsRootOrHomeSubPath(t *testing.T) {
+	tests := []struct {
+		path   string
+		result bool
+	}{
+		{
+			path:   "/",
+			result: true,
+		},
+		{
+			path:   "/tmp",
+			result: true,
+		},
+		{
+			path:   "~/",
+			result: true,
+		},
+		{
+			path:   "~/bin",
+			result: true,
+		},
+		{
+			path:   "./bin",
+			result: false,
+		},
+		{
+			path:   ".",
+			result: false,
+		},
+		{
+			path:   "bin",
+			result: false,
+		},
+	}
+	for _, tt := range tests {
+		if IsRootOrHomeSubPath(tt.path) != tt.result {
+			t.Errorf("Invalid result for %s", tt.path)
+		}
+	}
+}
+
 func TestValidateRootOrHomeSubPath(t *testing.T) {
 	tests := []struct {
 		error string

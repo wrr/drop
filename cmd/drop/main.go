@@ -408,7 +408,7 @@ func parentProcessEntry() (int, error) {
 		fmt.Fprintf(os.Stderr, "Wrote default Drop config to %s\n", flags.configPath)
 	}
 
-	cfg, err := config.Read(flags.configPath)
+	cfg, err := config.Read(flags.configPath, homeDir)
 	if err != nil {
 		return 1, err
 	}
@@ -632,7 +632,7 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	cfg, err := config.Read(flags.configPath)
+	cfg, err := config.Read(flags.configPath, homeDir)
 	if err != nil {
 		return 1, err
 	}

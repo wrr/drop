@@ -22,7 +22,6 @@ import (
 	"github.com/wrr/drop/internal/osutil"
 )
 
-// expectSlicesEqual reports error if two slices differ
 func expectSlicesEqual[T comparable](t *testing.T, fieldName string, actual, expected []T) {
 	t.Helper()
 	if len(actual) != len(expected) {
@@ -34,6 +33,27 @@ func expectSlicesEqual[T comparable](t *testing.T, fieldName string, actual, exp
 			t.Errorf("expected %s[%d] %v, got %v", fieldName, i, expectedItem, actual[i])
 		}
 	}
+}
+
+func expectConfigsEqual(t *testing.T, actual *Config, expected *Config) {
+	t.Helper()
+	if actual.Extends != expected.Extends {
+		t.Errorf("expected Extends '%s', got '%s'", expected.Extends, actual.Extends)
+	}
+
+	expectSlicesEqual(t, "Mounts", actual.Mounts, expected.Mounts)
+	expectSlicesEqual(t, "BlockedPaths", actual.BlockedPaths, expected.BlockedPaths)
+	expectSlicesEqual(t, "Cwd.Mounts", actual.Cwd.Mounts, expected.Cwd.Mounts)
+	expectSlicesEqual(t, "Cwd.BlockedPaths", actual.Cwd.BlockedPaths, expected.Cwd.BlockedPaths)
+	expectSlicesEqual(t, "Environ.ExposedVars", actual.Environ.ExposedVars, expected.Environ.ExposedVars)
+	expectSlicesEqual(t, "Environ.SetVars", actual.Environ.SetVars, expected.Environ.SetVars)
+	if actual.Net.Mode != expected.Net.Mode {
+		t.Errorf("expected Net.Mode '%s', got '%s'", expected.Net.Mode, actual.Net.Mode)
+	}
+	expectSlicesEqual(t, "Net.TCPPublishedPorts", actual.Net.TCPPublishedPorts, expected.Net.TCPPublishedPorts)
+	expectSlicesEqual(t, "Net.TCPHostPorts", actual.Net.TCPHostPorts, expected.Net.TCPHostPorts)
+	expectSlicesEqual(t, "Net.UDPPublishedPorts", actual.Net.UDPPublishedPorts, expected.Net.UDPPublishedPorts)
+	expectSlicesEqual(t, "Net.UDPHostPorts", actual.Net.UDPHostPorts, expected.Net.UDPHostPorts)
 }
 
 func checkError(expected string, got error) error {
@@ -50,6 +70,14 @@ func checkError(expected string, got error) error {
 		return fmt.Errorf("expected error %q, got %q", expected, got.Error())
 	}
 	return nil
+}
+
+func parse(configStr string) (*Config, error) {
+	r := &reader{
+		files:    make(map[string]bool),
+		readFile: nil,
+	}
+	return r.parse(configStr, "")
 }
 
 func TestParsePort(t *testing.T) {
@@ -381,7 +409,7 @@ udp_host_ports = []
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := Parse(tt.tomlStr)
+			result, err := parse(tt.tomlStr)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
 			}
@@ -391,15 +419,7 @@ udp_host_ports = []
 			if result == nil {
 				t.Fatalf("expected result but got nil")
 			}
-			got := result.Net
-			expected := tt.expected.Net
-			if got.Mode != expected.Mode {
-				t.Errorf("expected Mode '%s', got '%s'", expected.Mode, got.Mode)
-			}
-			expectSlicesEqual(t, "TCPPublishedPorts", got.TCPPublishedPorts, expected.TCPPublishedPorts)
-			expectSlicesEqual(t, "TCPHostPorts", got.TCPHostPorts, expected.TCPHostPorts)
-			expectSlicesEqual(t, "UDPPublishedPorts", got.UDPPublishedPorts, expected.UDPPublishedPorts)
-			expectSlicesEqual(t, "UDPHostPorts", got.UDPHostPorts, expected.UDPHostPorts)
+			expectConfigsEqual(t, result, &tt.expected)
 		})
 	}
 }
@@ -700,7 +720,7 @@ mount = []
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := Parse(tt.tomlStr)
+			result, err := parse(tt.tomlStr)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
 			}
@@ -712,20 +732,7 @@ mount = []
 				t.Fatalf("expected result but got nil")
 			}
 
-			expectSlicesEqual(t, "Mounts", result.Mounts, tt.expected.Mounts)
-			expectSlicesEqual(t, "BlockedPaths", result.BlockedPaths, tt.expected.BlockedPaths)
-			expectSlicesEqual(t, "Cwd.Mounts", result.Cwd.Mounts, tt.expected.Cwd.Mounts)
-			expectSlicesEqual(t, "Cwd.BlockedPaths", result.Cwd.BlockedPaths, tt.expected.Cwd.BlockedPaths)
-			expectSlicesEqual(t, "Environ.ExposedVars", result.Environ.ExposedVars, tt.expected.Environ.ExposedVars)
-			expectSlicesEqual(t, "Environ.SetVars", result.Environ.SetVars, tt.expected.Environ.SetVars)
-
-			if result.Net.Mode != tt.expected.Net.Mode {
-				t.Errorf("expected Net.Mode '%s', got '%s'", tt.expected.Net.Mode, result.Net.Mode)
-			}
-			expectSlicesEqual(t, "Net.TCPPublishedPorts", result.Net.TCPPublishedPorts, tt.expected.Net.TCPPublishedPorts)
-			expectSlicesEqual(t, "Net.TCPHostPorts", result.Net.TCPHostPorts, tt.expected.Net.TCPHostPorts)
-			expectSlicesEqual(t, "Net.UDPPublishedPorts", result.Net.UDPPublishedPorts, tt.expected.Net.UDPPublishedPorts)
-			expectSlicesEqual(t, "Net.UDPHostPorts", result.Net.UDPHostPorts, tt.expected.Net.UDPHostPorts)
+			expectConfigsEqual(t, result, &tt.expected)
 		})
 	}
 }
@@ -1012,7 +1019,7 @@ mounts = ["~/.bashrc", {source = "/usr/bin", target = "bin"}]
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := Parse(tt.tomlStr)
+			result, err := parse(tt.tomlStr)
 			if terr := checkError(tt.error, err); terr != nil {
 				t.Fatal(terr)
 			}

@@ -47,14 +47,13 @@ type Paths struct {
 	// (e.g. /home/alice/.local/share/drop/envs/project-foo/home).
 	Home string
 	// Drop home dir can have entries exposed from the host home
-	// directory via paths_ro, paths_rw config. To expose these entries
-	// we need to create empty files and directories as mount points. In
-	// order not to polute Drop home dir with these empty files and
-	// dirs, we use overlayfs. Empty dirs and files are created in a
-	// disposable lowerdir of the overlayfs (kept in the jails's 'run'
-	// dir and removed when the jail terminates). The actual files
-	// created in the jailed home are written to the overlayfs upper
-	// layer.
+	// directory via mounts config. To expose these entries we need to
+	// create empty files and directories as mount points. In order not
+	// to polute Drop home dir with these empty files and dirs, we use
+	// overlayfs. Empty dirs and files are created in a disposable
+	// lowerdir of the overlayfs (kept in the jails's 'run' dir and
+	// removed when the jail terminates). The actual files created in
+	// the jailed home are written to the overlayfs upper layer.
 	HomeLower string
 	HomeWork  string
 	// Etc is the directory mounted as read-only overlay over /etc in the jail

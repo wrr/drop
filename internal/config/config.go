@@ -19,6 +19,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -27,6 +28,7 @@ import (
 )
 
 type Config struct {
+	Extends      string   `toml:"extends"`
 	Mounts       []Mount  `toml:"mounts"`
 	BlockedPaths []string `toml:"blocked_paths"`
 	Cwd          Cwd      `toml:"cwd"`
@@ -195,37 +197,106 @@ func (p *HostPort) UnmarshalTOML(data any) error {
 	return nil
 }
 
-func Read(path string) (*Config, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config %s: %v", path, err)
-	}
-	config, err := Parse(string(content))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config %s: %v", path, err)
-	}
-	return config, nil
+type reader struct {
+	files    map[string]bool
+	homeDir  string
+	readFile func(name string) ([]byte, error)
 }
 
-func Parse(configStr string) (*Config, error) {
-	var cfg Config
-	meta, err := toml.Decode(configStr, &cfg)
+func Read(path string, homeDir string) (*Config, error) {
+	r := &reader{
+		files:    make(map[string]bool),
+		homeDir:  homeDir,
+		readFile: os.ReadFile,
+	}
+	config, err := r.read(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config %s: %v", path, err)
+	}
+	return config, err
+}
+
+func (r *reader) read(path string) (*Config, error) {
+	if r.files[path] {
+		return nil, fmt.Errorf("circular 'extends': %s already included", path)
+	}
+	content, err := r.readFile(path)
+	if err != nil {
+		return nil, err
+	}
+	r.files[path] = true
+	configDir := filepath.Dir(path)
+	return r.parse(string(content), configDir)
+}
+
+func (r *reader) readBase(path string, configDir string) (*Config, error) {
+	if osutil.IsRootOrHomeSubPath(path) {
+		if err := osutil.ValidateRootOrHomeSubPath(path); err != nil {
+			return nil, fmt.Errorf("extends path %s invalid: %v", path, err)
+		}
+		path = osutil.TildeToHomeDir(path, r.homeDir)
+	} else {
+		if err := osutil.ValidateRelPath(path); err != nil {
+			return nil, fmt.Errorf("extends path %s invalid: %v", path, err)
+		}
+		path = filepath.Join(configDir, path)
+	}
+	return r.read(path)
+}
+
+func (r *reader) parse(configStr string, configDir string) (*Config, error) {
+	var cfg *Config = &Config{}
+	meta, err := toml.Decode(configStr, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config: %v", err)
 	}
 	if undecoded := meta.Undecoded(); len(undecoded) > 0 {
 		return nil, fmt.Errorf("unrecognized key: %s", undecoded[0].String())
 	}
+	if cfg.Extends != "" {
+		base, err := r.readBase(cfg.Extends, configDir)
+		if err != nil {
+			return nil, err
+		}
+		cfg = merge(base, cfg)
+	}
 
 	if cfg.Net.Mode == "" {
 		cfg.Net.Mode = "isolated"
 	}
 
-	if err := Validate(&cfg); err != nil {
+	if err := Validate(cfg); err != nil {
 		return nil, err
 	}
 
-	return &cfg, nil
+	return cfg, nil
+}
+
+func merge(base *Config, sub *Config) *Config {
+	netMode := base.Net.Mode
+	if sub.Net.Mode != "" {
+		netMode = sub.Net.Mode
+	}
+	return &Config{
+		Extends:      sub.Extends,
+		Mounts:       slices.Concat(base.Mounts, sub.Mounts),
+		BlockedPaths: slices.Concat(base.BlockedPaths, sub.BlockedPaths),
+		Cwd: Cwd{
+			Mounts:       slices.Concat(base.Cwd.Mounts, sub.Cwd.Mounts),
+			BlockedPaths: slices.Concat(base.Cwd.BlockedPaths, sub.Cwd.BlockedPaths),
+		},
+		Environ: Environ{
+			ExposedVars: slices.Concat(base.Environ.ExposedVars, sub.Environ.ExposedVars),
+			SetVars:     slices.Concat(base.Environ.SetVars, sub.Environ.SetVars),
+		},
+		Net: Net{
+			Mode:              netMode,
+			TCPPublishedPorts: slices.Concat(base.Net.TCPPublishedPorts, sub.Net.TCPPublishedPorts),
+			TCPHostPorts:      slices.Concat(base.Net.TCPHostPorts, sub.Net.TCPHostPorts),
+			UDPPublishedPorts: slices.Concat(base.Net.UDPPublishedPorts, sub.Net.UDPPublishedPorts),
+			UDPHostPorts:      slices.Concat(base.Net.UDPHostPorts, sub.Net.UDPHostPorts),
+		},
+	}
 }
 
 func Validate(cfg *Config) error {
