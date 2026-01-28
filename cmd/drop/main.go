@@ -1,4 +1,4 @@
-// Copyright 2025 Jan Wrobel <jan@mixedbit.org>
+// Copyright 2025-2026 Jan Wrobel <jan@mixedbit.org>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -24,13 +23,13 @@ import (
 	"os/exec"
 	"runtime"
 	"runtime/coverage"
-	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 
+	"github.com/wrr/drop/internal/cli"
 	"github.com/wrr/drop/internal/config"
 	"github.com/wrr/drop/internal/env"
 	"github.com/wrr/drop/internal/ipc"
@@ -40,302 +39,7 @@ import (
 	"github.com/wrr/drop/internal/pty"
 )
 
-// stringSlice implements flag.Value interface for repeated string flags
-type stringSlice []string
-
-func (s *stringSlice) String() string {
-	return strings.Join(*s, ",")
-}
-
-func (s *stringSlice) Set(value string) error {
-	*s = append(*s, value)
-	return nil
-}
-
-type Flags struct {
-	version     bool
-	envId       string
-	configPath  string
-	networkMode string
-
-	ls bool
-	rm string
-
-	noCwd  bool
-	mounts []string
-
-	// These flags are not currently passed from the parent to the child
-	// process, because child does not use them.
-	beRoot            bool
-	tcpPublishedPorts []string
-	tcpHostPorts      []string
-	udpPublishedPorts []string
-	udpHostPorts      []string
-
-	// Internal flags passed only to the child process.
-	runDir string
-}
-
 var Version = "dev" // overridden by release binaries linker
-
-// toChildArgs constructs command line arguments to be passed to the
-// started child process. The child shares most of the arguments with
-// the parent, but also accepts internal arguments to specify run and
-// home dirs.
-//
-// All of this would not be needed in C, where forked process would
-// simply be able to read copies of the config structs created in the
-// parent, but in Go we need to recreate the structs in the child by
-// passing appropriate flags.
-func (f *Flags) toChildArgs(runDir string) []string {
-	// Other flags are not passed because child doesn't use them,
-	// perhaps for clarity it would be better to pass all the flags.
-	childArgs := []string{
-		"-child",
-		"-env", f.envId,
-		"-config", f.configPath,
-		"-run-dir", runDir,
-	}
-	if f.networkMode != "" {
-		childArgs = append(childArgs, "-net", f.networkMode)
-	}
-	if f.noCwd {
-		childArgs = append(childArgs, "-no-cwd")
-	}
-	for _, m := range f.mounts {
-		childArgs = append(childArgs, "-mount", m)
-	}
-	// flag.Args() returns remaining command line arguments not
-	// recognized as flags (if any): a command to execute with its flags
-	return append(childArgs, flag.Args()...)
-}
-
-func parseFlags(defaultConfigPath string, isChild bool) (*Flags, error) {
-	if !isChild {
-		// print usage only when starting parent process, child process is
-		// not started by human.
-		flag.Usage = func() {
-			envId, err := jailfs.CwdToEnvId()
-			defaultEnvId := ""
-			if err == nil {
-				defaultEnvId = fmt.Sprintf(" (default: %s)", envId)
-			}
-
-			fmt.Fprintf(os.Stderr, `Drop limits programs abilities to read and write user's files
-Usage: drop [options] [command...]
-Options:
-  -env, -e value
-        Environment ID%s
-  -config, -c value
-        Path to TOML config file (default: %s)
-  -root, -r
-        Be root (uid 0) in the jail. Useful for running installation scripts that
-        require to be run as root. This option doesn't grant any additional privileges to the jailed
-        processes. For convenience, the home dir of a root user is not set to /root, but
-        kept as the original home dir.
-  -version
-        Print program version
-
-Environments management:
-  -ls, -l
-        List available Drop environments
-  -rm
-        Remove Drop environment
-
-Mounts related options:
-  -no-cwd, -nc
-        Ignore cwd.mounts entries from config - do not make the current
-        working directory available in the sandbox unless some other mount
-        entry exposes the CWD.
-  -mount, -m value
-        Add a mount to the list of mounts from the TOML config file.
-        The flag can be repeated.
-        Format: source[:target][:rw]
-        Examples: -m /mnt -m /tmp:/host-tmp -m ~/my-project::rw
-
-Networking options:
-  -net, -n value
-        Network mode: off or isolated
-
-  Port publishing from the sandbox:
-    -tcp-publish, -t value
-          Publish a TCP port from the sandbox.
-    -udp-publish, -u value
-          Publish a UDP port from the sandbox.
-     Format: [hostIP/]hostPort[:sandboxPort]
-     By default the published ports are bound only to localhost, to
-     bind a port to all available IP addresses pass 0.0.0.0 as the
-     hostIP.
-     A value "auto" automatically publishes all ports bound in the
-     sandbox on ALL available IP addresses (use "auto" only with
-     firewall blocking external connection to the machine).
-
-  Making host ports bound to localhost available in the sandbox:
-    -tcp-host, -T value
-          Make a TCP port from the host available in the sandbox.
-    -udp-host, -U value
-          Make a UDP port from the host available in the sandbox.
-     Format: hostPort[:sandboxPort]
-     A value "auto" makes all the localhost ports available in the
-     sandbox.
-
-  All port forwarding flags can be repeated.
-  Ports configured via flags add to the ports configured via the
-  config file.
-
-  -help, -h
-        Show help
-`, defaultEnvId, defaultConfigPath)
-		}
-	}
-	var f Flags
-	flag.StringVar(&f.envId, "env", "", "")
-	flag.StringVar(&f.envId, "e", "", "")
-	flag.StringVar(&f.configPath, "config", "", "")
-	flag.StringVar(&f.configPath, "c", "", "")
-	flag.BoolVar(&f.version, "version", false, "")
-
-	flag.BoolVar(&f.ls, "ls", false, "")
-	flag.BoolVar(&f.ls, "l", false, "")
-	flag.StringVar(&f.rm, "rm", "", "")
-
-	flag.BoolVar(&f.noCwd, "no-cwd", false, "")
-	flag.BoolVar(&f.noCwd, "nc", false, "")
-	flag.Var((*stringSlice)(&f.mounts), "mount", "")
-	flag.Var((*stringSlice)(&f.mounts), "m", "")
-
-	flag.BoolVar(&f.beRoot, "root", false, "")
-	flag.BoolVar(&f.beRoot, "r", false, "")
-	flag.StringVar(&f.networkMode, "net", "", "")
-	flag.StringVar(&f.networkMode, "n", "", "")
-	flag.Var((*stringSlice)(&f.tcpPublishedPorts), "tcp-publish", "")
-	flag.Var((*stringSlice)(&f.tcpPublishedPorts), "t", "")
-	flag.Var((*stringSlice)(&f.tcpHostPorts), "tcp-host", "")
-	flag.Var((*stringSlice)(&f.tcpHostPorts), "T", "")
-	flag.Var((*stringSlice)(&f.udpPublishedPorts), "udp-publish", "")
-	flag.Var((*stringSlice)(&f.udpPublishedPorts), "u", "")
-	flag.Var((*stringSlice)(&f.udpHostPorts), "udp-host", "")
-	flag.Var((*stringSlice)(&f.udpHostPorts), "U", "")
-
-	if isChild {
-		// child only flags constructed by the parent process.
-		var child bool
-		// Child process always has -child argument
-		flag.BoolVar(&child, "child", false, "")
-		flag.StringVar(&f.runDir, "run-dir", "", "")
-	}
-
-	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
-		return nil, fmt.Errorf("failed to parse command line: %v", err)
-	}
-	if isChild {
-		// Must be present for child process.
-		if f.configPath == "" {
-			return nil, fmt.Errorf("child process -c argument missing")
-		}
-		if f.envId == "" {
-			return nil, fmt.Errorf("child process -e argument missing")
-		}
-	} else {
-		if f.configPath == "" {
-			f.configPath = defaultConfigPath
-		}
-		if f.envId == "" {
-			envId, err := jailfs.CwdToEnvId()
-			if err != nil {
-				return nil, err
-			}
-			f.envId = envId
-		}
-	}
-
-	if !jailfs.IsEnvIdValid(f.envId) {
-		return nil, fmt.Errorf("invalid character in env ID")
-	}
-
-	return &f, nil
-}
-
-// flagsToConfig modifies cfg from a TOML file with values passed via
-// command line flags. Command line flags, when present, take priority
-// over the config file. The function validates config after the
-// modification.
-func flagsToConfig(cfg *config.Config, flags *Flags) error {
-	for _, m := range flags.mounts {
-		mount, err := config.ParseMountCompact(m)
-		if err != nil {
-			return fmt.Errorf("command line -mount flag: %v", err)
-		}
-		cfg.Mounts = append(cfg.Mounts, *mount)
-	}
-
-	if flags.networkMode != "" {
-		cfg.Net.Mode = flags.networkMode
-	}
-	if len(flags.tcpPublishedPorts) > 0 {
-		p, err := parsePublishPortFlags(flags.tcpPublishedPorts)
-		if err != nil {
-			return fmt.Errorf("command line -tcp-publish flag: %v", err)
-		}
-		cfg.Net.TCPPublishedPorts = append(cfg.Net.TCPPublishedPorts, p...)
-	}
-	if len(flags.tcpHostPorts) > 0 {
-		p, err := parseHostPortFlags(flags.tcpHostPorts)
-		if err != nil {
-			return fmt.Errorf("command line -tcp-host flag: %v", err)
-		}
-		cfg.Net.TCPHostPorts = append(cfg.Net.TCPHostPorts, p...)
-
-	}
-	if len(flags.udpPublishedPorts) > 0 {
-		p, err := parsePublishPortFlags(flags.udpPublishedPorts)
-		if err != nil {
-			return fmt.Errorf("command line -udp-publish flag: %v", err)
-		}
-		cfg.Net.UDPPublishedPorts = append(cfg.Net.UDPPublishedPorts, p...)
-	}
-	if len(flags.udpHostPorts) > 0 {
-		p, err := parseHostPortFlags(flags.udpHostPorts)
-		if err != nil {
-			return fmt.Errorf("command line -udp-host flag: %v", err)
-		}
-		cfg.Net.UDPHostPorts = append(cfg.Net.UDPHostPorts, p...)
-	}
-	if flags.noCwd {
-		cfg.Cwd.Mounts = nil
-	}
-	// Validate config again, all errors detected should be related to
-	// entries modified by this function, because cfg read from a file
-	// and passed to this function was already validated during reading.
-	if err := config.Validate(cfg); err != nil {
-		return fmt.Errorf("command line flags: %v", err)
-	}
-	return nil
-}
-
-func parsePublishPortFlags(flags []string) ([]config.PublishedPort, error) {
-	var result []config.PublishedPort
-	for _, spec := range flags {
-		p, err := config.ParsePublishedPort(spec)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, *p)
-	}
-	return result, nil
-}
-
-func parseHostPortFlags(flags []string) ([]config.HostPort, error) {
-	var result []config.HostPort
-	for _, spec := range flags {
-		p, err := config.ParseHostPort(spec)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, *p)
-	}
-	return result, nil
-}
 
 func main() {
 	var exitCode int
@@ -368,15 +72,15 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	flags, err := parseFlags(defaultConfigPath, false)
+	flags, err := cli.ParseFlags(defaultConfigPath, false)
 	if err != nil {
 		return 1, err
 	}
-	if flags.version {
+	if flags.Version {
 		fmt.Println(Version)
 		return 0, nil
 	}
-	if flags.ls {
+	if flags.Ls {
 		envs, err := jailfs.LsEnvs(dropHome)
 		if err != nil {
 			return 1, fmt.Errorf("failed to list environments: %v", err)
@@ -386,41 +90,41 @@ func parentProcessEntry() (int, error) {
 		}
 		return 0, nil
 	}
-	if flags.rm != "" {
-		if err := jailfs.RmEnv(dropHome, flags.rm); err != nil {
-			return 1, fmt.Errorf("failed to remove environment '%s': %v", flags.rm, err)
+	if flags.Rm != "" {
+		if err := jailfs.RmEnv(dropHome, flags.Rm); err != nil {
+			return 1, fmt.Errorf("failed to remove environment '%s': %v", flags.Rm, err)
 		}
 		return 0, nil
 	}
 
-	runDir, cleanRunDir, err := jailfs.NewRunDir(dropHome, flags.envId)
+	runDir, cleanRunDir, err := jailfs.NewRunDir(dropHome, flags.EnvId)
 	if err != nil {
 		return 1, fmt.Errorf("failed to create run dir: %v", err)
 	}
 	defer cleanRunDir()
 
-	if flags.configPath == defaultConfigPath && !osutil.Exists(flags.configPath) {
+	if flags.ConfigPath == defaultConfigPath && !osutil.Exists(flags.ConfigPath) {
 		// configPath points to the default config location, but the
 		// config file is missing, write the default config.
-		if err := config.WriteDefault(flags.configPath, homeDir); err != nil {
-			return 1, fmt.Errorf("failed to create default config at %v: %v", flags.configPath, err)
+		if err := config.WriteDefault(flags.ConfigPath, homeDir); err != nil {
+			return 1, fmt.Errorf("failed to create default config at %v: %v", flags.ConfigPath, err)
 		}
-		fmt.Fprintf(os.Stderr, "Wrote default Drop config to %s\n", flags.configPath)
+		fmt.Fprintf(os.Stderr, "Wrote default Drop config to %s\n", flags.ConfigPath)
 	}
 
-	cfg, err := config.Read(flags.configPath, homeDir)
+	cfg, err := config.Read(flags.ConfigPath, homeDir)
 	if err != nil {
 		return 1, err
 	}
 
-	if err := flagsToConfig(cfg, flags); err != nil {
+	if err := cli.FlagsToConfig(cfg, flags); err != nil {
 		return 1, err
 	}
 
-	if (len(flags.tcpPublishedPorts) > 0 ||
-		len(flags.tcpHostPorts) > 0 ||
-		len(flags.udpPublishedPorts) > 0 ||
-		len(flags.udpHostPorts) > 0) &&
+	if (len(flags.TcpPublishedPorts) > 0 ||
+		len(flags.TcpHostPorts) > 0 ||
+		len(flags.UdpPublishedPorts) > 0 ||
+		len(flags.UdpHostPorts) > 0) &&
 		cfg.Net.Mode != "isolated" {
 		return 1, fmt.Errorf("port forwarding is only supported with isolated network mode (-n isolated)")
 	}
@@ -433,7 +137,7 @@ func parentProcessEntry() (int, error) {
 
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
-	cmd := exec.Command(os.Args[0], flags.toChildArgs(runDir)...)
+	cmd := exec.Command(os.Args[0], flags.ToChildArgs(runDir)...)
 	// 1) If stdin is a terminal, we pass it as-is to the child, so the
 	// child is also able to detect that stdin is a terminal. The terminal
 	// is then replaced with a new PTY created in the sandbox.
@@ -472,7 +176,7 @@ func parentProcessEntry() (int, error) {
 		cloneFlags |= syscall.CLONE_NEWNET
 	}
 	var containerUID, containerGID int
-	if flags.beRoot {
+	if flags.BeRoot {
 		containerUID = 0
 		containerGID = 0
 	} else {
@@ -601,7 +305,7 @@ func parentProcessEntry() (int, error) {
 }
 
 func childProcessEntry() (int, error) {
-	flags, err := parseFlags("", true)
+	flags, err := cli.ParseFlags("", true)
 	if err != nil {
 		return 1, err
 	}
@@ -627,17 +331,17 @@ func childProcessEntry() (int, error) {
 		return 1, fmt.Errorf("setsid failed: %v", err)
 	}
 
-	paths, err := jailfs.NewPaths(flags.envId, homeDir, flags.runDir)
+	paths, err := jailfs.NewPaths(flags.EnvId, homeDir, flags.RunDir)
 	if err != nil {
 		return 1, err
 	}
 
-	cfg, err := config.Read(flags.configPath, homeDir)
+	cfg, err := config.Read(flags.ConfigPath, homeDir)
 	if err != nil {
 		return 1, err
 	}
 
-	if err := flagsToConfig(cfg, flags); err != nil {
+	if err := cli.FlagsToConfig(cfg, flags); err != nil {
 		return 1, err
 	}
 
@@ -692,7 +396,7 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	progWithArgs := flag.Args()
+	progWithArgs := flags.Args
 	if len(progWithArgs) == 0 {
 		shell := os.Getenv("SHELL")
 		if shell == "" {
@@ -703,7 +407,7 @@ func childProcessEntry() (int, error) {
 
 	// Filter environment variables, then add DROP_ENV and debian_chroot
 	filteredEnv := env.Filter(os.Environ(), cfg.Environ.ExposedVars)
-	envVars := env.SetVars(filteredEnv, cfg.Environ.SetVars, flags.envId)
+	envVars := env.SetVars(filteredEnv, cfg.Environ.SetVars, flags.EnvId)
 	prog, err := exec.LookPath(progWithArgs[0]) // Searches PATH
 	if err != nil {
 		return 1, fmt.Errorf("command not found: %v", err)
