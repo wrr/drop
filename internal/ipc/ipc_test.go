@@ -1,8 +1,13 @@
 package ipc
 
 import (
+	"fmt"
 	"os"
+	"reflect"
 	"testing"
+
+	"github.com/wrr/drop/internal/config"
+	"github.com/wrr/drop/internal/jailfs"
 )
 
 func TestParentChildCommunication(t *testing.T) {
@@ -19,10 +24,56 @@ func TestParentChildCommunication(t *testing.T) {
 		t.Fatalf("NewParentChildSocket: %v", err)
 	}
 
+	sentArgs := ChildArgs{
+		EnvId: "test-env",
+		Paths: &jailfs.Paths{
+			Cwd:       "/home/alice/project",
+			DropHome:  "/home/alice/.local/share/drop",
+			Env:       "/home/alice/.local/share/drop/envs/test-env",
+			FsRoot:    "/home/alice/.local/share/drop/internal/run/test-env-123/root",
+			HostHome:  "/home/alice",
+			Home:      "/home/alice/.local/share/drop/envs/test-env/home",
+			HomeLower: "/home/alice/.local/share/drop/internal/run/test-env-123/home-lower",
+			HomeWork:  "/home/alice/.local/share/drop/internal/run/test-env-123/home-work",
+			Etc:       "/home/alice/.local/share/drop/envs/test-env/etc",
+			Var:       "/home/alice/.local/share/drop/envs/test-env/var",
+			Tmp:       "/tmp/drop-test-env-456",
+			Run:       "/home/alice/.local/share/drop/internal/run/test-env-123",
+			EmptyDir:  "/home/alice/.local/share/drop/internal/emptyd",
+			EmptyFile: "/home/alice/.local/share/drop/internal/empty",
+		},
+		Config: &config.Config{
+			Extends: "base.toml",
+			Mounts: []config.Mount{
+				{Source: "~/docs", Target: "~/docs", RW: false, Overlay: true},
+				{Source: "~/projects", Target: "~/projects", RW: true, Overlay: false},
+			},
+			BlockedPaths: []string{"/root", "/mnt"},
+			Environ: config.Environ{
+				ExposedVars: []string{"PATH", "HOME", "TERM"},
+				SetVars:     []config.EnvVar{{Name: "FOO", Value: "bar"}},
+			},
+			Net: config.Net{
+				Mode: "isolated",
+				TCPPublishedPorts: []config.PublishedPort{
+					{HostPort: 8080, GuestPort: 3000},
+					{HostPort: 8082, GuestPort: 3003},
+				},
+			},
+		},
+		ExecArgs: []string{"ls", "-al"},
+	}
+
 	done := make(chan error, 1)
 	go func() {
-		if err := childEnd.WaitNetworkReady(); err != nil {
+		defer childEnd.Close()
+		receivedArgs, err := childEnd.RecvChildArgs()
+		if err != nil {
 			done <- err
+			return
+		}
+		if !reflect.DeepEqual(receivedArgs, &sentArgs) {
+			done <- fmt.Errorf("received args differ from sent args:\ngot:  %+v\nwant: %+v", receivedArgs, &sentArgs)
 			return
 		}
 
@@ -39,26 +90,27 @@ func TestParentChildCommunication(t *testing.T) {
 			done <- err
 			return
 		}
-		done <- childEnd.Close()
+		done <- nil
 	}()
 
-	if err := parentEnd.NotifyNetworkReady(); err != nil {
-		t.Fatalf("NotifyNetworkReady: %v", err)
+	if err := parentEnd.SendChildArgs(sentArgs); err != nil {
+		t.Fatalf("SendChildArgs: %v", err)
 	}
 
 	received, err := parentEnd.RecvPty()
 	if err != nil {
-		t.Fatalf("RecvPty: %v", err)
-	}
-	defer received.Close()
+		t.Errorf("RecvPty: %v", err)
+	} else {
+		defer received.Close()
 
-	buf := make([]byte, 100)
-	n, err := received.Read(buf)
-	if err != nil {
-		t.Fatalf("Read from received fd: %v", err)
-	}
-	if got := string(buf[:n]); got != fcontent {
-		t.Fatalf("got %q, want %q", got, fcontent)
+		buf := make([]byte, 100)
+		n, err := received.Read(buf)
+		if err != nil {
+			t.Fatalf("Read from received fd: %v", err)
+		}
+		if got := string(buf[:n]); got != fcontent {
+			t.Fatalf("got %q, want %q", got, fcontent)
+		}
 	}
 
 	if err := parentEnd.Close(); err != nil {

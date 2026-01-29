@@ -51,65 +51,25 @@ type Flags struct {
 	NoCwd  bool
 	Mounts []string
 
-	// These flags are not currently passed from the parent to the child
-	// process, because child does not use them.
 	BeRoot            bool
 	TcpPublishedPorts []string
 	TcpHostPorts      []string
 	UdpPublishedPorts []string
 	UdpHostPorts      []string
 
-	// Internal flags passed only to the child process.
-	RunDir string
-
 	// Remaining command line arguments (the command to execute)
 	Args []string
 }
 
-// toChildArgs constructs command line arguments to be passed to the
-// started child process. The child shares most of the arguments with
-// the parent, but also accepts internal arguments to specify run and
-// home dirs.
-//
-// All of this would not be needed in C, where forked process would
-// simply be able to read copies of the config structs created in the
-// parent, but in Go we need to recreate the structs in the child by
-// passing appropriate flags.
-func (f *Flags) ToChildArgs(runDir string) []string {
-	// Other flags are not passed because child doesn't use them,
-	// perhaps for clarity it would be better to pass all the flags.
-	childArgs := []string{
-		"-child",
-		"-env", f.EnvId,
-		"-config", f.ConfigPath,
-		"-run-dir", runDir,
-	}
-	if f.NetworkMode != "" {
-		childArgs = append(childArgs, "-net", f.NetworkMode)
-	}
-	if f.NoCwd {
-		childArgs = append(childArgs, "-no-cwd")
-	}
-	for _, m := range f.Mounts {
-		childArgs = append(childArgs, "-mount", m)
-	}
-	// f.Args contains remaining command line arguments not
-	// recognized as flags (if any): a command to execute with its flags
-	return append(childArgs, f.Args...)
-}
+func ParseFlags(defaultConfigPath string) (*Flags, error) {
+	flag.Usage = func() {
+		envId, err := jailfs.CwdToEnvId()
+		defaultEnvId := ""
+		if err == nil {
+			defaultEnvId = fmt.Sprintf(" (default: %s)", envId)
+		}
 
-func ParseFlags(defaultConfigPath string, isChild bool) (*Flags, error) {
-	if !isChild {
-		// print usage only when starting parent process, child process is
-		// not started by human.
-		flag.Usage = func() {
-			envId, err := jailfs.CwdToEnvId()
-			defaultEnvId := ""
-			if err == nil {
-				defaultEnvId = fmt.Sprintf(" (default: %s)", envId)
-			}
-
-			fmt.Fprintf(os.Stderr, `Drop limits programs abilities to read and write user's files
+		fmt.Fprintf(os.Stderr, `Drop limits programs abilities to read and write user's files
 Usage: drop [options] [command...]
 Options:
   -env, -e value
@@ -174,7 +134,6 @@ Networking options:
   -help, -h
         Show help
 `, defaultEnvId, defaultConfigPath)
-		}
 	}
 	var f Flags
 	flag.StringVar(&f.EnvId, "env", "", "")
@@ -205,36 +164,18 @@ Networking options:
 	flag.Var((*stringSlice)(&f.UdpHostPorts), "udp-host", "")
 	flag.Var((*stringSlice)(&f.UdpHostPorts), "U", "")
 
-	if isChild {
-		// child only flags constructed by the parent process.
-		var child bool
-		// Child process always has -child argument
-		flag.BoolVar(&child, "child", false, "")
-		flag.StringVar(&f.RunDir, "run-dir", "", "")
-	}
-
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, fmt.Errorf("failed to parse command line: %v", err)
 	}
-	if isChild {
-		// Must be present for child process.
-		if f.ConfigPath == "" {
-			return nil, fmt.Errorf("child process -c argument missing")
+	if f.ConfigPath == "" {
+		f.ConfigPath = defaultConfigPath
+	}
+	if f.EnvId == "" {
+		envId, err := jailfs.CwdToEnvId()
+		if err != nil {
+			return nil, err
 		}
-		if f.EnvId == "" {
-			return nil, fmt.Errorf("child process -e argument missing")
-		}
-	} else {
-		if f.ConfigPath == "" {
-			f.ConfigPath = defaultConfigPath
-		}
-		if f.EnvId == "" {
-			envId, err := jailfs.CwdToEnvId()
-			if err != nil {
-				return nil, err
-			}
-			f.EnvId = envId
-		}
+		f.EnvId = envId
 	}
 
 	if !jailfs.IsEnvIdValid(f.EnvId) {

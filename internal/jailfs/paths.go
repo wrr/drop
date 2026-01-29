@@ -78,18 +78,31 @@ type Paths struct {
 
 // NewPaths creates Paths object with the relevant paths for the
 // current environment and creates missing dir and files.
-func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
+//
+// On success, the second return value is a cleanup function that
+// should be called when Drop terminates.
+func NewPaths(envId string, hostHome string) (*Paths, func(), error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	dropHome, err := DropHome(hostHome)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	env := filepath.Join(dropHome, "envs", envId)
 	internal := filepath.Join(dropHome, "internal")
+	runDir, cleanRunDir, err := newRunDir(dropHome, envId)
+	if err != nil {
+		return nil, nil, err
+	}
+	success := false
+	defer func() {
+		if !success {
+			cleanRunDir()
+		}
+	}()
 
 	paths := Paths{
 		Cwd:       cwd,
@@ -110,23 +123,24 @@ func NewPaths(envId string, hostHome string, runDir string) (*Paths, error) {
 	toMkdir := []string{paths.FsRoot, paths.Home, paths.HomeLower, paths.HomeWork, paths.Etc, paths.Var}
 	for _, dir := range toMkdir {
 		if err := osutil.MkdirAll(dir); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	if err := ensureDirWithNoPerms(paths.EmptyDir); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := ensureEmptyFile(paths.EmptyFile); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	tmp, err := initEnvironmentTmpDir(envId, &paths)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	paths.Tmp = tmp
-	return &paths, nil
+	success = true
+	return &paths, cleanRunDir, nil
 }
 
 // DefaultConfigPath returns default path to a Drop config file.
@@ -189,14 +203,14 @@ func runDirsPath(dropHome string) string {
 	return filepath.Join(dropHome, "internal", "run")
 }
 
-// NewRunDir creates a directory to store this jail instance runtime
+// newRunDir creates a directory to store this jail instance runtime
 // files and dirs (for example, the main root file system mount
 // point). The directory can be removed when this jail instance
 // terminates.
 //
 // We don't use XDG_RUNTIME_DIR, because it is commonly tmpfs and
 // overlayfs mount points cannot be placed on it.
-func NewRunDir(dropHome string, envId string) (string, func(), error) {
+func newRunDir(dropHome string, envId string) (string, func(), error) {
 	parent := runDirsPath(dropHome)
 
 	if err := osutil.MkdirAll(parent); err != nil {
@@ -211,27 +225,21 @@ func NewRunDir(dropHome string, envId string) (string, func(), error) {
 	if err != nil {
 		return "", nil, err
 	}
-	cleanup := func() {
+	// cleanRunDir removes runtime files no longer needed when Drop
+	// terminates.
+	cleanRunDir := func() {
 		// Releases the lock (not crucial, because proccess termination
 		// also does it).
 		lockFile.Close()
-		if err := cleanRunDir(runDir); err != nil {
+		// Remove the current instance run dir
+		if err := os.RemoveAll(runDir); err != nil {
 			log.Info("failed to clean run dir %v", err)
 		}
+		if err := removeOrphanedRunDirs(filepath.Dir(runDir)); err != nil {
+			log.Info("failed to remove orphaned run dirs %v", err)
+		}
 	}
-	return runDir, cleanup, nil
-}
-
-// cleanRunDir removes runtime files no longer needed when Drop
-// terminates.
-func cleanRunDir(runDir string) error {
-	// Remove the current instance run dir
-	err := os.RemoveAll(runDir)
-	if err != nil {
-		return err
-	}
-	// This could be run at any time:
-	return removeOrphanedRunDirs(filepath.Dir(runDir))
+	return runDir, cleanRunDir, nil
 }
 
 const runLockFname string = "lock"

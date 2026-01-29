@@ -18,11 +18,15 @@
 package ipc
 
 import (
+	"encoding/gob"
 	"fmt"
 	"io"
 	"os"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/wrr/drop/internal/config"
+	"github.com/wrr/drop/internal/jailfs"
 )
 
 type ParentEnd struct {
@@ -33,6 +37,19 @@ type ChildEnd struct {
 	// Public, so parent process can pass it to the executed child as
 	// ExtraFiles
 	Socket *os.File
+}
+
+// ChildArgs contains arguments needed by both parent and child that
+// the parent constructs and sends to the child.
+//
+// Note for future extensions: unexported fields or interface types if
+// included within ChildArgs chierarchy will not be encoded and sent
+// (encoding/gob limitation).
+type ChildArgs struct {
+	EnvId    string
+	Paths    *jailfs.Paths
+	Config   *config.Config
+	ExecArgs []string
 }
 
 func NewParentChildSocket() (*ParentEnd, *ChildEnd, error) {
@@ -55,10 +72,17 @@ func NewChildEnd(fd uintptr) *ChildEnd {
 	}
 }
 
-// NotifyNetworkReady notifies the child that parent network setup has finished.
-func (p *ParentEnd) NotifyNetworkReady() error {
-	if _, err := p.socket.Write([]byte{1}); err != nil {
-		return fmt.Errorf("failed to send network ready notification: %v", err)
+// SendChildArgs serializes and sends to the child all the necessary
+// arguments and configuration options obtained by the parent from
+// command line and from config files.
+//
+// Parent sends the arguments after all the necessary setup needed by
+// the child is finished (network setup is done), so the child can
+// assume that after the arguments are received, a sandboxed process
+// can be launched.
+func (p *ParentEnd) SendChildArgs(args ChildArgs) error {
+	if err := gob.NewEncoder(p.socket).Encode(args); err != nil {
+		return fmt.Errorf("failed to send arguments to child: %v", err)
 	}
 	return nil
 }
@@ -108,13 +132,14 @@ func (p *ParentEnd) Close() error {
 	return nil
 }
 
-// WaitNetworkReady blocks until the parent notifies the network setup has finished.
-func (c *ChildEnd) WaitNetworkReady() error {
-	buf := make([]byte, 1)
-	if _, err := c.Socket.Read(buf); err != nil {
-		return fmt.Errorf("failed to wait for network ready: %v", err)
+// RecvChildArgs receives arguments sent by the parent process to the
+// child. The function blocks until the arguments are available.
+func (c *ChildEnd) RecvChildArgs() (*ChildArgs, error) {
+	childArgs := ChildArgs{}
+	if err := gob.NewDecoder(c.Socket).Decode(&childArgs); err != nil {
+		return nil, fmt.Errorf("failed to receive arguments from parent: %v", err)
 	}
-	return nil
+	return &childArgs, nil
 }
 
 // SendPty sends parent descriptor of a sandboxed

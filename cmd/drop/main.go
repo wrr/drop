@@ -72,7 +72,7 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	flags, err := cli.ParseFlags(defaultConfigPath, false)
+	flags, err := cli.ParseFlags(defaultConfigPath)
 	if err != nil {
 		return 1, err
 	}
@@ -96,12 +96,6 @@ func parentProcessEntry() (int, error) {
 		}
 		return 0, nil
 	}
-
-	runDir, cleanRunDir, err := jailfs.NewRunDir(dropHome, flags.EnvId)
-	if err != nil {
-		return 1, fmt.Errorf("failed to create run dir: %v", err)
-	}
-	defer cleanRunDir()
 
 	if flags.ConfigPath == defaultConfigPath && !osutil.Exists(flags.ConfigPath) {
 		// configPath points to the default config location, but the
@@ -135,9 +129,15 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
+	paths, cleanup, err := jailfs.NewPaths(flags.EnvId, homeDir)
+	if err != nil {
+		return 1, err
+	}
+	defer cleanup()
+
 	// /proc/self/exe would be better, because it handles the case of
 	// the current binary being removed
-	cmd := exec.Command(os.Args[0], flags.ToChildArgs(runDir)...)
+	cmd := exec.Command(os.Args[0], "-child")
 	// 1) If stdin is a terminal, we pass it as-is to the child, so the
 	// child is also able to detect that stdin is a terminal. The terminal
 	// is then replaced with a new PTY created in the sandbox.
@@ -256,16 +256,21 @@ func parentProcessEntry() (int, error) {
 	// Start pasta to provide network connectivity to the jailed process
 	// in isolated network mode
 	if cfg.Net.Mode == "isolated" {
-		cleanPasta, err := netns.StartPasta(cmd.Process.Pid, cfg.Net, runDir)
+		cleanPasta, err := netns.StartPasta(cmd.Process.Pid, cfg.Net, paths.Run)
 		if err != nil {
 			return 1, err
 		}
 		defer cleanPasta()
 	}
 
-	// Notify the child that network setup has finished, so the child
-	// can run programs that use network.
-	if err := parentEnd.NotifyNetworkReady(); err != nil {
+	childArgs := ipc.ChildArgs{
+		EnvId:    flags.EnvId,
+		Paths:    paths,
+		Config:   cfg,
+		ExecArgs: flags.Args,
+	}
+	// This must be run after network setup has finished.
+	if err := parentEnd.SendChildArgs(childArgs); err != nil {
 		return 1, err
 	}
 
@@ -305,23 +310,18 @@ func parentProcessEntry() (int, error) {
 }
 
 func childProcessEntry() (int, error) {
-	flags, err := cli.ParseFlags("", true)
-	if err != nil {
-		return 1, err
-	}
-	homeDir, err := osutil.CurrentUserHomeDir()
-	if err != nil {
-		// Should not happen, already worked in the parent.
-		return 1, err
-	}
-
 	// The child end of the socket pair is inherited as file descriptor 3
 	childEnd := ipc.NewChildEnd(3)
 	defer childEnd.Close()
 
-	if err := childEnd.WaitNetworkReady(); err != nil {
+	childArgs, err := childEnd.RecvChildArgs()
+	if err != nil {
 		return 1, err
 	}
+	envId := childArgs.EnvId
+	paths := childArgs.Paths
+	cfg := childArgs.Config
+	execArgs := childArgs.ExecArgs
 
 	if err := ensureCapSysAdmin(); err != nil {
 		return 1, err
@@ -329,20 +329,6 @@ func childProcessEntry() (int, error) {
 
 	if _, err := unix.Setsid(); err != nil {
 		return 1, fmt.Errorf("setsid failed: %v", err)
-	}
-
-	paths, err := jailfs.NewPaths(flags.EnvId, homeDir, flags.RunDir)
-	if err != nil {
-		return 1, err
-	}
-
-	cfg, err := config.Read(flags.ConfigPath, homeDir)
-	if err != nil {
-		return 1, err
-	}
-
-	if err := cli.FlagsToConfig(cfg, flags); err != nil {
-		return 1, err
 	}
 
 	if err := jailfs.WriteEtcFiles(paths); err != nil {
@@ -396,19 +382,18 @@ func childProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	progWithArgs := flags.Args
-	if len(progWithArgs) == 0 {
+	if len(execArgs) == 0 {
 		shell := os.Getenv("SHELL")
 		if shell == "" {
 			shell = "/bin/sh"
 		}
-		progWithArgs = []string{shell}
+		execArgs = []string{shell}
 	}
 
 	// Filter environment variables, then add DROP_ENV and debian_chroot
 	filteredEnv := env.Filter(os.Environ(), cfg.Environ.ExposedVars)
-	envVars := env.SetVars(filteredEnv, cfg.Environ.SetVars, flags.EnvId)
-	prog, err := exec.LookPath(progWithArgs[0]) // Searches PATH
+	envVars := env.SetVars(filteredEnv, cfg.Environ.SetVars, envId)
+	prog, err := exec.LookPath(execArgs[0]) // Searches PATH
 	if err != nil {
 		return 1, fmt.Errorf("command not found: %v", err)
 	}
@@ -424,8 +409,8 @@ func childProcessEntry() (int, error) {
 	}
 
 	// Replace the current process
-	if err := unix.Exec(prog, progWithArgs, envVars); err != nil {
-		return 1, fmt.Errorf("exec %s failed: %v", progWithArgs[0], err)
+	if err := unix.Exec(prog, execArgs, envVars); err != nil {
+		return 1, fmt.Errorf("exec %s failed: %v", execArgs[0], err)
 	}
 
 	// Should never be reached
