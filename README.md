@@ -146,8 +146,8 @@ sudo semodule -r pasta_allow_drop
 
 These are the basic commands to work with Drop:
 
- * `drop` - starts a sandboxed shell
- * `drop program args` - runs a sandboxed program, for example `drop ps aux`
+ * `drop run` - starts a sandboxed shell
+ * `drop run program args` - runs a sandboxed program, for example `drop run ps aux`
  * `drop -h` - shows help
 
 
@@ -215,7 +215,7 @@ Drop workflow is inspired by the workflow provided by Python
 virtualenv. First we will create and enter Drop environment called `claude`:
 
 ```console
-alice@shodan:~/code/web-app$ drop -e claude
+alice@shodan:~/code/web-app$ drop run -e claude
 (drop)alice@shodan:~/code/web-app$
 ```
 
@@ -409,7 +409,7 @@ To illustrate this, a connection from the host to Drop is not allowed:
 
 ```console
 # Start a background TCP server within Drop:
-alice@shodan:~/code$ echo "hello" | drop nc -4 -l -p 5000 &
+alice@shodan:~/code$ echo "hello" | drop run nc -4 -l -p 5000 &
 [1] 1527648
 # Connect to the server from the host:
 alice@shodan:~/code$ nc -v -4 localhost 5000
@@ -419,7 +419,7 @@ nc: connect to localhost (127.0.0.1) port 5000 (tcp) failed: Connection refused
 To allow the connection, publish the TCP port 5000 with the `-t` flag:
 
 ```console
-alice@shodan:~/code$ echo "hello" | drop -t 5000 nc -4 -l -p 5000 &
+alice@shodan:~/code$ echo "hello" | drop run -t 5000 nc -4 -l -p 5000 &
 [1] 1528265
 alice@shodan:~/code$ nc -v -4 localhost 5000
 Connection to localhost (127.0.0.1) 5000 port [tcp/*] succeeded!

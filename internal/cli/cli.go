@@ -18,35 +18,21 @@
 package cli
 
 import (
-	"flag"
+	"context"
 	"fmt"
-	"os"
-	"strings"
+
+	"github.com/urfave/cli/v3"
 
 	"github.com/wrr/drop/internal/config"
 	"github.com/wrr/drop/internal/jailfs"
 )
 
-// stringSlice implements flag.Value interface for repeated string flags
-type stringSlice []string
-
-func (s *stringSlice) String() string {
-	return strings.Join(*s, ",")
-}
-
-func (s *stringSlice) Set(value string) error {
-	*s = append(*s, value)
-	return nil
-}
-
-type Flags struct {
-	Version     bool
+// RunFlags contains parsed command line flags for the 'drop run'
+// command.
+type RunFlags struct {
 	EnvId       string
 	ConfigPath  string
 	NetworkMode string
-
-	Ls bool
-	Rm string
 
 	NoCwd  bool
 	Mounts []string
@@ -61,139 +47,143 @@ type Flags struct {
 	Args []string
 }
 
-func ParseFlags(defaultConfigPath string) (*Flags, error) {
-	flag.Usage = func() {
-		envId, err := jailfs.CwdToEnvId()
-		defaultEnvId := ""
-		if err == nil {
-			defaultEnvId = fmt.Sprintf(" (default: %s)", envId)
-		}
+// Handlers contains callback functions for each command.
+type Handlers struct {
+	Run func(flags *RunFlags) error
+	Ls  func() error
+	Rm  func(envId string) error
+}
 
-		fmt.Fprintf(os.Stderr, `Drop limits programs abilities to read and write user's files
-Usage: drop [options] [command...]
-Options:
-  -env, -e value
-        Environment ID%s
-  -config, -c value
-        Path to TOML config file (default: %s)
-  -root, -r
-        Be root (uid 0) in the jail. Useful for running installation scripts that
-        require to be run as root. This option doesn't grant any additional privileges to the jailed
-        processes. For convenience, the home dir of a root user is not set to /root, but
-        kept as the original home dir.
-  -version
-        Print program version
+// Command creates the urfave/cli command with all commands and flags configured.
+func Command(version, defaultConfigPath string, handlers Handlers) *cli.Command {
+	defaultEnvId, _ := jailfs.CwdToEnvId()
 
-Environments management:
-  -ls, -l
-        List available Drop environments
-  -rm
-        Remove Drop environment
+	var flags RunFlags
+	return &cli.Command{
+		Name:    "drop",
+		Usage:   "Run programs in a sandboxed environment",
+		Version: version,
+		ExitErrHandler: func(_ context.Context, _ *cli.Command, err error) {
+			// blank to avoid the call to os.Exit which drop makes explicitly in main
+		},
+		Commands: []*cli.Command{
+			{
+				Name:         "run",
+				Usage:        "Run a command in the sandbox",
+				ArgsUsage:    "[command...]",
+				StopOnNthArg: intPtr(1),
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:        "env",
+						Aliases:     []string{"e"},
+						Usage:       "Environment ID",
+						Value:       defaultEnvId,
+						Destination: &flags.EnvId,
+					},
+					&cli.StringFlag{
+						Name:        "config",
+						Aliases:     []string{"c"},
+						Usage:       "Path to TOML config file",
+						Value:       defaultConfigPath,
+						Destination: &flags.ConfigPath,
+					},
+					&cli.BoolFlag{
+						Name:        "root",
+						Aliases:     []string{"r"},
+						Usage:       "Be root (uid 0) in the sandbox (doesn't grant any additional privileges to the sandboxed processes).",
+						Destination: &flags.BeRoot,
+					},
+					&cli.BoolFlag{
+						Name:        "no-cwd",
+						Aliases:     []string{"nc"},
+						Usage:       "Ignore cwd.mounts entries from config",
+						Destination: &flags.NoCwd,
+					},
+					&cli.StringSliceFlag{
+						Name:        "mount",
+						Aliases:     []string{"m"},
+						Usage:       "Add a mount (format: source[:target][:rw])",
+						Destination: &flags.Mounts,
+					},
+					&cli.StringFlag{
+						Name:        "net",
+						Aliases:     []string{"n"},
+						Usage:       "Network mode: off or isolated",
+						Destination: &flags.NetworkMode,
+					},
+					&cli.StringSliceFlag{
+						Name:        "tcp-publish",
+						Aliases:     []string{"t"},
+						Usage:       "Publish a TCP port from the sandbox (format: [hostIP/]hostPort[:sandboxPort])",
+						Destination: &flags.TcpPublishedPorts,
+					},
+					&cli.StringSliceFlag{
+						Name:        "tcp-host",
+						Aliases:     []string{"T"},
+						Usage:       "Make a TCP port from the host available in the sandbox (format: hostPort[:sandboxPort])",
+						Destination: &flags.TcpHostPorts,
+					},
+					&cli.StringSliceFlag{
+						Name:        "udp-publish",
+						Aliases:     []string{"u"},
+						Usage:       "Publish a UDP port from the sandbox (format: [hostIP/]hostPort[:sandboxPort])",
+						Destination: &flags.UdpPublishedPorts,
+					},
+					&cli.StringSliceFlag{
+						Name:        "udp-host",
+						Aliases:     []string{"U"},
+						Usage:       "Make a UDP port from the host available in the sandbox (format: hostPort[:sandboxPort])",
+						Destination: &flags.UdpHostPorts,
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					flags.Args = cmd.Args().Slice()
 
-Mounts related options:
-  -no-cwd, -nc
-        Ignore cwd.mounts entries from config - do not make the current
-        working directory available in the sandbox unless some other mount
-        entry exposes the CWD.
-  -mount, -m value
-        Add a mount to the list of mounts from the TOML config file.
-        The flag can be repeated.
-        Format: source[:target][:rw]
-        Examples: -m /mnt -m /tmp:/host-tmp -m ~/my-project::rw
+					if flags.EnvId == "" {
+						return fmt.Errorf("could not determine environment ID from current directory")
+					}
+					if !jailfs.IsEnvIdValid(flags.EnvId) {
+						return fmt.Errorf("invalid character in env ID")
+					}
 
-Networking options:
-  -net, -n value
-        Network mode: off or isolated
-
-  Port publishing from the sandbox:
-    -tcp-publish, -t value
-          Publish a TCP port from the sandbox.
-    -udp-publish, -u value
-          Publish a UDP port from the sandbox.
-     Format: [hostIP/]hostPort[:sandboxPort]
-     By default the published ports are bound only to localhost, to
-     bind a port to all available IP addresses pass 0.0.0.0 as the
-     hostIP.
-     A value "auto" automatically publishes all ports bound in the
-     sandbox on ALL available IP addresses (use "auto" only with
-     firewall blocking external connection to the machine).
-
-  Making host ports bound to localhost available in the sandbox:
-    -tcp-host, -T value
-          Make a TCP port from the host available in the sandbox.
-    -udp-host, -U value
-          Make a UDP port from the host available in the sandbox.
-     Format: hostPort[:sandboxPort]
-     A value "auto" makes all the localhost ports available in the
-     sandbox.
-
-  All port forwarding flags can be repeated.
-  Ports configured via flags add to the ports configured via the
-  config file.
-
-  -help, -h
-        Show help
-`, defaultEnvId, defaultConfigPath)
+					return handlers.Run(&flags)
+				},
+			},
+			{
+				Name:      "ls",
+				Usage:     "List available Drop environments",
+				ArgsUsage: " ",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					if cmd.NArg() != 0 {
+						return cli.Exit("usage: drop ls", 1)
+					}
+					return handlers.Ls()
+				},
+			},
+			{
+				Name:      "rm",
+				Usage:     "Remove a Drop environment",
+				ArgsUsage: "<env-id>",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					if cmd.NArg() != 1 {
+						return cli.Exit("usage: drop rm <env-id>", 1)
+					}
+					envId := cmd.Args().First()
+					return handlers.Rm(envId)
+				},
+			},
+		},
 	}
-	var f Flags
-	flag.StringVar(&f.EnvId, "env", "", "")
-	flag.StringVar(&f.EnvId, "e", "", "")
-	flag.StringVar(&f.ConfigPath, "config", "", "")
-	flag.StringVar(&f.ConfigPath, "c", "", "")
-	flag.BoolVar(&f.Version, "version", false, "")
-
-	flag.BoolVar(&f.Ls, "ls", false, "")
-	flag.BoolVar(&f.Ls, "l", false, "")
-	flag.StringVar(&f.Rm, "rm", "", "")
-
-	flag.BoolVar(&f.NoCwd, "no-cwd", false, "")
-	flag.BoolVar(&f.NoCwd, "nc", false, "")
-	flag.Var((*stringSlice)(&f.Mounts), "mount", "")
-	flag.Var((*stringSlice)(&f.Mounts), "m", "")
-
-	flag.BoolVar(&f.BeRoot, "root", false, "")
-	flag.BoolVar(&f.BeRoot, "r", false, "")
-	flag.StringVar(&f.NetworkMode, "net", "", "")
-	flag.StringVar(&f.NetworkMode, "n", "", "")
-	flag.Var((*stringSlice)(&f.TcpPublishedPorts), "tcp-publish", "")
-	flag.Var((*stringSlice)(&f.TcpPublishedPorts), "t", "")
-	flag.Var((*stringSlice)(&f.TcpHostPorts), "tcp-host", "")
-	flag.Var((*stringSlice)(&f.TcpHostPorts), "T", "")
-	flag.Var((*stringSlice)(&f.UdpPublishedPorts), "udp-publish", "")
-	flag.Var((*stringSlice)(&f.UdpPublishedPorts), "u", "")
-	flag.Var((*stringSlice)(&f.UdpHostPorts), "udp-host", "")
-	flag.Var((*stringSlice)(&f.UdpHostPorts), "U", "")
-
-	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
-		return nil, fmt.Errorf("failed to parse command line: %v", err)
-	}
-	if f.ConfigPath == "" {
-		f.ConfigPath = defaultConfigPath
-	}
-	if f.EnvId == "" {
-		envId, err := jailfs.CwdToEnvId()
-		if err != nil {
-			return nil, err
-		}
-		f.EnvId = envId
-	}
-
-	if !jailfs.IsEnvIdValid(f.EnvId) {
-		return nil, fmt.Errorf("invalid character in env ID")
-	}
-
-	f.Args = flag.Args()
-	return &f, nil
 }
 
 // FlagsToConfig modifies cfg from a TOML file with values passed via
 // command line flags. The function validates config after the
 // modification.
-func FlagsToConfig(cfg *config.Config, flags *Flags) error {
+func FlagsToConfig(cfg *config.Config, flags *RunFlags) error {
 	for _, m := range flags.Mounts {
 		mount, err := config.ParseMountCompact(m)
 		if err != nil {
-			return fmt.Errorf("command line -mount flag: %v", err)
+			return fmt.Errorf("command line --mount flag: %v", err)
 		}
 		cfg.Mounts = append(cfg.Mounts, *mount)
 	}
@@ -204,29 +194,28 @@ func FlagsToConfig(cfg *config.Config, flags *Flags) error {
 	if len(flags.TcpPublishedPorts) > 0 {
 		p, err := parsePublishPortFlags(flags.TcpPublishedPorts)
 		if err != nil {
-			return fmt.Errorf("command line -tcp-publish flag: %v", err)
+			return fmt.Errorf("command line --tcp-publish flag: %v", err)
 		}
 		cfg.Net.TCPPublishedPorts = append(cfg.Net.TCPPublishedPorts, p...)
 	}
 	if len(flags.TcpHostPorts) > 0 {
 		p, err := parseHostPortFlags(flags.TcpHostPorts)
 		if err != nil {
-			return fmt.Errorf("command line -tcp-host flag: %v", err)
+			return fmt.Errorf("command line --tcp-host flag: %v", err)
 		}
 		cfg.Net.TCPHostPorts = append(cfg.Net.TCPHostPorts, p...)
-
 	}
 	if len(flags.UdpPublishedPorts) > 0 {
 		p, err := parsePublishPortFlags(flags.UdpPublishedPorts)
 		if err != nil {
-			return fmt.Errorf("command line -udp-publish flag: %v", err)
+			return fmt.Errorf("command line --udp-publish flag: %v", err)
 		}
 		cfg.Net.UDPPublishedPorts = append(cfg.Net.UDPPublishedPorts, p...)
 	}
 	if len(flags.UdpHostPorts) > 0 {
 		p, err := parseHostPortFlags(flags.UdpHostPorts)
 		if err != nil {
-			return fmt.Errorf("command line -udp-host flag: %v", err)
+			return fmt.Errorf("command line --udp-host flag: %v", err)
 		}
 		cfg.Net.UDPHostPorts = append(cfg.Net.UDPHostPorts, p...)
 	}
@@ -264,4 +253,8 @@ func parseHostPortFlags(flags []string) ([]config.HostPort, error) {
 		result = append(result, *p)
 	}
 	return result, nil
+}
+
+func intPtr(i int) *int {
+	return &i
 }

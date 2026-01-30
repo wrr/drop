@@ -24,8 +24,7 @@ from base import Config, ENV_DIR
 
 class TestCore(base.TestBase):
     def test_exit_code_passed(self):
-        cmd = 'bash -c "exit 77"'
-        result = self.sandbox_run(cmd)
+        result = self.drop('run bash -c "exit 77"')
         self.assertEqual('', result.stderr)
         self.assertEqual(77, result.returncode)
         self.assertTrue(os.path.exists(ENV_DIR),
@@ -39,15 +38,14 @@ class TestCore(base.TestBase):
         gid = os.getgid()
 
         # Drop should preserve current user UID/GID
-        result = self.sandbox_run('bash -c "id -u; id -g"')
+        result = self.drop('run bash -c "id -u; id -g"')
         self.assertSuccess(result)
         jail_uid, jail_gid = uid_gid_from_stdout()
         self.assertEqual(uid, jail_uid)
         self.assertEqual(gid, jail_gid)
 
         # In root mode (-r flag), Drop should use UID/GID 0
-        result = self.sandbox_run('bash -c "id -u; id -g"',
-                                  drop_extra_args='-r')
+        result = self.drop('run -r bash -c "id -u; id -g"')
         self.assertSuccess(result)
         jail_uid, jail_gid = uid_gid_from_stdout()
         self.assertEqual(0, jail_uid),
@@ -61,7 +59,7 @@ class TestCore(base.TestBase):
         env_dir_from_cwd = base.env_dir(env_id)
         base.rmdir(env_dir_from_cwd)
         try:
-            result = self.sandbox_run('ls', env_id=None, cwd=cwd)
+            result = self.drop('run ls', env_id=None, cwd=cwd)
             self.assertSuccess(result)
             self.assertFalse(os.path.exists(ENV_DIR))
             self.assertTrue(os.path.exists(env_dir_from_cwd), 
@@ -70,8 +68,7 @@ class TestCore(base.TestBase):
             self.rm_env(env_id)
 
     def test_process_isolation(self):
-        cmd = 'bash -c "sleep 10 & ps aux --noheaders"'
-        result = self.sandbox_run(cmd)
+        result = self.drop('run bash -c "sleep 10 & ps aux --noheaders"')
         self.assertSuccess(result)
 
         # expect three processes in the sandbox
@@ -100,13 +97,13 @@ class TestCore(base.TestBase):
 
         try:
             # Env variables should not be automatically exposed.
-            cmd = 'bash -c "echo $FOO"'
-            result = self.sandbox_run(cmd)
+            cmd = 'run bash -c "echo $FOO"'
+            result = self.drop(cmd)
             self.assertSuccess(result)
             self.assertEqual('', result.stdout.strip())
 
             config = Config(environ_exposed_vars=['FOO'])
-            result = self.sandbox_run(cmd, config=config)
+            result = self.drop(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('bar', result.stdout.strip())
 
@@ -118,7 +115,7 @@ class TestCore(base.TestBase):
 
         try:
             config = Config(environ_set_vars=['FOO=baz'])
-            result = self.sandbox_run('bash -c "echo $FOO"', config=config)
+            result = self.drop('run bash -c "echo $FOO"', config=config)
             self.assertSuccess(result)
             self.assertEqual('baz', result.stdout.strip())
 
@@ -127,8 +124,7 @@ class TestCore(base.TestBase):
 
     def test_drop_env_set(self):
         """Test that DROP_ENV is set correctly"""
-        cmd = 'bash -c "echo $DROP_ENV"'
-        result = self.sandbox_run(cmd)
+        result = self.drop('run bash -c "echo $DROP_ENV"')
         self.assertSuccess(result)
 
         drop_env = result.stdout.strip()
@@ -142,7 +138,7 @@ class TestCore(base.TestBase):
             pass_fds = []
             for x in range(10):
                 pass_fds.extend(os.pipe())
-            result =  self.sandbox_run('ls /proc/1/fd/', pass_fds=pass_fds)
+            result =  self.drop('run ls /proc/1/fd/', pass_fds=pass_fds)
             self.assertSuccess(result)
             fds = [int(fd) for fd in result.stdout.splitlines()]
             # Except 4 open FDs, because one is used by 'ls' to read
@@ -155,7 +151,7 @@ class TestCore(base.TestBase):
     def test_change_drop_home_dir(self):
         """Test that DROP_HOME env var is respected"""
         drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
-        result = self.sandbox_run('ls', drop_home=drop_home)
+        result = self.drop('run ls', drop_home=drop_home)
         self.assertSuccess(result)
 
         # Verify env dir was created in custom DROP_HOME
@@ -170,21 +166,26 @@ class TestCore(base.TestBase):
     def test_list_environments(self):
         """Test listing Drop environments with -ls flag"""
         drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
-        result = self.sandbox_run(drop_extra_args='-l', drop_home=drop_home)
+        result = self.drop('ls', drop_home=drop_home)
         self.assertSuccess(result)
         self.assertEqual('', result.stdout.strip())
 
         env_ids = ['env1', 'env2', 'env3']
         for env_id in env_ids:
-            result = self.sandbox_run('true', env_id=env_id,
-                                      drop_home=drop_home)
+            result = self.drop('run true', env_id=env_id, drop_home=drop_home)
             self.assertSuccess(result)
 
-        result = self.sandbox_run(drop_extra_args='-l', drop_home=drop_home)
+        result = self.drop('ls', drop_home=drop_home)
         self.assertSuccess(result)
 
         listed_envs = result.stdout.strip().split('\n')
         self.assertCountEqual(env_ids, listed_envs)
+
+    def test_list_environments_rejects_args(self):
+        """Test that 'drop ls' rejects trailing arguments"""
+        result = self.drop('ls foo')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('usage: drop ls', result.stderr)
 
     def test_cannot_overwrite_input_files_passed_via_std_streams(self):
         """Test that sandboxed process cannot modify files passed via stdin.
@@ -199,8 +200,8 @@ class TestCore(base.TestBase):
             input_file.seek(0)
 
             # Try to overwrite the file via /proc/self/fd/0 from inside sandbox
-            result = self.sandbox_run(
-                'bash -c "echo -n modified > /proc/self/fd/0"',
+            result = self.drop(
+                'run bash -c "echo -n modified > /proc/self/fd/0"',
                 stdin=input_file)
             self.assertSuccess(result)
 
@@ -212,41 +213,37 @@ class TestCore(base.TestBase):
         self.assertEqual(original_content, actual_content)
 
     def test_remove_environment(self):
-        """Test removing Drop environments with -rm flag"""
+        """Test removing Drop environments with rm subcommand"""
         drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
 
         env_ids = ['env1', 'env2', 'env3']
         for env_id in env_ids:
-            result = self.sandbox_run('true', env_id=env_id,
-                                      drop_home=drop_home)
+            result = self.drop('run true', env_id=env_id, drop_home=drop_home)
             self.assertSuccess(result)
 
-        result = self.sandbox_run(drop_extra_args='-ls', drop_home=drop_home)
+        result = self.drop('ls', drop_home=drop_home)
         self.assertSuccess(result)
         listed_envs = result.stdout.strip().split('\n')
         self.assertCountEqual(env_ids, listed_envs)
 
-        result = self.sandbox_run(drop_extra_args='-rm env1',
-                                  drop_home=drop_home)
+        result = self.drop('rm env1', drop_home=drop_home)
         self.assertSuccess(result)
 
-        result = self.sandbox_run(drop_extra_args='-ls', drop_home=drop_home)
+        result = self.drop('ls', drop_home=drop_home)
         self.assertSuccess(result)
         listed_envs = result.stdout.strip().split('\n')
         self.assertCountEqual(['env2', 'env3'], listed_envs)
 
         # Test removing non-existent environment
-        result = self.sandbox_run(drop_extra_args='-rm missing',
-                                  drop_home=drop_home)
+        result = self.drop('rm missing', drop_home=drop_home)
         self.assertEqual(1, result.returncode)
         self.assertIn('environment does not exist', result.stderr)
 
         # Test removing environment with running instance
         # Start a background Drop instance in env2
-        process = self.sandbox_run_background('sleep 60', env_id='env2',
-                                              drop_home=drop_home)
-        result = self.sandbox_run(drop_extra_args='-rm env2',
-                                  drop_home=drop_home)
+        process = self.drop_background('run sleep 60', env_id='env2',
+                                       drop_home=drop_home)
+        result = self.drop('rm env2', drop_home=drop_home)
         self.assertEqual(1, result.returncode)
         self.assertIn('environment is used by running drop instances',
                       result.stderr.lower())
@@ -254,12 +251,11 @@ class TestCore(base.TestBase):
         # Clean up the background process
         self.kill_process(process)
         # After killing the process, removal should work
-        result = self.sandbox_run(drop_extra_args='-rm env2',
-                                  drop_home=drop_home)
+        result = self.drop('rm env2', drop_home=drop_home)
         self.assertSuccess(result)
 
         # Verify only env3 remains
-        result = self.sandbox_run( drop_extra_args='-ls', drop_home=drop_home)
+        result = self.drop('ls', drop_home=drop_home)
         self.assertSuccess(result)
         self.assertEqual('env3', result.stdout.strip())
 

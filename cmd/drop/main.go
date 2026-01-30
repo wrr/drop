@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -72,47 +73,56 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	flags, err := cli.ParseFlags(defaultConfigPath)
-	if err != nil {
-		return 1, err
-	}
-	if flags.Version {
-		fmt.Println(Version)
-		return 0, nil
-	}
-	if flags.Ls {
-		envs, err := jailfs.LsEnvs(dropHome)
-		if err != nil {
-			return 1, fmt.Errorf("failed to list environments: %v", err)
-		}
-		for _, envId := range envs {
-			fmt.Println(envId)
-		}
-		return 0, nil
-	}
-	if flags.Rm != "" {
-		if err := jailfs.RmEnv(dropHome, flags.Rm); err != nil {
-			return 1, fmt.Errorf("failed to remove environment '%s': %v", flags.Rm, err)
-		}
-		return 0, nil
+	handlers := cli.Handlers{
+		Run: func(flags *cli.RunFlags) error {
+			return run(flags, homeDir, defaultConfigPath)
+		},
+		Ls: func() error {
+			envs, err := jailfs.LsEnvs(dropHome)
+			if err != nil {
+				return fmt.Errorf("failed to list environments: %v", err)
+			}
+			for _, envId := range envs {
+				fmt.Println(envId)
+			}
+			return nil
+		},
+		Rm: func(envId string) error {
+			if err := jailfs.RmEnv(dropHome, envId); err != nil {
+				return fmt.Errorf("failed to remove environment '%s': %v", envId, err)
+			}
+			return nil
+		},
 	}
 
+	cmd := cli.Command(Version, defaultConfigPath, handlers)
+	if err := cmd.Run(context.Background(), os.Args); err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			// Propagate child's exec exit code without printing any error message.
+			return exitError.ExitCode(), nil
+		}
+		return 1, err
+	}
+	return 0, nil
+}
+
+func run(flags *cli.RunFlags, homeDir, defaultConfigPath string) error {
 	if flags.ConfigPath == defaultConfigPath && !osutil.Exists(flags.ConfigPath) {
 		// configPath points to the default config location, but the
 		// config file is missing, write the default config.
 		if err := config.WriteDefault(flags.ConfigPath, homeDir); err != nil {
-			return 1, fmt.Errorf("failed to create default config at %v: %v", flags.ConfigPath, err)
+			return fmt.Errorf("failed to create default config at %v: %v", flags.ConfigPath, err)
 		}
 		fmt.Fprintf(os.Stderr, "Wrote default Drop config to %s\n", flags.ConfigPath)
 	}
 
 	cfg, err := config.Read(flags.ConfigPath, homeDir)
 	if err != nil {
-		return 1, err
+		return err
 	}
 
 	if err := cli.FlagsToConfig(cfg, flags); err != nil {
-		return 1, err
+		return err
 	}
 
 	if (len(flags.TcpPublishedPorts) > 0 ||
@@ -120,18 +130,18 @@ func parentProcessEntry() (int, error) {
 		len(flags.UdpPublishedPorts) > 0 ||
 		len(flags.UdpHostPorts) > 0) &&
 		cfg.Net.Mode != "isolated" {
-		return 1, fmt.Errorf("port forwarding is only supported with isolated network mode (-n isolated)")
+		return fmt.Errorf("port forwarding is only supported with isolated network mode (--net isolated)")
 	}
 
 	// Socket pair for communicating with the child process.
 	parentEnd, childEnd, err := ipc.NewParentChildSocket()
 	if err != nil {
-		return 1, err
+		return err
 	}
 
 	paths, cleanup, err := jailfs.NewPaths(flags.EnvId, homeDir)
 	if err != nil {
-		return 1, err
+		return err
 	}
 	defer cleanup()
 
@@ -241,7 +251,7 @@ func parentProcessEntry() (int, error) {
 	defer runtime.UnlockOSThread()
 
 	if err := cmd.Start(); err != nil {
-		return 1, fmt.Errorf("jailed process start failed: %v", err)
+		return fmt.Errorf("jailed process start failed: %v", err)
 	}
 	defer func() {
 		if cmd != nil {
@@ -258,7 +268,7 @@ func parentProcessEntry() (int, error) {
 	if cfg.Net.Mode == "isolated" {
 		cleanPasta, err := netns.StartPasta(cmd.Process.Pid, cfg.Net, paths.Run)
 		if err != nil {
-			return 1, err
+			return err
 		}
 		defer cleanPasta()
 	}
@@ -271,7 +281,7 @@ func parentProcessEntry() (int, error) {
 	}
 	// This must be run after network setup has finished.
 	if err := parentEnd.SendChildArgs(childArgs); err != nil {
-		return 1, err
+		return err
 	}
 
 	if pty.PtyNeeded() {
@@ -282,13 +292,13 @@ func parentProcessEntry() (int, error) {
 			// to cmd.Wait to detect the child termination.
 		} else {
 			if err != nil {
-				return 1, err
+				return err
 			}
 
 			cleanForwardPty, err := pty.ForwardPty(parentPty)
 			parentPty = nil // owned by ForwardPty
 			if err != nil {
-				return 1, err
+				return err
 			}
 			defer cleanForwardPty()
 		}
@@ -299,14 +309,14 @@ func parentProcessEntry() (int, error) {
 	err = cmd.Wait()
 	cmd = nil
 	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			exitCode := exitError.ExitCode()
-			// Propage exit code of the child
-			return exitCode, nil
+		if _, ok := err.(*exec.ExitError); ok {
+			// ExitError causes parent process to exit with child's exit
+			// code without printing any error message.
+			return err
 		}
-		return 1, fmt.Errorf("jailed process failed to run: %v", err)
+		return fmt.Errorf("jailed process failed to run: %v", err)
 	}
-	return 0, nil
+	return nil
 }
 
 func childProcessEntry() (int, error) {

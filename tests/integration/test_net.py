@@ -23,24 +23,22 @@ class TestNet(TestBase):
 
     def test_networking(self):
         # External connection to IP address
-        result = self.sandbox_run('nc -zv -w 1 1.1.1.1 80')
+        result = self.drop('run nc -zv -w 1 1.1.1.1 80')
         self.assertEqual(0, result.returncode)
         self.assertIn('succeeded', result.stderr)
 
         # External connection with DNS resolution
-        result = self.sandbox_run('nc -zv -w 1 google.com 80')
+        result = self.drop('run nc -zv -w 1 google.com 80')
         self.assertEqual(0, result.returncode)
         self.assertIn('succeeded', result.stderr)
 
         # No external connections allowed when run with '-n off'
         # option
-        result = self.sandbox_run('nc -zv -w 1 1.1.1.1 80',
-                                  drop_extra_args='-n off')
+        result = self.drop('run -n off nc -zv -w 1 1.1.1.1 80')
         self.assertEqual(1, result.returncode)
         self.assertIn('Network is unreachable', result.stderr)
 
-        result = self.sandbox_run('nc -zv -w 1 google.com 80',
-                                  drop_extra_args='-n off')
+        result = self.drop('run -n off nc -zv -w 1 google.com 80')
         self.assertEqual(1, result.returncode)
         self.assertIn('getaddrinfo for host', result.stderr)
 
@@ -49,7 +47,7 @@ class TestNet(TestBase):
         # not found. Clear the PATH to make pasta unavailable.
         env = os.environ.copy()
         env['PATH'] = ''
-        result = self.sandbox_run('ls', env=env)
+        result = self.drop('run ls', env=env)
         self.assertEqual(1, result.returncode)
         self.assertIn(
             'pasta binary for isolated networking not found', result.stderr)
@@ -59,8 +57,8 @@ class TestNet(TestBase):
 
     def test_port_publish(self):
         # Publish TCP port 20112 from the sandbox
-        tcp_server = self.sandbox_run_background(
-            'bash -c "echo -n "hello" | nc -4 -v -l -p 20112"',
+        tcp_server = self.drop_background(
+            'run bash -c "echo -n "hello" | nc -4 -v -l -p 20112"',
             config=Config(tcp_published_ports=['20112']),
         )
         self.wait_port_bound(tcp_server, 20112)
@@ -72,8 +70,8 @@ class TestNet(TestBase):
         self.assertEqual(0, result.returncode)
 
         # publish UDP port 20112 from the sandbox
-        udp_server = self.sandbox_run_background(
-            'bash -c "echo -n "hello" | nc -4 -v -W 1 -u -l -p 20112"',
+        udp_server = self.drop_background(
+            'run bash -c "echo -n "hello" | nc -4 -v -W 1 -u -l -p 20112"',
             config=Config(udp_published_ports=['20112']),
         )
         self.wait_port_bound(udp_server, 20112)
@@ -84,8 +82,8 @@ class TestNet(TestBase):
 
     def test_port_not_published(self):
         # Port 20114 is open, but not published from the sandbox
-        tcp_server = self.sandbox_run_background(
-            'bash -c "echo -n "hello" | nc -4 -v -l -p 20114"')
+        tcp_server = self.drop_background(
+            'run bash -c "echo -n "hello" | nc -4 -v -l -p 20114"')
         self.wait_port_bound(tcp_server, 20114)
         # Attempt to connect should fail with ConnectionRefusedError
         with self.assertRaises((ConnectionRefusedError, OSError)):
@@ -93,8 +91,8 @@ class TestNet(TestBase):
         self.kill_process(tcp_server)
 
         # Same scenarion for UDP
-        udp_server = self.sandbox_run_background(
-            'bash -c "echo -n "hello" | nc -4 -v -W 1 -u -l -p 20114"',
+        udp_server = self.drop_background(
+            'run bash -c "echo -n "hello" | nc -4 -v -W 1 -u -l -p 20114"',
         )
         self.wait_port_bound(udp_server, 20114)
         with self.assertRaises((socket.timeout, OSError)):
@@ -107,8 +105,8 @@ class TestNet(TestBase):
             'bash -c "echo -n hello | nc -4 -v -l -p 20113"'
         )
         self.wait_port_bound(tcp_server, 20113)
-        result = self.sandbox_run(
-            'bash -c "nc -4 -w 1 127.0.0.1 20113"',
+        result = self.drop(
+            'run bash -c "nc -4 -w 1 127.0.0.1 20113"',
             config=Config(tcp_host_ports=['20113']),
         )
         self.assertSuccess(result)
@@ -120,8 +118,8 @@ class TestNet(TestBase):
             'bash -c "echo -n hello | nc -4 -v -W 1 -u -l -p 20113"'
         )
         self.wait_port_bound(udp_server, 20113)
-        result = self.sandbox_run(
-            'bash -c "echo -n test | nc -4 -w 1 -u 127.0.0.1 20113"',
+        result = self.drop(
+            'run bash -c "echo -n test | nc -4 -w 1 -u 127.0.0.1 20113"',
             config=Config(udp_host_ports=['20113']),
         )
         self.assertSuccess(result)
@@ -134,8 +132,8 @@ class TestNet(TestBase):
         tcp_server = self.run_background(
             'bash -c "echo -n "hello" | nc -4 -v -l -p 20115"')
         self.wait_port_bound(tcp_server, 20115)
-        result = self.sandbox_run(
-            'bash -c "nc -4 -v -w 1 127.0.0.1 20115"')
+        result = self.drop(
+            'run bash -c "nc -4 -v -w 1 127.0.0.1 20115"')
         self.assertEqual(1, result.returncode)
         self.assertIn('Connection refused', result.stderr)
         self.kill_process(tcp_server)
@@ -144,12 +142,12 @@ class TestNet(TestBase):
         test_cases = [
             {
                 'args': '-t foo',
-                'expected': ('Error: command line -tcp-publish flag: '
+                'expected': ('Error: command line --tcp-publish flag: '
                              'invalid port number \'foo\'')
             },
             {
                 'args': '-T 0',
-                'expected': ('Error: command line -tcp-host flag: '
+                'expected': ('Error: command line --tcp-host flag: '
                              'port number out of range: 0')
             },
             {
@@ -161,14 +159,15 @@ class TestNet(TestBase):
             },
             {
                 'args': '-U foo',
-                'expected': ('Error: command line -udp-host flag: '
+                'expected': ('Error: command line --udp-host flag: '
                              'invalid port number \'foo\'')
             }
         ]
 
         for tc in test_cases:
-            with self.subTest(args=tc['args']):
-                result = self.sandbox_run('ls', drop_extra_args=tc['args'])
+            args = tc['args']
+            with self.subTest(args=args):
+                result = self.drop(f'run {args} ls')
                 self.assertNotEqual(0, result.returncode,
                                    f"Expected failure for {tc['args']}")
                 self.assertIn(tc['expected'], result.stderr)

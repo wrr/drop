@@ -123,28 +123,31 @@ class TestBase(unittest.TestCase):
         self.background_processes.append(process)
         return process
 
-    def sandbox_run_background(self, command=None, config: Config = None,
-                               drop_home: str = None, env_id: str = ENV_ID,
-                               drop_extra_args=None,
-                               **subprocess_kwargs):
+    def drop_background(self, command=None, config: Config = None,
+                        drop_home: str = None, env_id: str = ENV_ID,
+                        **subprocess_kwargs):
         """Execute a background command in the sandbox.
 
         Does not wait for the command to finish execution.
         Returns Popen object.
         """
-        if config is None:
-            config = Config()
-        config_file = os.path.join(self.temp_dir, 'config.toml')
-        write_config(config, config_file)
         cmd_args = [f'{os.getcwd()}/drop']
-        if drop_extra_args:
-            cmd_args += shlex.split(drop_extra_args)
-        cmd_args += ['-c', config_file]
-        if env_id and creates_environment(drop_extra_args):
-            cmd_args += ['-e', env_id]
-            self.created_envs.add((env_id, drop_home))
-        if command:
-            cmd_args += shlex.split(command)
+
+        command_list = shlex.split(command)
+        if len(command_list):
+            cmd_id = command_list.pop(0)
+            cmd_args.append(cmd_id)
+            if cmd_id == 'run':
+                if config is None:
+                    config = Config()
+                config_file = os.path.join(self.temp_dir, 'config.toml')
+                write_config(config, config_file)
+                cmd_args += ['-c', config_file]
+                if env_id:
+                    cmd_args += ['-e', env_id]
+                    self.created_envs.add((env_id, drop_home))
+            cmd_args += command_list
+
         if drop_home:
             env = subprocess_kwargs.get('env') or os.environ.copy()
             env['DROP_HOME'] = drop_home
@@ -152,14 +155,12 @@ class TestBase(unittest.TestCase):
             self.created_homes.add(drop_home)
         return self.run_background(cmd_args, **subprocess_kwargs)
 
-    def sandbox_run(self, command=None, config: Config = None,
-                    drop_home: str = None, env_id: str = ENV_ID,
-                    drop_extra_args=None,
-                    **subprocess_kwargs):
+    def drop(self, command=None, config: Config = None,
+             drop_home: str = None, env_id: str = ENV_ID,
+             **subprocess_kwargs):
         """Execute a command in the sandbox and return its result."""
-        process = self.sandbox_run_background(
-            command, config, drop_home, env_id, drop_extra_args,
-            **subprocess_kwargs)
+        process = self.drop_background(
+            command, config, drop_home, env_id, **subprocess_kwargs)
         return self.wait_process_completed(process)
 
     def wait_process_completed(self, process):
@@ -183,20 +184,12 @@ class TestBase(unittest.TestCase):
         process.wait()
 
     def rm_env(self, env_id, drop_home=None):
-        result = self.sandbox_run(drop_extra_args=f'-rm {env_id}',
-                                  drop_home=drop_home)
+        result = self.drop(f'rm {env_id}', drop_home=drop_home)
 
     def assertSuccess(self, result):
         self.assertTrue(not result.stderr, f'Unexpected error {result.stderr}')
         self.assertEqual(0, result.returncode)
 
-
-def creates_environment(drop_extra_args):
-    for arg in shlex.split(drop_extra_args or ''):
-        for f in ['-l', '-ls', '-rm', '-version', '-h']:
-            if arg.startswith(f):
-                return False
-    return True
 
 def rmdir(path):
     if os.path.exists(path):
