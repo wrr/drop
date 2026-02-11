@@ -148,6 +148,10 @@ exposed_vars = [
   "PATH",
 ]
 
+set_vars = [
+  "debian_chroot=drop", # Add '(drop)' prefix to shell prompts on Debian-based systems
+]
+
 [net]
 # Network mode:
 # "off"      - programs in the sandbox cannot access remote and local

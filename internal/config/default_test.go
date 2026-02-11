@@ -64,6 +64,13 @@ func TestWriteDefault(t *testing.T) {
 		t.Errorf("Expected environ.exposed_vars to have at least 10 elements, got %d", l)
 	}
 
+	expectedSetVars := []EnvVar{
+		{Name: "debian_chroot", Value: "drop"},
+	}
+	if !slices.Equal(cfg.Environ.SetVars, expectedSetVars) {
+		t.Errorf("Expected environ.set_vars to be %+v, got %+v", expectedSetVars, cfg.Environ.SetVars)
+	}
+
 	net := cfg.Net
 	if net.Mode != "isolated" {
 		t.Errorf("Expected default net mode 'isolated', got %s", net.Mode)
