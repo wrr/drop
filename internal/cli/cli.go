@@ -49,15 +49,15 @@ type RunFlags struct {
 
 // Handlers contains callback functions for each command.
 type Handlers struct {
-	Run func(flags *RunFlags) error
-	Ls  func() error
-	Rm  func(envId string) error
+	Run    func(flags *RunFlags) error
+	Ls     func() error
+	Rm     func(envId string) error
+	Update func(checkOnly bool) error
 }
 
 // Command creates the urfave/cli command with all commands and flags configured.
 func Command(version, defaultConfigPath string, handlers Handlers) *cli.Command {
 	defaultEnvId, _ := jailfs.CwdToEnvId()
-
 	var flags RunFlags
 	return &cli.Command{
 		Name:    "drop",
@@ -170,6 +170,21 @@ func Command(version, defaultConfigPath string, handlers Handlers) *cli.Command 
 					}
 					envId := cmd.Args().First()
 					return handlers.Rm(envId)
+				},
+			},
+			{
+				Name:      "update",
+				Usage:     "Check if new version of drop is available",
+				ArgsUsage: " ",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "check",
+						Aliases: []string{"c"},
+						Usage:   "Check for updates",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					return handlers.Update(cmd.Bool("check"))
 				},
 			},
 		},

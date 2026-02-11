@@ -38,6 +38,7 @@ import (
 	"github.com/wrr/drop/internal/netns"
 	"github.com/wrr/drop/internal/osutil"
 	"github.com/wrr/drop/internal/pty"
+	"github.com/wrr/drop/internal/updater"
 )
 
 var Version = "dev" // overridden by release binaries linker
@@ -74,6 +75,9 @@ func parentProcessEntry() (int, error) {
 	}
 
 	handlers := cli.Handlers{
+		Init: func(envId string) error {
+			return nil
+		},
 		Run: func(flags *cli.RunFlags) error {
 			return run(flags, homeDir, defaultConfigPath)
 		},
@@ -90,6 +94,22 @@ func parentProcessEntry() (int, error) {
 		Rm: func(envId string) error {
 			if err := jailfs.RmEnv(dropHome, envId); err != nil {
 				return fmt.Errorf("failed to remove environment '%s': %v", envId, err)
+			}
+			return nil
+		},
+		Update: func(checkOnly bool) error {
+			if !checkOnly {
+				return fmt.Errorf("automatic updating not yet available, you can check for updates with 'drop update --check'")
+			}
+			newVersion, err := updater.CheckForUpdate(Version)
+			if err != nil {
+				return fmt.Errorf("failed to check for updates: %v", err)
+			}
+			if newVersion != "" {
+				fmt.Printf("Drop %s is available, your installed version is %s\n", newVersion, Version)
+				fmt.Printf("Download: https://github.com/wrr/drop/releases/latest\n")
+			} else {
+				fmt.Printf("Drop is up to date (version %s)\n", Version)
 			}
 			return nil
 		},
