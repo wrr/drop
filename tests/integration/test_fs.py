@@ -20,26 +20,28 @@ from pathlib import Path
 
 import base
 
-from base import TestBase, Config, ENV_DIR
+from base import TestBase, Config, ENV_ID
 
 
 HOME_DIR = Path.home()
 
 class TestFS(TestBase):
     def test_home_dir_isolation(self):
+        self.drop_init()
         fname = 'test_file_foo_bar'
-        result = self.drop(f'run bash -c "echo Hello world > ~/{fname}"')
+        result = self.drop_run(f'bash -c "echo Hello world > ~/{fname}"')
         self.assertSuccess(result)
 
         # Ensure the file was not created in the user home, but in the
         # jailed env home dir.
         self.assertFalse(os.path.exists(HOME_DIR / fname))
-        jail_file = ENV_DIR / 'home' / fname
+        jail_file = self.env_dir() / 'home' / fname
         self.assertTrue(os.path.exists(jail_file))
 
         self.assertEqual('Hello world\n', base.read(jail_file))
 
     def test_mount_read_only(self):
+        self.drop_init()
         exposed_dname = 'drop-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
@@ -48,128 +50,138 @@ class TestFS(TestBase):
             config = Config(mounts=[f'~/{exposed_dname}'])
             # Reading from files in the dir exposed as readonly is
             # allowed
-            result = self.drop(f'run cat {hello_path}', config=config)
+            result = self.drop_run(f'cat {hello_path}', config=config)
             self.assertSuccess(result)
             self.assertEqual('hello', result.stdout)
 
             # Writing to files in is not allowed
-            result = self.drop(f'run bash -c "cat foo > {hello_path}"',
-                               config=config)
+            result = self.drop_run(f'bash -c "cat foo > {hello_path}"',
+                                   config=config)
             self.assertEqual(1, result.returncode)
             self.assertIn('Read-only file system', result.stderr)
 
             # Mount point should not be created directly in the Drop
             # home dir, but in a disposable overlayfs lower layer.
-            self.assertFalse(os.path.exists(ENV_DIR / 'home' / exposed_dname))
+            self.assertFalse(
+                os.path.exists(self.env_dir() / 'home' / exposed_dname))
 
     def test_cwd_mount_read_only(self):
+        self.drop_init()
         config = Config(cwd_mounts=['.'])
         # Reading from CWD should work
-        result = self.drop('run cat go.mod', config=config)
+        result = self.drop_run('cat go.mod', config=config)
         self.assertSuccess(result)
 
         # Writing to CWD should fail
-        result = self.drop('run touch testfile', config=config)
+        result = self.drop_run('touch testfile', config=config)
         self.assertEqual(1, result.returncode)
         self.assertIn('Read-only file system', result.stderr)
 
     def test_cwd_blocked_path(self):
+        self.drop_init()
         config = Config(cwd_blocked_paths=['cmd'])
-        result = self.drop('run cat cmd/drop/main.go', config=config)
+        result = self.drop_run('cat cmd/drop/main.go', config=config)
         self.assertEqual(1, result.returncode)
         self.assertIn('cmd/drop/main.go: Permission denied', result.stderr)
 
     def test_no_cwd_flag(self):
         """Test -no-cwd flag prevents CWD from being mounted"""
+        self.drop_init()
         # With cwd.mounts in config, CWD should be accessible by default
         config = Config(cwd_mounts=['.'])
         cwd = os.getcwd()
-        result = self.drop(f'run cat {cwd}/go.mod', config=config)
+        result = self.drop_run(f'cat {cwd}/go.mod', config=config)
         self.assertSuccess(result)
 
         # With -no-cwd flag, CWD should not be accessible
-        result = self.drop(f'run -no-cwd cat {cwd}/go.mod', config=config)
+        result = self.drop_run(f'-no-cwd cat {cwd}/go.mod', config=config)
         self.assertEqual(1, result.returncode)
         self.assertIn('No such file or directory', result.stderr)
 
     def test_mounts_from_root_dir(self):
+        self.drop_init()
         # Expose a path outside of the home dir, normally not
         # available within Drop.
         config = Config(mounts=['/boot'])
-        result = self.drop('run ls /boot/', config=config)
+        result = self.drop_run('ls /boot/', config=config)
         self.assertSuccess(result)
 
     def test_paths_remaping(self):
+        self.drop_init()
         # Mount /boot from host into the user homedir.
         config = Config(mounts=['/boot:~/boot'])
-        result = self.drop('run ls /boot/', config=config)
+        result = self.drop_run('ls /boot/', config=config)
         self.assertEqual(2, result.returncode)
         self.assertIn("cannot access '/boot/': No such file or directory",
                       result.stderr)
-        result = self.drop(f'run ls {HOME_DIR / 'boot'}', config=config)
+        result = self.drop_run(f'ls {HOME_DIR / 'boot'}', config=config)
         self.assertSuccess(result)
 
     def test_mounts_target_is_file_not_a_dir(self):
+        self.drop_init()
         exposed_dname = 'drop-test-data'
         # Create an empty file in the env home dir that conflicts
         # with the exposed directory
-        base.write('', ENV_DIR / 'home' / exposed_dname)
+        base.write('', self.env_dir() / 'home' / exposed_dname)
 
         host_dir = HOME_DIR / exposed_dname
         with scoped_dir(host_dir):
             config = Config(mounts=[f'~/{exposed_dname}'])
             # Should be the original file, not a dir
-            result = self.drop('run bash -c "test -f ~/drop-test-data"',
-                               config=config)
+            result = self.drop_run('bash -c "test -f ~/drop-test-data"',
+                                   config=config)
             self.assertEqual(0, result.returncode)
             expected_msg = (f"Drop: not mounting {host_dir}, target already "
                             "exists but is a file not a directory")
             self.assertIn(expected_msg, result.stderr)
 
     def test_mounts_target_is_dir_not_a_file(self):
+        self.drop_init()
         exposed_fname = 'drop-test-data'
         # Create a directory in the env home dir that conflicts
         # with exposed file.
-        target_dir = ENV_DIR / 'home' / exposed_fname
+        target_dir = self.env_dir() / 'home' / exposed_fname
         target_dir.mkdir(parents=True, exist_ok=True)
 
         host_file = HOME_DIR / exposed_fname
         with scoped_empty_file(host_file):
             config = Config(mounts=[f'~/{exposed_fname}'])
             # Should be the original dir, not a file
-            result = self.drop('run bash -c "test -d ~/drop-test-data"',
-                               config=config)
+            result = self.drop_run('bash -c "test -d ~/drop-test-data"',
+                                   config=config)
             self.assertEqual(0, result.returncode)
             expected_msg = (f"Drop: not mounting {host_file}, target already "
                             "exists but is a directory not a file")
             self.assertIn(expected_msg, result.stderr)
 
     def test_mounts_target_is_link(self):
+        self.drop_init()
         exposed_dname = 'drop-test-data'
         # Create a symlink in the env home directory
-        target_link = ENV_DIR / 'home' / exposed_dname
+        target_link = self.env_dir() / 'home' / exposed_dname
         target_link.parent.mkdir(parents=True, exist_ok=True)
         target_link.symlink_to('/tmp')
 
         host_dir = HOME_DIR / exposed_dname
         with scoped_dir(host_dir):
             config = Config(mounts=[f'~/{exposed_dname}'])
-            result = self.drop('run bash -c "test -L ~/drop-test-data"',
-                               config=config)
+            result = self.drop_run('bash -c "test -L ~/drop-test-data"',
+                                   config=config)
             self.assertEqual(0, result.returncode)
             expected_msg = (f"Drop: not mounting {host_dir}, target already "
                             "exists but is a symbolic link")
             self.assertIn(expected_msg, result.stderr)
 
     def test_mounts_source_is_missing(self):
+        self.drop_init()
         exposed_dname = 'drop-test-data-missing'
         host_dir = HOME_DIR / exposed_dname
         if host_dir.exists():
             shutil.rmtree(host_dir)
 
         config = Config(mounts=[f'~/{exposed_dname}'])
-        result = self.drop('run bash -c "test -e ~/drop-test-data-missing"',
-                           config=config)
+        result = self.drop_run('bash -c "test -e ~/drop-test-data-missing"',
+                               config=config)
         # Exit 1, file should not exist
         self.assertEqual(1, result.returncode)
         expected_msg = (f"Drop: not mounting {host_dir}, "
@@ -177,14 +189,16 @@ class TestFS(TestBase):
         self.assertIn(expected_msg, result.stderr)
 
     def test_mounts_validation(self):
+        self.drop_init()
         config = Config(mounts=['/etc/../usr'])
-        result = self.drop('run ls', config=config)
+        result = self.drop_run('ls', config=config)
         self.assertEqual(1, result.returncode)
         self.assertIn(
             "invalid mounts '/etc/../usr': path is not normalized",
             result.stderr)
 
     def test_mount_read_write(self):
+        self.drop_init()
         exposed_dname = 'drop-test-data'
         home_sub_path = HOME_DIR / exposed_dname
         hello_path = home_sub_path / 'hello.txt'
@@ -193,18 +207,18 @@ class TestFS(TestBase):
             config = Config(mounts=[f"~/{exposed_dname}::rw"])
             # Reading from files in the dir exposed in readwrite mode
             # is allowed
-            result = self.drop(f'run cat {hello_path}', config=config)
+            result = self.drop_run(f'cat {hello_path}', config=config)
             self.assertSuccess(result)
             self.assertEqual('hello', result.stdout)
 
             # Writing to files is allowed, creating new files and dirs
             # is also allowed.
-            cmd = (f'run bash -c "'
+            cmd = (f'bash -c "'
                    f'echo world > {hello_path}; '
                    f'mkdir {home_sub_path}/foo; '
                    f'touch {home_sub_path}/bar; '
                    f'cat {hello_path};"')
-            result = self.drop(cmd, config=config)
+            result = self.drop_run(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('world\n', result.stdout)
             self.assertEqual('world\n', base.read(hello_path))
@@ -212,10 +226,12 @@ class TestFS(TestBase):
             self.assertTrue(os.path.isfile(home_sub_path / 'bar'))
         # Mount point should not be created directly in the Drop
         # home dir, but in a disposable overlayfs lower layer.
-        self.assertFalse(os.path.exists(ENV_DIR / 'home' / exposed_dname))
+        self.assertFalse(
+            os.path.exists(self.env_dir() / 'home' / exposed_dname))
 
     def test_add_mount_flag(self):
         """Test -m flags"""
+        self.drop_init()
         dir1 = 'drop-test-dir1'
         dir2 = 'drop-test-dir2'
         path1 = HOME_DIR / dir1
@@ -228,77 +244,82 @@ class TestFS(TestBase):
             base.write('world', file2)
 
             run_args = f'-mount ~/{dir1} -m ~/{dir2}::rw'
-            cmd = f'run {run_args} bash -c "cat {file1}; cat {file2}"'
-            result = self.drop(cmd)
+            cmd = f'{run_args} bash -c "cat {file1}; cat {file2}"'
+            result = self.drop_run(cmd)
             self.assertSuccess(result)
             self.assertEqual('helloworld', result.stdout)
 
             # dir1 is read-only, writing should fail
-            cmd = f'run {run_args} bash -c "echo bye > {file1}"'
-            result = self.drop(cmd)
+            cmd = f'{run_args} bash -c "echo bye > {file1}"'
+            result = self.drop_run(cmd)
             self.assertEqual(1, result.returncode)
             self.assertIn('Read-only file system', result.stderr)
             self.assertEqual('hello', base.read(file1))
 
             # dir2 is read-write, writing should succeed
-            cmd = (f'run {run_args} '
+            cmd = (f'{run_args} '
                    f'bash -c "echo -n bye > {file2}; cat {file2}"')
-            result = self.drop(cmd)
+            result = self.drop_run(cmd)
             self.assertSuccess(result)
             self.assertEqual('bye', result.stdout)
             self.assertEqual('bye', base.read(file2))
 
     def test_var(self):
+        self.drop_init()
         # Test that /var directory is empty initially and files created
         # in it are stored in the Drop env /var subdirectory
 
-        cmd = 'run bash -c "ls -A /var | wc -l"'
-        result = self.drop(cmd)
+        cmd = 'bash -c "ls -A /var | wc -l"'
+        result = self.drop_run(cmd)
         self.assertSuccess(result)
         line_count = int(result.stdout.strip())
         self.assertEqual(0, line_count)
 
-        cmd = 'run bash -c "echo hello > /var/foo"'
-        result = self.drop(cmd)
+        cmd = 'bash -c "echo hello > /var/foo"'
+        result = self.drop_run(cmd)
         self.assertSuccess(result)
 
         # Ensure the file was not created in the host /var, but in the
         # Drop env /var dir.
         host_var_file = Path('/var/foo')
         self.assertFalse(host_var_file.exists())
-        jail_var_file = ENV_DIR / 'var' / 'foo'
+        jail_var_file = self.env_dir() / 'var' / 'foo'
         self.assertTrue(jail_var_file.exists())
 
         self.assertEqual('hello\n', base.read(jail_var_file))
 
     def test_run(self):
+        self.drop_init()
         # Test that /run directory is empty
-        cmd = 'run bash -c "ls -A /run | wc -l"'
-        result = self.drop(cmd)
+        cmd = 'bash -c "ls -A /run | wc -l"'
+        result = self.drop_run(cmd)
         self.assertSuccess(result)
         line_count = int(result.stdout.strip())
         self.assertEqual(0, line_count)
 
     def test_etc(self):
+        self.drop_init()
         # Test that /etc/resolv.conf contains the expected DNS configuration
-        cmd = 'run cat /etc/resolv.conf'
-        result = self.drop(cmd)
+        cmd = 'cat /etc/resolv.conf'
+        result = self.drop_run(cmd)
         self.assertSuccess(result)
         self.assertIn('nameserver 169.254.1.1', result.stdout)
 
     def test_blocked_paths(self):
+        self.drop_init()
         # Test that blocked paths are inaccessible
         config = Config(blocked_paths=['/var', '/etc/passwd'])
 
-        result = self.drop('run ls /var', config=config)
+        result = self.drop_run('ls /var', config=config)
         self.assertNotEqual(0, result.returncode)
         self.assertIn('Permission denied', result.stderr)
 
-        result = self.drop('run cat /etc/passwd', config=config)
+        result = self.drop_run('cat /etc/passwd', config=config)
         self.assertNotEqual(0, result.returncode)
         self.assertIn('Permission denied', result.stderr)
 
     def test_blocked_home_dir_path(self):
+        self.drop_init()
         exposed_dname = 'drop-test-data'
         blocked_dname = 'blocked'
         home_sub_path = HOME_DIR / exposed_dname
@@ -308,48 +329,50 @@ class TestFS(TestBase):
             config = Config(
                 mounts=[f'~/{exposed_dname}'],
                 blocked_paths=[f'~/{exposed_dname}/{blocked_dname}'])
-            result = self.drop(f'run ls {blocked_path}', config=config)
+            result = self.drop_run(f'ls {blocked_path}', config=config)
             self.assertNotEqual(0, result.returncode)
             self.assertIn('Permission denied', result.stderr)
 
     def test_devices(self):
+        self.drop_init()
         # Ensure /dev/null can be written to but its size remains 0
-        cmd = 'run bash -c "echo foo > /dev/null && stat -c %s /dev/null"'
-        result = self.drop(cmd)
+        cmd = 'bash -c "echo foo > /dev/null && stat -c %s /dev/null"'
+        result = self.drop_run(cmd)
         self.assertSuccess(result)
         stat_out = result.stdout.strip()
         self.assertEqual('0', stat_out)
 
         # Read 10 bytes from /dev/zero and count them
-        cmd = 'run bash -c "dd if=/dev/zero bs=10 count=1 2>/dev/null | wc -c"'
-        result = self.drop(cmd)
+        cmd = 'bash -c "dd if=/dev/zero bs=10 count=1 2>/dev/null | wc -c"'
+        result = self.drop_run(cmd)
         self.assertSuccess(result)
         wc_out = result.stdout.strip()
         self.assertEqual('10', wc_out)
 
         # Read 4 bytes from each of /dev/random and /dev/urandom and count them
-        cmd = 'run bash -c "head -c 4 -q /dev/random /dev/urandom|wc -c"'
-        result = self.drop(cmd)
+        cmd = 'bash -c "head -c 4 -q /dev/random /dev/urandom|wc -c"'
+        result = self.drop_run(cmd)
         self.assertSuccess(result)
         wc_out = result.stdout.strip()
         self.assertEqual('8', wc_out)
 
         # Ensure write to /dev/full returns an error
-        result = self.drop('run bash -c "echo foo > /dev/full"')
+        result = self.drop_run('bash -c "echo foo > /dev/full"')
         wc_out = result.stdout.strip()
         self.assertIn('No space left on device', result.stderr)
         self.assertEqual(1, result.returncode)
 
         # In total, expect only 13 entries in the jailed /dev dir (5
         # devices, 2 dirs, 6 links)
-        cmd = 'run bash -c "ls -1A /dev |wc -l"'
-        result = self.drop(cmd)
+        cmd = 'bash -c "ls -1A /dev |wc -l"'
+        result = self.drop_run(cmd)
         self.assertSuccess(result)
         stat_out = result.stdout.strip()
         self.assertEqual('13', stat_out)
 
     def test_blocked_fs_entries(self):
         """Test that always blocked paths are not readable"""
+        self.drop_init()
         blocked_entries = [
             '/proc/acpi',
             '/proc/asound',
@@ -368,27 +391,29 @@ class TestFS(TestBase):
             with self.subTest(path=path):
                 # When path is a dir cat still produces Permission
                 # denied
-                result = self.drop(f'run cat {path}')
+                result = self.drop_run(f'cat {path}')
                 self.assertEqual(1, result.returncode)
                 self.assertIn('Permission denied', result.stderr)
 
-                result = self.drop(f'run chmod 644 {path}')
+                result = self.drop_run(f'chmod 644 {path}')
                 self.assertEqual(1, result.returncode)
                 self.assertIn('Read-only file system', result.stderr)
 
     def test_not_exposed_root_sub_dirs(self):
+        self.drop_init()
         # These dirs are not exposed to Drop by default
         not_exposed_dirs = ['/root', '/boot', '/snap']
 
         for path in not_exposed_dirs:
             with self.subTest(path=path):
-                result = self.drop(f'run ls {path}')
+                result = self.drop_run(f'ls {path}')
                 self.assertEqual(2, result.returncode)
                 self.assertIn('No such file or directory', result.stderr)
 
     def test_snap_mounts_hidden(self):
         """Test that not needed host mounts are not visible in sandbox"""
-        result = self.drop('run cat /proc/self/mounts')
+        self.drop_init()
+        result = self.drop_run('cat /proc/self/mounts')
         self.assertSuccess(result)
 
         mount_lines = result.stdout.strip().split('\n')

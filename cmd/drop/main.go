@@ -67,8 +67,6 @@ func parentProcessEntry() (int, error) {
 		return 1, err
 	}
 
-	defaultConfigPath := jailfs.DefaultConfigPath(homeDir)
-
 	dropHome, err := jailfs.DropHome(homeDir)
 	if err != nil {
 		return 1, err
@@ -76,10 +74,14 @@ func parentProcessEntry() (int, error) {
 
 	handlers := cli.Handlers{
 		Init: func(envId string) error {
+			err := initEnv(envId, homeDir, dropHome)
+			if err != nil {
+				return fmt.Errorf("failed to init environment: %v", err)
+			}
 			return nil
 		},
 		Run: func(flags *cli.RunFlags) error {
-			return run(flags, homeDir, defaultConfigPath)
+			return run(flags, homeDir, dropHome)
 		},
 		Ls: func() error {
 			envs, err := jailfs.LsEnvs(dropHome)
@@ -92,7 +94,7 @@ func parentProcessEntry() (int, error) {
 			return nil
 		},
 		Rm: func(envId string) error {
-			if err := jailfs.RmEnv(dropHome, envId); err != nil {
+			if err := jailfs.RmEnv(homeDir, dropHome, envId); err != nil {
 				return fmt.Errorf("failed to remove environment '%s': %v", envId, err)
 			}
 			return nil
@@ -115,7 +117,7 @@ func parentProcessEntry() (int, error) {
 		},
 	}
 
-	cmd := cli.Command(Version, defaultConfigPath, handlers)
+	cmd := cli.Command(Version, handlers)
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			// Propagate child's exec exit code without printing any error message.
@@ -126,17 +128,52 @@ func parentProcessEntry() (int, error) {
 	return 0, nil
 }
 
-func run(flags *cli.RunFlags, homeDir, defaultConfigPath string) error {
-	if flags.ConfigPath == defaultConfigPath && !osutil.Exists(flags.ConfigPath) {
-		// configPath points to the default config location, but the
-		// config file is missing, write the default config.
-		if err := config.WriteDefault(flags.ConfigPath, homeDir); err != nil {
-			return fmt.Errorf("failed to create default config at %v: %v", flags.ConfigPath, err)
+func initEnv(envId, homeDir, dropHome string) error {
+	success := false
+
+	err := jailfs.CreateEnvDir(dropHome, envId)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if !success {
+			// Remove dir created by CreateEnvDir, best effort, ignore errors
+			jailfs.RmEnv(homeDir, dropHome, envId)
 		}
-		fmt.Fprintf(os.Stderr, "Wrote default Drop config to %s\n", flags.ConfigPath)
+	}()
+
+	baseConfigPath := jailfs.BaseConfigPath(homeDir)
+	if !osutil.Exists(baseConfigPath) {
+		if err := config.WriteDefault(baseConfigPath, homeDir); err != nil {
+			return fmt.Errorf("write base config to %v: %v", baseConfigPath, err)
+		}
+		fmt.Fprintf(os.Stderr, "Wrote base Drop config to %s\n", baseConfigPath)
 	}
 
-	cfg, err := config.Read(flags.ConfigPath, homeDir)
+	envConfigPath := jailfs.EnvConfigPath(homeDir, envId)
+	if !osutil.Exists(envConfigPath) {
+		err = config.WriteDefaultForEnv(envConfigPath)
+		if err != nil {
+			return fmt.Errorf("write env config to %v: %v", envConfigPath, err)
+		}
+	}
+	fmt.Fprintf(os.Stderr, "Drop environment created with config at %s\n", envConfigPath)
+	success = true
+	return nil
+}
+
+func run(flags *cli.RunFlags, homeDir, dropHome string) error {
+	var configPath string
+	if !osutil.Exists(jailfs.EnvPath(dropHome, flags.EnvId)) {
+		return fmt.Errorf("environment %q doesn't exist, run 'drop init %v' to create it", flags.EnvId, flags.EnvId)
+	}
+	if flags.ConfigPath == "" {
+		configPath = jailfs.EnvConfigPath(homeDir, flags.EnvId)
+	} else {
+		configPath = flags.ConfigPath
+	}
+
+	cfg, err := config.Read(configPath, homeDir)
 	if err != nil {
 		return err
 	}
@@ -159,7 +196,7 @@ func run(flags *cli.RunFlags, homeDir, defaultConfigPath string) error {
 		return err
 	}
 
-	paths, cleanup, err := jailfs.NewPaths(flags.EnvId, homeDir)
+	paths, cleanup, err := jailfs.NewPaths(homeDir, flags.EnvId)
 	if err != nil {
 		return err
 	}

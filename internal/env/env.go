@@ -31,11 +31,10 @@ func Filter(env []string, expose []string) []string {
 }
 
 // SetVars sets and expands envrionment variables configured by the
-// user in config.toml. If any of these variables is empty, SetVars
-// removes it. The function also sets DROP_ENV variable to
-// contain envId - id of the current Drop environment. This can be
-// changed by setting DROP_ENV in config.toml to some other value or
-// to an empty string.
+// user in TOML config. If any of these variables is empty, SetVars
+// removes it. The function also sets DROP_ENV variable to contain
+// envId - id of the current Drop environment. This can be changed by
+// setting DROP_ENV in TOML to some other value or to an empty string.
 func SetVars(env []string, varsToSet []config.EnvVar, envId string) []string {
 	filterOut := []string{"DROP_ENV"}
 	for _, envVar := range varsToSet {

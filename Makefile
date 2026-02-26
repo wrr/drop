@@ -91,7 +91,7 @@ vulncheck: build
 gen-example-config: build
 	DROP_HOME=$$(mktemp -d) && \
 	DROP_HOME=$$DROP_HOME ./drop ps && \
-	cp $$DROP_HOME/config.toml config.example.toml && \
+	cp $$DROP_HOME/base.toml config.example.toml && \
 	rm -rf $$DROP_HOME
 
 all: test-race test-integration vulncheck imports lint build

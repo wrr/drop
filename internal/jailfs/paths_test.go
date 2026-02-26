@@ -201,31 +201,31 @@ func TestPathToEnvId(t *testing.T) {
 }
 
 func TestDefaultConfigPath(t *testing.T) {
-	origDropConfig := os.Getenv("DROP_CONFIG")
-	defer os.Setenv("DROP_CONFIG", origDropConfig)
-	os.Unsetenv("DROP_CONFIG")
+	origDropHome := os.Getenv("DROP_HOME")
+	defer os.Setenv("DROP_HOME", origDropHome)
+	os.Unsetenv("DROP_HOME")
 
 	origXdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
 	defer os.Setenv("XDG_CONFIG_HOME", origXdgConfigHome)
 	os.Unsetenv("XDG_CONFIG_HOME")
 
 	home := "/home/alice/"
-	result := DefaultConfigPath(home)
-	expected := "/home/alice/.config/drop/config.toml"
+	result := BaseConfigPath(home)
+	expected := "/home/alice/.config/drop/base.toml"
 	if result != expected {
 		t.Errorf("DefaultConfigPath(%q) = %q", home, result)
 	}
 
 	os.Setenv("XDG_CONFIG_HOME", "/home/alice/configs")
-	result = DefaultConfigPath(home)
-	expected = "/home/alice/configs/drop/config.toml"
+	result = BaseConfigPath(home)
+	expected = "/home/alice/configs/drop/base.toml"
 	if result != expected {
 		t.Errorf("DefaultConfigPath(%q) = %q", home, result)
 	}
 
-	expected = "/home/alice/drop-config.toml"
-	os.Setenv("DROP_CONFIG", expected)
-	result = DefaultConfigPath(home)
+	expected = "/home/alice/drop-home/config/base.toml"
+	os.Setenv("DROP_HOME", "/home/alice/drop-home/")
+	result = BaseConfigPath(home)
 	if result != expected {
 		t.Errorf("DefaultConfigPath(%q) = %q", home, result)
 	}

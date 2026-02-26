@@ -49,6 +49,7 @@ type RunFlags struct {
 
 // Handlers contains callback functions for each command.
 type Handlers struct {
+	Init   func(envId string) error
 	Run    func(flags *RunFlags) error
 	Ls     func() error
 	Rm     func(envId string) error
@@ -56,7 +57,7 @@ type Handlers struct {
 }
 
 // Command creates the urfave/cli command with all commands and flags configured.
-func Command(version, defaultConfigPath string, handlers Handlers) *cli.Command {
+func Command(version string, handlers Handlers) *cli.Command {
 	defaultEnvId, _ := jailfs.CwdToEnvId()
 	var flags RunFlags
 	return &cli.Command{
@@ -67,6 +68,23 @@ func Command(version, defaultConfigPath string, handlers Handlers) *cli.Command 
 			// blank to avoid the call to os.Exit which drop makes explicitly in main
 		},
 		Commands: []*cli.Command{
+			{
+				Name:      "init",
+				Usage:     "Create a new Drop environment",
+				ArgsUsage: "<env-id>",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					var envId string
+					if cmd.NArg() > 1 {
+						return cli.Exit("usage: drop init [env-id]", 1)
+					}
+					if cmd.NArg() == 0 {
+						envId = defaultEnvId
+					} else {
+						envId = cmd.Args().First()
+					}
+					return handlers.Init(envId)
+				},
+			},
 			{
 				Name:         "run",
 				Usage:        "Run a command in the sandbox",
@@ -84,7 +102,6 @@ func Command(version, defaultConfigPath string, handlers Handlers) *cli.Command 
 						Name:        "config",
 						Aliases:     []string{"c"},
 						Usage:       "Path to TOML config file",
-						Value:       defaultConfigPath,
 						Destination: &flags.ConfigPath,
 					},
 					&cli.BoolFlag{

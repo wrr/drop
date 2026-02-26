@@ -25,11 +25,6 @@ from typing import List
 
 ENV_ID = 'drop-tests'
 
-def env_dir(env_id: str) -> Path:
-    return Path.home() / '.local' / 'share' / 'drop' / 'envs' / env_id
-
-ENV_DIR = env_dir(ENV_ID)
-
 class Config:
     def __init__(self, *,
                  mounts: List[str] = None,
@@ -80,24 +75,34 @@ class TestBase(unittest.TestCase):
     """Base class for Drop integration tests"""
 
     def setUp(self):
-        rmdir(ENV_DIR)
-        self.temp_dir = tempfile.mkdtemp(prefix='drop-tests')
+        self.drop_home = tempfile.mkdtemp(prefix='drop-tests')
+
         self.background_processes = []
-        self.created_envs = set()
         self.created_homes = set()
+        self.created_homes.add(self.drop_home)
 
     def tearDown(self):
         for process in self.background_processes:
             if process.poll() is None:  # Process is still running
                 process.kill()
 
-        for (env_id, drop_home) in self.created_envs:
-            self.rm_env(env_id, drop_home)
-
-        if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
         for drop_home in self.created_homes:
             rm_drop_home(drop_home)
+
+    def env_dir(self, env_id=ENV_ID, drop_home=None):
+        if not drop_home:
+            drop_home = self.drop_home
+        return Path(drop_home) / 'envs' / env_id
+
+    def base_config_path(self, drop_home=None):
+        if not drop_home:
+            drop_home = self.drop_home
+        return Path(drop_home) / 'config' / 'base.toml'
+
+    def env_config_path(self, env_id=ENV_ID, drop_home=None):
+        if not drop_home:
+            drop_home = self.drop_home
+        return Path(drop_home) / 'config' / f'{env_id}.toml'
 
     def run_background(self, command, **subprocess_kwargs):
         """Execute a background command.
@@ -124,44 +129,63 @@ class TestBase(unittest.TestCase):
         self.background_processes.append(process)
         return process
 
-    def drop_background(self, command=None, config: Config = None,
-                        drop_home: str = None, env_id: str = ENV_ID,
+    def drop_background(self, command=None, drop_home: str = None,
                         **subprocess_kwargs):
-        """Execute a background command in the sandbox.
+        """Execute a background drop command.
 
         Does not wait for the command to finish execution.
         Returns Popen object.
         """
-        cmd_args = [f'{os.getcwd()}/drop']
 
-        command_list = shlex.split(command)
-        if len(command_list):
-            cmd_id = command_list.pop(0)
-            cmd_args.append(cmd_id)
-            if cmd_id == 'run':
-                if config is None:
-                    config = Config()
-                config_file = os.path.join(self.temp_dir, 'config.toml')
-                write_config(config, config_file)
-                cmd_args += ['-c', config_file]
-                if env_id:
-                    cmd_args += ['-e', env_id]
-                    self.created_envs.add((env_id, drop_home))
-            cmd_args += command_list
-
+        env = subprocess_kwargs.get('env') or os.environ.copy()
         if drop_home:
-            env = subprocess_kwargs.get('env') or os.environ.copy()
-            env['DROP_HOME'] = drop_home
-            subprocess_kwargs['env'] = env
             self.created_homes.add(drop_home)
-        return self.run_background(cmd_args, **subprocess_kwargs)
+        else:
+            drop_home = self.drop_home
+        env['DROP_HOME'] = drop_home
+        subprocess_kwargs['env'] = env
 
-    def drop(self, command=None, config: Config = None,
-             drop_home: str = None, env_id: str = ENV_ID,
+        command = f'{os.getcwd()}/drop {command}'
+        return self.run_background(command, **subprocess_kwargs)
+
+    def drop(self, command: str=None, drop_home: str = None,
              **subprocess_kwargs):
-        """Execute a command in the sandbox and return its result."""
+        """Execute a drop command and return its result."""
         process = self.drop_background(
-            command, config, drop_home, env_id, **subprocess_kwargs)
+            command, drop_home, **subprocess_kwargs)
+        return self.wait_process_completed(process)
+
+    def drop_init(self, env_id: str = ENV_ID, drop_home: str = None) -> None:
+        result = self.drop(f'init {env_id}', drop_home=drop_home)
+        self.assertEqual(
+            0, result.returncode,
+            f'Failed to create drop environment: {result.stderr}')
+
+    def drop_run_background(self, args=None, config: Config = None,
+                            drop_home: str = None, env_id: str = ENV_ID,
+                            **subprocess_kwargs):
+        """Execute a background 'drop run' command.
+
+        Does not wait for the command to finish execution.
+        Returns Popen object.
+        """
+        added_args = []
+        if config is None:
+            config = Config()
+        config_file = os.path.join(self.drop_home, 'config', 'base.toml')
+        write_config(config, config_file)
+        if env_id is not None:
+            added_args += ['-e', env_id]
+        command = f'run {" ".join(added_args)} {args}'
+        return self.drop_background(command, drop_home=drop_home,
+                                    **subprocess_kwargs)
+
+    def drop_run(self, args=None, config: Config = None,
+                 drop_home: str = None, env_id: str = ENV_ID,
+                 **subprocess_kwargs):
+        """Execute a 'drop run' command and return its result."""
+        process = self.drop_run_background(args, config, drop_home, env_id,
+                                           **subprocess_kwargs)
         return self.wait_process_completed(process)
 
     def wait_process_completed(self, process):

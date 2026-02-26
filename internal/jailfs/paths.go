@@ -81,7 +81,7 @@ type Paths struct {
 //
 // On success, the second return value is a cleanup function that
 // should be called when Drop terminates.
-func NewPaths(envId string, hostHome string) (*Paths, func(), error) {
+func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, nil, err
@@ -91,7 +91,7 @@ func NewPaths(envId string, hostHome string) (*Paths, func(), error) {
 		return nil, nil, err
 	}
 
-	env := filepath.Join(dropHome, "envs", envId)
+	env := EnvPath(dropHome, envId)
 	internal := filepath.Join(dropHome, "internal")
 	runDir, cleanRunDir, err := newRunDir(dropHome, envId)
 	if err != nil {
@@ -134,7 +134,7 @@ func NewPaths(envId string, hostHome string) (*Paths, func(), error) {
 		return nil, nil, err
 	}
 
-	tmp, err := initEnvironmentTmpDir(envId, &paths)
+	tmp, err := initEnvTmpDir(envId, &paths)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -143,19 +143,34 @@ func NewPaths(envId string, hostHome string) (*Paths, func(), error) {
 	return &paths, cleanRunDir, nil
 }
 
-// DefaultConfigPath returns default path to a Drop config file.
-// This path is used when -config/-c option is not passed to Drop.
-// If DROP_CONFIG is set, it is used directly, otherwise XDG specification is followed:
-// the config is in (XDG_CONFIG_HOME or "~/.config")/drop/config.toml
-func DefaultConfigPath(homeDir string) string {
-	if path := os.Getenv("DROP_CONFIG"); path != "" {
-		return path
+func ConfigDir(homeDir string) string {
+	if path := os.Getenv("DROP_HOME"); path != "" {
+		return filepath.Join(path, "config")
 	}
 	parent := os.Getenv("XDG_CONFIG_HOME")
 	if parent == "" {
 		parent = filepath.Join(homeDir, ".config")
 	}
-	return filepath.Join(parent, "drop", "config.toml")
+	return filepath.Join(parent, "drop")
+}
+
+// BaseConfigPath returns path to a base Drop config file which
+// environment specific config files extend by default. If DROP_HOME
+// is set, DROP_HOME/config/base.toml is returned, otherwise XDG
+// specification is followed: the base config is in (XDG_CONFIG_HOME
+// or "~/.config")/drop/base.toml
+func BaseConfigPath(homeDir string) string {
+	parent := ConfigDir(homeDir)
+	return filepath.Join(parent, "base.toml")
+}
+
+func EnvPath(dropHome, envId string) string {
+	return filepath.Join(dropHome, "envs", envId)
+}
+
+func EnvConfigPath(homeDir, envId string) string {
+	parent := ConfigDir(homeDir)
+	return filepath.Join(parent, envId+".toml")
 }
 
 // DropHome returns the base directory for Drop data (environment
@@ -416,7 +431,7 @@ func ensureEmptyFile(path string) error {
 	return file.Close()
 }
 
-// initEnvironmentTmpDir checks if a tmp directory for the current
+// initEnvTmpDir checks if a tmp directory for the current
 // environment already exists and has correct owner and
 // permissions. If this is not the case, it creates a new such
 // directory in tmp.
@@ -430,7 +445,7 @@ func ensureEmptyFile(path string) error {
 // link in the env directory is created that points to it.
 //
 // The function returns a path to the tmp subdirectory.
-func initEnvironmentTmpDir(envId string, paths *Paths) (string, error) {
+func initEnvTmpDir(envId string, paths *Paths) (string, error) {
 	tmpSymlink := filepath.Join(paths.Env, "tmp")
 
 	if target, err := os.Readlink(tmpSymlink); err == nil {
@@ -515,12 +530,28 @@ func LsEnvs(dropHome string) ([]string, error) {
 	return envs, nil
 }
 
-func RmEnv(dropHome string, envId string) error {
+func CreateEnvDir(dropHome string, envId string) error {
 	if !IsEnvIdValid(envId) {
-		return fmt.Errorf("invalid environment ID")
+		return fmt.Errorf("invalid environment ID: %s", envId)
+	}
+	envPath := EnvPath(dropHome, envId)
+
+	_, err := os.Stat(envPath)
+	if err == nil {
+		return fmt.Errorf("environment %s already exists", envId)
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	return osutil.MkdirAll(envPath)
+}
+
+func RmEnv(homeDir, dropHome string, envId string) error {
+	if !IsEnvIdValid(envId) {
+		return fmt.Errorf("invalid environment ID: %s", envId)
 	}
 
-	envPath := filepath.Join(dropHome, "envs", envId)
+	envPath := EnvPath(dropHome, envId)
 
 	if _, err := os.Stat(envPath); os.IsNotExist(err) {
 		return fmt.Errorf("environment does not exist")
@@ -546,6 +577,13 @@ func RmEnv(dropHome string, envId string) error {
 
 	if err := os.RemoveAll(envPath); err != nil {
 		return err
+	}
+
+	envConfigPath := EnvConfigPath(homeDir, envId)
+	if osutil.Exists(envConfigPath) {
+		if err := os.Remove(envConfigPath); err != nil {
+			return fmt.Errorf("failed to remove environment config %v: %v", envConfigPath, err)
+		}
 	}
 
 	return nil

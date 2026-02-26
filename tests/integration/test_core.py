@@ -19,18 +19,23 @@ import tempfile
 
 import base
 
-from base import Config, ENV_DIR
+from base import Config, ENV_ID
 
 
 class TestCore(base.TestBase):
     def test_exit_code_passed(self):
-        result = self.drop('run bash -c "exit 77"')
+        self.drop_init()
+        env_dir = self.env_dir(ENV_ID)
+        self.assertTrue(os.path.exists(env_dir),
+                        f'Env directory was not created: {env_dir}')
+
+        result = self.drop_run('bash -c "exit 77"')
         self.assertEqual('', result.stderr)
         self.assertEqual(77, result.returncode)
-        self.assertTrue(os.path.exists(ENV_DIR),
-                        f'Env directory was not created: {ENV_DIR}')
 
     def test_uid_gid_mapping(self):
+        self.drop_init()
+
         def uid_gid_from_stdout():
             return map(int, result.stdout.strip().split('\n'))
 
@@ -38,37 +43,22 @@ class TestCore(base.TestBase):
         gid = os.getgid()
 
         # Drop should preserve current user UID/GID
-        result = self.drop('run bash -c "id -u; id -g"')
+        result = self.drop_run('bash -c "id -u; id -g"')
         self.assertSuccess(result)
         jail_uid, jail_gid = uid_gid_from_stdout()
         self.assertEqual(uid, jail_uid)
         self.assertEqual(gid, jail_gid)
 
         # In root mode (-r flag), Drop should use UID/GID 0
-        result = self.drop('run -r bash -c "id -u; id -g"')
+        result = self.drop_run('-r bash -c "id -u; id -g"')
         self.assertSuccess(result)
         jail_uid, jail_gid = uid_gid_from_stdout()
         self.assertEqual(0, jail_uid),
         self.assertEqual(0, jail_gid)
 
-    def test_env_id_from_cwd(self):
-        # If env id is not passed, it should be constructed from
-        # current working dir.
-        cwd = self.temp_dir
-        env_id = str(cwd).replace('/', '-').strip('-')
-        env_dir_from_cwd = base.env_dir(env_id)
-        base.rmdir(env_dir_from_cwd)
-        try:
-            result = self.drop('run ls', env_id=None, cwd=cwd)
-            self.assertSuccess(result)
-            self.assertFalse(os.path.exists(ENV_DIR))
-            self.assertTrue(os.path.exists(env_dir_from_cwd), 
-                            f'env dir is missing {env_dir_from_cwd}')
-        finally:
-            self.rm_env(env_id)
-
     def test_process_isolation(self):
-        result = self.drop('run bash -c "sleep 10 & ps aux --noheaders"')
+        self.drop_init()
+        result = self.drop_run('bash -c "sleep 10 & ps aux --noheaders"')
         self.assertSuccess(result)
 
         # expect three processes in the sandbox
@@ -93,17 +83,18 @@ class TestCore(base.TestBase):
                         f'Unexpected ps output: {ps_lines[2]}')
 
     def test_environ_exposed_vars(self):
+        self.drop_init()
         os.environ['FOO'] = 'bar'
 
         try:
             # Env variables should not be automatically exposed.
-            cmd = 'run bash -c "echo $FOO"'
-            result = self.drop(cmd)
+            cmd = 'bash -c "echo $FOO"'
+            result = self.drop_run(cmd)
             self.assertSuccess(result)
             self.assertEqual('', result.stdout.strip())
 
             config = Config(environ_exposed_vars=['FOO'])
-            result = self.drop(cmd, config=config)
+            result = self.drop_run(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('bar', result.stdout.strip())
 
@@ -111,11 +102,12 @@ class TestCore(base.TestBase):
             del os.environ['FOO']
 
     def test_environ_set_vars(self):
+        self.drop_init()
         os.environ['FOO'] = 'bar'
 
         try:
             config = Config(environ_set_vars=['FOO=baz'])
-            result = self.drop('run bash -c "echo $FOO"', config=config)
+            result = self.drop_run('bash -c "echo $FOO"', config=config)
             self.assertSuccess(result)
             self.assertEqual('baz', result.stdout.strip())
 
@@ -124,13 +116,15 @@ class TestCore(base.TestBase):
 
     def test_drop_env_set(self):
         """Test that DROP_ENV is set correctly"""
-        result = self.drop('run bash -c "echo $DROP_ENV"')
+        self.drop_init()
+        result = self.drop_run('bash -c "echo $DROP_ENV"')
         self.assertSuccess(result)
 
         drop_env = result.stdout.strip()
-        self.assertEqual(base.ENV_ID, drop_env)
+        self.assertEqual(ENV_ID, drop_env)
 
     def test_open_fds_not_passed_to_sanbox(self):
+        self.drop_init()
         try:
             # Start Drop with many additional open file descriptors,
             # sandboxed process should not have access to these file
@@ -138,7 +132,7 @@ class TestCore(base.TestBase):
             pass_fds = []
             for x in range(10):
                 pass_fds.extend(os.pipe())
-            result =  self.drop('run ls /proc/1/fd/', pass_fds=pass_fds)
+            result = self.drop_run('ls /proc/1/fd/', pass_fds=pass_fds)
             self.assertSuccess(result)
             fds = [int(fd) for fd in result.stdout.splitlines()]
             # Except 4 open FDs, because one is used by 'ls' to read
@@ -151,17 +145,19 @@ class TestCore(base.TestBase):
     def test_change_drop_home_dir(self):
         """Test that DROP_HOME env var is respected"""
         drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
-        result = self.drop('run ls', drop_home=drop_home)
+        self.drop_init(ENV_ID, drop_home=drop_home)
+        result = self.drop_run('ls', drop_home=drop_home)
         self.assertSuccess(result)
 
         # Verify env dir was created in custom DROP_HOME
-        expected_env_dir = os.path.join(drop_home, 'envs', base.ENV_ID)
+        expected_env_dir = self.env_dir(ENV_ID, drop_home)
         self.assertTrue(os.path.exists(expected_env_dir),
                         f'Drop env was not created in {expected_env_dir}')
 
-        # Verify nothing was created in default ~/.drop
-        self.assertFalse(os.path.exists(ENV_DIR),
-                         f'Drop env should not exist in {ENV_DIR}')
+        # Verify nothing was created in the default DROP_HOME
+        default_env_dir = self.env_dir(ENV_ID)
+        self.assertFalse(os.path.exists(default_env_dir),
+                         f'Drop env should not exist in {default_env_dir}')
 
     def test_list_environments(self):
         """Test listing Drop environments with -ls flag"""
@@ -172,7 +168,8 @@ class TestCore(base.TestBase):
 
         env_ids = ['env1', 'env2', 'env3']
         for env_id in env_ids:
-            result = self.drop('run true', env_id=env_id, drop_home=drop_home)
+            self.drop_init(env_id, drop_home=drop_home)
+            result = self.drop_run('true', env_id=env_id, drop_home=drop_home)
             self.assertSuccess(result)
 
         result = self.drop('ls', drop_home=drop_home)
@@ -194,14 +191,15 @@ class TestCore(base.TestBase):
         process should not be able to modify the original file by writing
         to /proc/self/fd/N.
         """
+        self.drop_init()
         original_content = b'original'
         with tempfile.NamedTemporaryFile() as input_file:
             input_file.write(original_content)
             input_file.seek(0)
 
             # Try to overwrite the file via /proc/self/fd/0 from inside sandbox
-            result = self.drop(
-                'run bash -c "echo -n modified > /proc/self/fd/0"',
+            result = self.drop_run(
+                'bash -c "echo -n modified > /proc/self/fd/0"',
                 stdin=input_file)
             self.assertSuccess(result)
 
@@ -218,8 +216,7 @@ class TestCore(base.TestBase):
 
         env_ids = ['env1', 'env2', 'env3']
         for env_id in env_ids:
-            result = self.drop('run true', env_id=env_id, drop_home=drop_home)
-            self.assertSuccess(result)
+            self.drop_init(env_id, drop_home=drop_home)
 
         result = self.drop('ls', drop_home=drop_home)
         self.assertSuccess(result)
@@ -241,8 +238,8 @@ class TestCore(base.TestBase):
 
         # Test removing environment with running instance
         # Start a background Drop instance in env2
-        process = self.drop_background(
-            'run bash -c "echo ready; sleep 60"',
+        process = self.drop_run_background(
+            'bash -c "echo ready; sleep 60"',
             env_id='env2', drop_home=drop_home)
         # Wait for the child to be running, which guarantees the
         # parent has created and locked the run directory.

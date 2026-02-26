@@ -187,9 +187,8 @@ configuration.
 Environment variables that Drop uses are:
 
 * `DROP_HOME` - use it to change the location where Drop stores all
-  its files - default config, environment dirs, runtime files. If not
-  set, `~/.drop` is used.
-* `DROP_CONFIG` - overwrites the default config location.
+  its config files, environment dirs, runtime files. If not
+  set, XDG specification is followed.
 * `DROP_ENV` - set by Drop and available in the sandbox, contains the
   id of the currently active Drop environment. Can be used to modify
   shell prompt within Drop or to conditionally load some config files
@@ -248,7 +247,7 @@ Your home dir has only couple of files:
 .  ..  .ackrc  .bash_logout  .bash_profile  .bashrc  code  .gitconfig  .profile  .screenrc
 ```
 
-Drop configuration file (by default stored in `~/.drop/config.toml`)
+Drop configuration file (by default stored in `~/.drop/base.toml`)
 specifies which files should be exposed from your home dir to Drop
 environments home dirs. Config files that you expose to Drop should in
 most cases be exposed read-only. This is because sandboxed programs

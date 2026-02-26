@@ -207,6 +207,41 @@ udp_host_ports = []
 	return nil
 }
 
+// WriteDefaultForEnv writes a default config file for a new drop
+// environment to path.
+func WriteDefaultForEnv(path string) error {
+	envConfig := `# Drop environment configuration file
+extends = "./base.toml"
+
+mounts = []
+
+blocked_paths = []
+
+[environ]
+exposed_vars = []
+
+set_vars = []
+
+[net]
+# mode = "off"
+
+tcp_published_ports = []
+udp_published_ports = []
+tcp_host_ports = []
+udp_host_ports = []
+`
+
+	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(path, []byte(envConfig), 0644); err != nil {
+		return fmt.Errorf("failed to write environment config: %v", err)
+	}
+
+	return nil
+}
+
 func keepExistingEntries(entries []configFileEntry, homeDir string) []configFileEntry {
 	var existing []configFileEntry
 	for _, entry := range entries {

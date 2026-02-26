@@ -82,6 +82,39 @@ func TestWriteDefault(t *testing.T) {
 	expectEmptyList(t, "udp_host_ports", net.UDPHostPorts)
 }
 
+func TestWriteDefaultForEnv(t *testing.T) {
+	tempDir := t.TempDir()
+	basePath := filepath.Join(tempDir, "base.toml")
+	envPath := filepath.Join(tempDir, "env.toml")
+
+	// WriteDefaultForEnv generates a config that extends base.toml.
+	if err := WriteDefault(basePath, tempDir); err != nil {
+		t.Fatalf("WriteDefault failed: %v", err)
+	}
+	if err := WriteDefaultForEnv(envPath); err != nil {
+		t.Fatalf("WriteDefaultForEnv failed: %v", err)
+	}
+
+	cfg, err := Read(envPath, "/test-home-dir/")
+	if err != nil {
+		t.Fatalf("Failed to read created env config: %v", err)
+	}
+
+	if cfg.Extends != "./base.toml" {
+		t.Errorf("Expected extends './base.toml', got %q", cfg.Extends)
+	}
+
+	// Net mode should default to "isolated" (from base config).
+	if cfg.Net.Mode != "isolated" {
+		t.Errorf("Expected net mode 'isolated', got %s", cfg.Net.Mode)
+	}
+
+	expectEmptyList(t, "tcp_published_ports", cfg.Net.TCPPublishedPorts)
+	expectEmptyList(t, "tcp_host_ports", cfg.Net.TCPHostPorts)
+	expectEmptyList(t, "udp_published_ports", cfg.Net.UDPPublishedPorts)
+	expectEmptyList(t, "udp_host_ports", cfg.Net.UDPHostPorts)
+}
+
 func TestFilterExistingEntries(t *testing.T) {
 	entries := []configFileEntry{
 		{"~/foo", ""},
