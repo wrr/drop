@@ -16,6 +16,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import stat
 import tempfile
 import unittest
 
@@ -195,10 +196,24 @@ def rmdir(path):
     if os.path.exists(path):
         shutil.rmtree(path)
 
+def ensure_can_delete_tree(path):
+    """Changes permissions so shutil.rmtree can delete the whole tree"""
+    min_perm = 0o700
+    grant_permissions(path, min_perm)
+    for entry in os.scandir(path):
+        grant_permissions(entry.path, min_perm)
+        if entry.is_dir(follow_symlinks=False):
+            ensure_can_delete_tree(entry.path)
+
+def grant_permissions(path, perms):
+    current = stat.S_IMODE(os.lstat(path).st_mode)
+    if (current & perms) != perms:
+        os.chmod(path, current | perms)
+
 def rm_drop_home(drop_home):
-    # drop_home contains emptyd dir with permissions 000 that rmtree
-    # fails to read and remove
-    os.rmdir(os.path.join(drop_home, "internal", "emptyd"))
+    # Change permissions of directories with 000 permissions
+    # (e.g. emptyd, overlayfs work dirs).
+    ensure_can_delete_tree(drop_home)
     shutil.rmtree(drop_home)
 
 def write(content, path: str) -> None:

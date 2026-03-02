@@ -241,8 +241,13 @@ class TestCore(base.TestBase):
 
         # Test removing environment with running instance
         # Start a background Drop instance in env2
-        process = self.drop_background('run sleep 60', env_id='env2',
-                                       drop_home=drop_home)
+        process = self.drop_background(
+            'run bash -c "echo ready; sleep 60"',
+            env_id='env2', drop_home=drop_home)
+        # Wait for the child to be running, which guarantees the
+        # parent has created and locked the run directory.
+        output = process.stdout.readline()
+        self.assertEqual('ready\n', output)
         result = self.drop('rm env2', drop_home=drop_home)
         self.assertEqual(1, result.returncode)
         self.assertIn('environment is used by running drop instances',
