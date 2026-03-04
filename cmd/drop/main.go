@@ -59,8 +59,8 @@ func parentProcessEntry() (int, error) {
 	}
 
 	handlers := cli.Handlers{
-		Init: func(envId string) error {
-			err := command.InitEnv(envId, homeDir, dropHome)
+		Init: func(envId string, noCwd bool) error {
+			err := command.InitEnv(envId, noCwd, homeDir, dropHome)
 			if err != nil {
 				return fmt.Errorf("failed to init environment: %v", err)
 			}

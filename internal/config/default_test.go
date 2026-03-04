@@ -87,11 +87,16 @@ func TestWriteDefaultForEnv(t *testing.T) {
 	basePath := filepath.Join(tempDir, "base.toml")
 	envPath := filepath.Join(tempDir, "env.toml")
 
+	mounts := []string{
+		"/home/alice/project::rw",
+		"/home/alice/project/.git",
+	}
+
 	// WriteDefaultForEnv generates a config that extends base.toml.
 	if err := WriteDefault(basePath, tempDir); err != nil {
 		t.Fatalf("WriteDefault failed: %v", err)
 	}
-	if err := WriteDefaultForEnv(envPath); err != nil {
+	if err := WriteDefaultForEnv(envPath, mounts); err != nil {
 		t.Fatalf("WriteDefaultForEnv failed: %v", err)
 	}
 
@@ -102,6 +107,14 @@ func TestWriteDefaultForEnv(t *testing.T) {
 
 	if cfg.Extends != "./base.toml" {
 		t.Errorf("Expected extends './base.toml', got %q", cfg.Extends)
+	}
+
+	expectedMounts := []Mount{
+		{Source: "/home/alice/project", Target: "/home/alice/project", RW: true},
+		{Source: "/home/alice/project/.git", Target: "/home/alice/project/.git"},
+	}
+	if !slices.Equal(cfg.Mounts, expectedMounts) {
+		t.Errorf("Expected mounts %+v, got %+v", expectedMounts, cfg.Mounts)
 	}
 
 	// Net mode should default to "isolated" (from base config).
@@ -140,7 +153,7 @@ func TestFilterExistingEntries(t *testing.T) {
 	}
 }
 
-func TestToTomlString(t *testing.T) {
+func TestSliceToToml(t *testing.T) {
 	tests := []struct {
 		name     string
 		entries  []configFileEntry
@@ -163,7 +176,7 @@ func TestToTomlString(t *testing.T) {
 		{
 			name: "single entry with comment",
 			entries: []configFileEntry{
-				{"~/.gitconfig", " # comment foo"},
+				{"~/.gitconfig", "comment foo"},
 			},
 			expected: `[
   "~/.gitconfig", # comment foo
@@ -173,7 +186,7 @@ func TestToTomlString(t *testing.T) {
 			name: "multiple entries",
 			entries: []configFileEntry{
 				{"~/.bashrc", ""},
-				{"~/.gitconfig", " # comment bar"},
+				{"~/.gitconfig", "comment bar"},
 			},
 			expected: `[
   "~/.bashrc",
@@ -184,7 +197,7 @@ func TestToTomlString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := toTomlString(tt.entries)
+			result := sliceToToml(tt.entries, formatConfigFile)
 			if result != tt.expected {
 				t.Errorf("Expected:\n%s\nGot:\n%s", tt.expected, result)
 			}

@@ -33,10 +33,15 @@ import (
 //
 // If base config file is missing (first run of 'drop init'), the
 // function creates the default base.toml.
-func InitEnv(envId, homeDir, dropHome string) error {
+func InitEnv(envId string, noCwd bool, homeDir, dropHome string) error {
 	success := false
 
-	err := jailfs.CreateEnvDir(dropHome, envId)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get current working directory: %v", err)
+	}
+
+	err = jailfs.CreateEnvDir(dropHome, envId)
 	if err != nil {
 		return err
 	}
@@ -57,7 +62,18 @@ func InitEnv(envId, homeDir, dropHome string) error {
 
 	envConfigPath := jailfs.EnvConfigPath(homeDir, envId)
 	if !osutil.Exists(envConfigPath) {
-		err = config.WriteDefaultForEnv(envConfigPath)
+		var mounts []string
+		// Add cwd to configured mounts, but only if cwd is not the home
+		// directory or a parent of it to avoid exposing the whole home
+		// directory.
+		if !noCwd && !osutil.IsSubDirOrSame(cwd, homeDir) {
+			mounts = []string{
+				cwd + "::rw",
+				cwd + "/.git",
+			}
+		}
+
+		err = config.WriteDefaultForEnv(envConfigPath, mounts)
 		if err != nil {
 			return fmt.Errorf("write env config to %v: %v", envConfigPath, err)
 		}

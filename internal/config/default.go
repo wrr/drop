@@ -37,11 +37,11 @@ func WriteDefault(path string, homeDir string) error {
 		{"~/.ackrc", ""},
 		{"~/.emacs", ""},
 		{"~/.profile", ""},
-		{"~/.gitconfig", " # Remove if you keep secrets in .gitconfig"},
+		{"~/.gitconfig", "Remove if you keep secrets in .gitconfig"},
 		{"~/go", ""},
 		{"~/.nvm", ""},
 		{"~/.screenrc", ""},
-		{"~/.bashrc", " # Ensure there are no secrets in your shell config files"},
+		{"~/.bashrc", "Ensure there are no secrets in your shell config files"},
 		{"~/.bash_logout", ""},
 		{"~/.bash_profile", ""},
 		{"~/.zshenv", ""},
@@ -194,7 +194,7 @@ udp_published_ports = []
 tcp_host_ports = []
 # Localhost UDP ports open on the host that the sandbox can access.
 udp_host_ports = []
-`, toTomlString(pathsRODefault))
+`, sliceToToml(pathsRODefault, formatConfigFile))
 
 	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {
 		return err
@@ -209,11 +209,11 @@ udp_host_ports = []
 
 // WriteDefaultForEnv writes a default config file for a new drop
 // environment to path.
-func WriteDefaultForEnv(path string) error {
-	envConfig := `# Drop environment configuration file
+func WriteDefaultForEnv(path string, mounts []string) error {
+	envConfig := fmt.Sprintf(`# Drop environment configuration file
 extends = "./base.toml"
 
-mounts = []
+mounts = %s
 
 blocked_paths = []
 
@@ -229,7 +229,7 @@ tcp_published_ports = []
 udp_published_ports = []
 tcp_host_ports = []
 udp_host_ports = []
-`
+`, sliceToToml(mounts, formatString))
 
 	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {
 		return err
@@ -253,15 +253,25 @@ func keepExistingEntries(entries []configFileEntry, homeDir string) []configFile
 	return existing
 }
 
-func toTomlString(entries []configFileEntry) string {
+func sliceToToml[T any](entries []T, format func(T) string) string {
 	if len(entries) == 0 {
 		return "[]"
 	}
 	lines := []string{"["}
 	for _, entry := range entries {
-		lines = append(lines, fmt.Sprintf("  \"%s\",%s", entry.path, entry.comment))
+		lines = append(lines, fmt.Sprintf("  %s", format(entry)))
 	}
 	lines = append(lines, "]")
-
 	return strings.Join(lines, "\n")
+}
+
+func formatString(s string) string {
+	return fmt.Sprintf("%q,", s)
+}
+
+func formatConfigFile(e configFileEntry) string {
+	if e.comment != "" {
+		return fmt.Sprintf("%q, # %s", e.path, e.comment)
+	}
+	return formatString(e.path)
 }

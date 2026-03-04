@@ -49,7 +49,7 @@ type RunFlags struct {
 
 // Handlers contains callback functions for each command.
 type Handlers struct {
-	Init   func(envId string) error
+	Init   func(envId string, noCwd bool) error
 	Run    func(flags *RunFlags) error
 	Ls     func() error
 	Rm     func(envId string) error
@@ -72,6 +72,13 @@ func Command(version string, handlers Handlers) *cli.Command {
 				Name:      "init",
 				Usage:     "Create a new Drop environment",
 				ArgsUsage: "<env-id>",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "no-cwd",
+						Aliases: []string{"nc"},
+						Usage:   "Do not configure the environment to mount the current working directory",
+					},
+				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					var envId string
 					if cmd.NArg() > 1 {
@@ -82,7 +89,7 @@ func Command(version string, handlers Handlers) *cli.Command {
 					} else {
 						envId = cmd.Args().First()
 					}
-					return handlers.Init(envId)
+					return handlers.Init(envId, cmd.Bool("no-cwd"))
 				},
 			},
 			{
