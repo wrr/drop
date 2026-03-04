@@ -455,7 +455,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	// Apply cwd mount configs, but only if cwd is not the home
 	// directory or a parent of it to avoid exposing the original home
 	// directory.
-	if !isSubDirOrSame(paths.Cwd, paths.HostHome) {
+	if !osutil.IsSubDirOrSame(paths.Cwd, paths.HostHome) {
 		cwdMounts := prependCwdToMounts(cfg.Cwd.Mounts, paths.Cwd)
 		mounts = append(mounts, cwdMounts...)
 	}
@@ -595,28 +595,4 @@ func createEmptyFile(path string) error {
 		return fmt.Errorf("failed to create %s: %w", path, err)
 	}
 	return file.Close()
-}
-
-// isSubDirOrSame returns true if child is a sub directory of the parent.
-func isSubDir(parent, child string) bool {
-	parent = cleanDir(parent)
-	child = cleanDir(child)
-	return child != parent && strings.HasPrefix(child, parent)
-}
-
-// isSubDirOrSame returns true if child is a sub directory of the parent
-// or if they are the same directory.
-func isSubDirOrSame(parent, child string) bool {
-	parent = cleanDir(parent)
-	child = cleanDir(child)
-	return strings.HasPrefix(child, parent)
-}
-
-func cleanDir(dir string) string {
-	sep := string(filepath.Separator)
-	dir = filepath.Clean(dir)
-	if !strings.HasSuffix(dir, sep) {
-		dir += sep
-	}
-	return dir
 }

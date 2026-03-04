@@ -55,6 +55,30 @@ func IsRootOrHomeSubPath(path string) bool {
 	return strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~/")
 }
 
+// isSubDirOrSame returns true if child is a sub directory of the parent.
+func IsSubDir(parent, child string) bool {
+	parent = cleanDir(parent)
+	child = cleanDir(child)
+	return child != parent && strings.HasPrefix(child, parent)
+}
+
+// IsSubDirOrSame returns true if child is a sub directory of the parent
+// or if they are the same directory.
+func IsSubDirOrSame(parent, child string) bool {
+	parent = cleanDir(parent)
+	child = cleanDir(child)
+	return strings.HasPrefix(child, parent)
+}
+
+func cleanDir(dir string) string {
+	sep := string(filepath.Separator)
+	dir = filepath.Clean(dir)
+	if !strings.HasSuffix(dir, sep) {
+		dir += sep
+	}
+	return dir
+}
+
 // ValidateRootOrHomeSubPath validates that a path is a subpath of root or
 // of a ~/, and is normalized.
 func ValidateRootOrHomeSubPath(path string) error {
