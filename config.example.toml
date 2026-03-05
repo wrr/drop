@@ -38,9 +38,13 @@ mounts = [
   "~/.profile",
   "~/.gitconfig", # Remove if you keep secrets in .gitconfig
   "~/go",
+  "~/.nvm",
   "~/.screenrc",
   "~/.bashrc", # Ensure there are no secrets in your shell config files
   "~/.bash_logout",
+  "~/.bash_profile",
+  "~/.zlogin",
+  "~/.zshrc",
 ]
 
 # Paths to dirs or files to block access to.
@@ -52,30 +56,21 @@ mounts = [
 # writing to them.
 blocked_paths = []
 
-# Directories and files from the current working directory exposed to
-# Drop. All paths need to be relative, but other that that, the syntax
-# is the same as for the 'mounts' above.
-#
-# The CWD mount rules are not applied if:
-# * Drop is started from the user home dir or any ancestor of the home dir
-# * Drop is started with -no-cwd flag
-cwd.mounts = [
- "./::rw", # Expose all files in the CWD in read-write mode
- ".git"    # Except .git directory which is exposed read-only
-]
-
-# If any file or a subdir exposed by a generic cwd.mount entry should be
-# blocked, put it here.
-cwd.blocked_paths = [
-]
-
+[environ]
 # Environment variables to expose from the process starting Drop to
 # the sandbox. You can use glob patterns to expose all variables with
 # common prefix/suffix.
 #
 # Do not expose variables containing secrets. Expose all
 # other variables needed for convenient work in Drop.
-exposed_env_vars = [
+exposed_vars = [
+  "XDG_DATA_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_STATE_HOME",
+  "XDG_DATA_DIRS",
+  "XDG_CONFIG_DIRS",
+  "XDG_CACHE_HOME",
+  "XDG_RUNTIME_DIRS",
   "SHELL",
   "LC_*",
   "XTERM_SHELL",
@@ -92,6 +87,10 @@ exposed_env_vars = [
   "USER",
   "SHLLVL",
   "PATH",
+]
+
+set_vars = [
+  "debian_chroot=drop", # Add '(drop)' prefix to shell prompts on Debian-based systems
 ]
 
 [net]

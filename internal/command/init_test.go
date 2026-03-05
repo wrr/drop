@@ -24,7 +24,8 @@ func TestInitEnv(t *testing.T) {
 		envConfig := jailfs.EnvConfigPath(homeDir, "myenv")
 		assertExists(t, envConfig)
 
-		// cwd is under homeDir, so env config should contain cwd mount
+		// cwd is a subdirectory of homeDir, so env config should contain
+		// cwd mount.
 		cfg := readConfig(t, envConfig, homeDir)
 		if !hasMountSource(cfg.Mounts, cwd) {
 			t.Fatalf("env config mounts don't contain cwd %q", cwd)

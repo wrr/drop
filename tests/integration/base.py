@@ -29,8 +29,6 @@ class Config:
     def __init__(self, *,
                  mounts: List[str] = None,
                  blocked_paths: List[str] = None,
-                 cwd_mounts: List[str] = None,
-                 cwd_blocked_paths: List[str] = None,
                  environ_exposed_vars: List[str] = None,
                  environ_set_vars: List[str] = None,
                  tcp_published_ports: List[str] = None,
@@ -43,8 +41,6 @@ class Config:
         cover_path = Path(os.getcwd()) /  'cover'
         self.mounts += [str(cover_path) + "::rw"]
         self.blocked_paths = blocked_paths or []
-        self.cwd_mounts = cwd_mounts or ['.::rw']
-        self.cwd_blocked_paths = cwd_blocked_paths or []
         self.environ_exposed_vars = environ_exposed_vars or []
         self.environ_set_vars = environ_set_vars or []
         self.tcp_published_ports = tcp_published_ports or []
@@ -57,8 +53,6 @@ class Config:
         toml_lines = [
             f'mounts = {str(self.mounts)}',
             f'blocked_paths = {str(self.blocked_paths)}',
-            f'cwd.mounts = {str(self.cwd_mounts)}',
-            f'cwd.blocked_paths = {str(self.cwd_blocked_paths)}',
             f'environ.exposed_vars = {str(self.environ_exposed_vars)}',
             f'environ.set_vars = {str(self.environ_set_vars)}',
             '',
@@ -155,8 +149,9 @@ class TestBase(unittest.TestCase):
             command, drop_home, **subprocess_kwargs)
         return self.wait_process_completed(process)
 
-    def drop_init(self, env_id: str = ENV_ID, drop_home: str = None) -> None:
-        result = self.drop(f'init {env_id}', drop_home=drop_home)
+    def drop_init(self, env_id: str = ENV_ID, args='',
+                  drop_home: str = None) -> None:
+        result = self.drop(f'init {env_id} {args}', drop_home=drop_home)
         self.assertEqual(
             0, result.returncode,
             f'Failed to create drop environment: {result.stderr}')

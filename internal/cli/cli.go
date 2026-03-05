@@ -34,7 +34,6 @@ type RunFlags struct {
 	ConfigPath  string
 	NetworkMode string
 
-	NoCwd  bool
 	Mounts []string
 
 	BeRoot            bool
@@ -116,12 +115,6 @@ func Command(version string, handlers Handlers) *cli.Command {
 						Aliases:     []string{"r"},
 						Usage:       "Be root (uid 0) in the sandbox (doesn't grant any additional privileges to the sandboxed processes).",
 						Destination: &flags.BeRoot,
-					},
-					&cli.BoolFlag{
-						Name:        "no-cwd",
-						Aliases:     []string{"nc"},
-						Usage:       "Ignore cwd.mounts entries from config",
-						Destination: &flags.NoCwd,
 					},
 					&cli.StringSliceFlag{
 						Name:        "mount",
@@ -257,9 +250,6 @@ func FlagsToConfig(cfg *config.Config, flags *RunFlags) error {
 			return fmt.Errorf("command line --udp-host flag: %v", err)
 		}
 		cfg.Net.UDPHostPorts = append(cfg.Net.UDPHostPorts, p...)
-	}
-	if flags.NoCwd {
-		cfg.Cwd.Mounts = nil
 	}
 	// Validate config again, all errors detected should be related to
 	// entries modified by this function, because cfg read from a file

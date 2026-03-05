@@ -46,18 +46,6 @@ func TestWriteDefault(t *testing.T) {
 		t.Errorf("Expected mounts to be not nil")
 	}
 
-	expectEmptyList(t, "cfg.BlockedPaths", cfg.Cwd.BlockedPaths)
-
-	expected := []Mount{
-		{Source: "./", Target: "./", RW: true, Overlay: false},
-		{Source: ".git", Target: ".git", RW: false, Overlay: false},
-	}
-	if !slices.Equal(cfg.Cwd.Mounts, expected) {
-		t.Errorf("Expected CWD.Mounts to be %+v, got %+v", expected, cfg.Cwd.Mounts)
-	}
-
-	expectEmptyList(t, "Cwd.BlockedPaths", cfg.Cwd.BlockedPaths)
-
 	if cfg.Environ.ExposedVars == nil {
 		t.Errorf("Expected environ.exposed_vars to be not nil")
 	} else if l := len(cfg.Environ.ExposedVars); l < 10 {

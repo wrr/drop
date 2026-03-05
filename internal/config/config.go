@@ -1,4 +1,4 @@
-// Copyright 2025 Jan Wrobel <jan@mixedbit.org>
+// Copyright 2025-2026 Jan Wrobel <jan@mixedbit.org>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,7 +31,6 @@ type Config struct {
 	Extends      string   `toml:"extends"`
 	Mounts       []Mount  `toml:"mounts"`
 	BlockedPaths []string `toml:"blocked_paths"`
-	Cwd          Cwd      `toml:"cwd"`
 	Environ      Environ  `toml:"environ"`
 	Net          Net      `toml:"net"`
 }
@@ -41,11 +40,6 @@ type Mount struct {
 	Target  string
 	RW      bool
 	Overlay bool
-}
-
-type Cwd struct {
-	Mounts       []Mount  `toml:"mounts"`
-	BlockedPaths []string `toml:"blocked_paths"`
 }
 
 type Environ struct {
@@ -281,10 +275,6 @@ func merge(base *Config, sub *Config) *Config {
 		Extends:      sub.Extends,
 		Mounts:       slices.Concat(base.Mounts, sub.Mounts),
 		BlockedPaths: slices.Concat(base.BlockedPaths, sub.BlockedPaths),
-		Cwd: Cwd{
-			Mounts:       slices.Concat(base.Cwd.Mounts, sub.Cwd.Mounts),
-			BlockedPaths: slices.Concat(base.Cwd.BlockedPaths, sub.Cwd.BlockedPaths),
-		},
 		Environ: Environ{
 			ExposedVars: slices.Concat(base.Environ.ExposedVars, sub.Environ.ExposedVars),
 			SetVars:     slices.Concat(base.Environ.SetVars, sub.Environ.SetVars),
@@ -304,13 +294,6 @@ func Validate(cfg *Config) error {
 		return err
 	}
 	if err := validatePaths("blocked_paths", cfg.BlockedPaths, osutil.ValidateRootOrHomeSubPath); err != nil {
-		return err
-	}
-
-	if err := validateMounts("cwd.mounts", cfg.Cwd.Mounts, osutil.ValidateRelPath); err != nil {
-		return err
-	}
-	if err := validatePaths("cwd.blocked_paths", cfg.Cwd.BlockedPaths, osutil.ValidateRelPath); err != nil {
 		return err
 	}
 

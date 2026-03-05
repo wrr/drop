@@ -65,38 +65,44 @@ class TestFS(TestBase):
             self.assertFalse(
                 os.path.exists(self.env_dir() / 'home' / exposed_dname))
 
-    def test_cwd_mount_read_only(self):
+    def test_cwd_mounted(self):
+        # By default init should expose CWD to the sandbox in a
+        # read-write mode with the exception of the .git folder
+        # exposed in read-only mode
         self.drop_init()
-        config = Config(cwd_mounts=['.'])
-        # Reading from CWD should work
-        result = self.drop_run('cat go.mod', config=config)
+        # Reading and writing to CWD should work
+        result = self.drop_run('cat go.mod')
         self.assertSuccess(result)
 
-        # Writing to CWD should fail
-        result = self.drop_run('touch testfile', config=config)
-        self.assertEqual(1, result.returncode)
-        self.assertIn('Read-only file system', result.stderr)
-
-    def test_cwd_blocked_path(self):
-        self.drop_init()
-        config = Config(cwd_blocked_paths=['cmd'])
-        result = self.drop_run('cat cmd/drop/main.go', config=config)
-        self.assertEqual(1, result.returncode)
-        self.assertIn('cmd/drop/main.go: Permission denied', result.stderr)
-
-    def test_no_cwd_flag(self):
-        """Test -no-cwd flag prevents CWD from being mounted"""
-        self.drop_init()
-        # With cwd.mounts in config, CWD should be accessible by default
-        config = Config(cwd_mounts=['.'])
-        cwd = os.getcwd()
-        result = self.drop_run(f'cat {cwd}/go.mod', config=config)
+        result = self.drop_run('touch e2e_test_file')
+        self.addCleanup(os.unlink, 'e2e_test_file')
         self.assertSuccess(result)
+        # Ensure the created file is available in the CWD outside of
+        # the sandbox
+        self.assertTrue(os.path.exists('e2e_test_file'))
 
-        # With -no-cwd flag, CWD should not be accessible
-        result = self.drop_run(f'-no-cwd cat {cwd}/go.mod', config=config)
+        # Reading from CWD/.git should work, but writing should fail.
+        result = self.drop_run('cat .git/config')
+        self.assertSuccess(result)
+        result = self.drop_run('touch .git/e2e_test_file')
+        self.assertEqual(1, result.returncode)
+        self.assertIn("'.git/e2e_test_file': Read-only file system",
+                      result.stderr)
+
+    def test_cwd_not_mounted(self):
+        # Prevent init from exposing cwd
+        self.drop_init(args='--no-cwd')
+        # Reading files that exist in CWD outside of sandbox should
+        # fail in the sandbox.
+        result = self.drop_run('cat go.mod')
         self.assertEqual(1, result.returncode)
         self.assertIn('No such file or directory', result.stderr)
+
+        # Creating a new file should succeed, but the file should not
+        # be created in the CWD outside of the sandbox.
+        result = self.drop_run('touch e2e_test_file')
+        self.assertSuccess(result)
+        self.assertFalse(os.path.exists('e2e_test_file'))
 
     def test_mounts_from_root_dir(self):
         self.drop_init()

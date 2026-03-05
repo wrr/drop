@@ -48,31 +48,3 @@ func TestResolveHomeDirInPaths(t *testing.T) {
 		t.Errorf("Expected %+v, got %+v", expected, result)
 	}
 }
-
-func TestPrependCwdToMounts(t *testing.T) {
-	mounts := []config.Mount{
-		{Source: ".", Target: ".", RW: true},
-		{Source: ".git", Target: ".git2", RW: false},
-	}
-	result := prependCwdToMounts(mounts, "/home/alice/project")
-	expected := []config.Mount{
-		{Source: "/home/alice/project", Target: "/home/alice/project", RW: true},
-		{Source: "/home/alice/project/.git", Target: "/home/alice/project/.git2", RW: false},
-	}
-	if !slices.Equal(result, expected) {
-		t.Errorf("Expected %+v, got %+v", expected, result)
-	}
-}
-
-func TestPrependCwdToPaths(t *testing.T) {
-	paths := []string{
-		".", ".git", "./foo/bar", "baz",
-	}
-	result := prependCwdToPaths(paths, "/tmp/x/")
-	expected := []string{
-		"/tmp/x", "/tmp/x/.git", "/tmp/x/foo/bar", "/tmp/x/baz",
-	}
-	if !slices.Equal(result, expected) {
-		t.Errorf("Expected %+v, got %+v", expected, result)
-	}
-}

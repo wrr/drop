@@ -43,8 +43,6 @@ func expectConfigsEqual(t *testing.T, actual *Config, expected *Config) {
 
 	expectSlicesEqual(t, "Mounts", actual.Mounts, expected.Mounts)
 	expectSlicesEqual(t, "BlockedPaths", actual.BlockedPaths, expected.BlockedPaths)
-	expectSlicesEqual(t, "Cwd.Mounts", actual.Cwd.Mounts, expected.Cwd.Mounts)
-	expectSlicesEqual(t, "Cwd.BlockedPaths", actual.Cwd.BlockedPaths, expected.Cwd.BlockedPaths)
 	expectSlicesEqual(t, "Environ.ExposedVars", actual.Environ.ExposedVars, expected.Environ.ExposedVars)
 	expectSlicesEqual(t, "Environ.SetVars", actual.Environ.SetVars, expected.Environ.SetVars)
 	if actual.Net.Mode != expected.Net.Mode {
@@ -441,8 +439,6 @@ mounts = [
   {source = "/media", target = "~/media", rw = true}
 ]
 blocked_paths = ["/mnt", "/root"]
-cwd.mounts = [".::rw", ".git"]
-cwd.blocked_paths = [".github"]
 [environ]
 exposed_vars = ["HOME", "PATH", "LC_*"]
 set_vars = ["FOO=foobar", "BAR=baz"]
@@ -461,13 +457,6 @@ udp_host_ports = ["12000:1700", "9000"]
 					{Source: "/media", Target: "~/media", RW: true},
 				},
 				BlockedPaths: []string{"/mnt", "/root"},
-				Cwd: Cwd{
-					Mounts: []Mount{
-						{Source: ".", Target: ".", RW: true},
-						{Source: ".git", Target: ".git"},
-					},
-					BlockedPaths: []string{".github"},
-				},
 				Environ: Environ{
 					ExposedVars: []string{"HOME", "PATH", "LC_*"},
 					SetVars: []EnvVar{
@@ -675,38 +664,6 @@ blocked_paths = ["foo"]
 `,
 			expected: Config{},
 			error:    "invalid blocked_paths 'foo': path must start with / or ~/",
-		},
-		{
-			name: "invalid cwd.mounts, absolute source path",
-			tomlStr: `
-cwd.mounts = ["/local"]
-`,
-			expected: Config{},
-			error:    "invalid cwd.mounts '/local': path must be relative, cannot start with / or ~/",
-		},
-		{
-			name: "invalid cwd.mounts, not normalized target path",
-			tomlStr: `
-cwd.mounts = ["./.git:../.git"]
-`,
-			expected: Config{},
-			error:    "invalid cwd.mounts '../.git': path is not normalized",
-		},
-		{
-			name: "invalid cwd.blocked, absolute source path",
-			tomlStr: `
-cwd.blocked_paths = ["/local"]
-`,
-			expected: Config{},
-			error:    "invalid cwd.blocked_paths '/local': path must be relative, cannot start with / or ~/",
-		},
-		{
-			name: "invalid cwd.blocked, not normalized paths",
-			tomlStr: `
-cwd.blocked_paths = ["../../foo"]
-`,
-			expected: Config{},
-			error:    "invalid cwd.blocked_paths '../../foo': path is not normalized",
 		},
 		{
 			name: "unrecognized key",

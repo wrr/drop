@@ -147,9 +147,6 @@ blocked_paths = ["/base-base-blocked"]
 extends = "base.toml"
 mounts = ["~/entry-mount"]
 blocked_paths = ["/entry-blocked"]
-[cwd]
-mounts = ["entry-cwd-mount"]
-blocked_paths = ["entry-cwd-blocked"]
 [environ]
 exposed_vars = ["ENTRY_VAR"]
 set_vars = ["ENTRY_SET=entry_value"]
@@ -162,9 +159,6 @@ udp_host_ports = ["9003"]
 				"/config/base.toml": `
 mounts = ["~/base-mount"]
 blocked_paths = ["/base-blocked"]
-[cwd]
-mounts = ["base-cwd-mount"]
-blocked_paths = ["base-cwd-blocked"]
 [environ]
 exposed_vars = ["BASE_VAR"]
 set_vars = ["BASE_SET=base_value"]
@@ -182,13 +176,6 @@ udp_host_ports = ["8003"]
 					{Source: "~/entry-mount", Target: "~/entry-mount"},
 				},
 				BlockedPaths: []string{"/base-blocked", "/entry-blocked"},
-				Cwd: Cwd{
-					Mounts: []Mount{
-						{Source: "base-cwd-mount", Target: "base-cwd-mount"},
-						{Source: "entry-cwd-mount", Target: "entry-cwd-mount"},
-					},
-					BlockedPaths: []string{"base-cwd-blocked", "entry-cwd-blocked"},
-				},
 				Environ: Environ{
 					ExposedVars: []string{"BASE_VAR", "ENTRY_VAR"},
 					SetVars: []EnvVar{

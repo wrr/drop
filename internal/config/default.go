@@ -1,4 +1,4 @@
-// Copyright 2025 Jan Wrobel <jan@mixedbit.org>
+// Copyright 2025-2026 Jan Wrobel <jan@mixedbit.org>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -97,23 +97,6 @@ mounts = %s
 # all dirs read-only, so you don't need to include files just to block
 # writing to them.
 blocked_paths = []
-
-# Directories and files from the current working directory exposed to
-# Drop. All paths need to be relative, but other that that, the syntax
-# is the same as for the 'mounts' above.
-#
-# The CWD mount rules are not applied if:
-# * Drop is started from the user home dir or any ancestor of the home dir
-# * Drop is started with -no-cwd flag
-cwd.mounts = [
- "./::rw", # Expose all files in the CWD in read-write mode
- ".git"    # Except .git directory which is exposed read-only
-]
-
-# If any file or a subdir exposed by a generic cwd.mount entry should be
-# blocked, put it here.
-cwd.blocked_paths = [
-]
 
 [environ]
 # Environment variables to expose from the process starting Drop to
