@@ -92,14 +92,14 @@ func (rt *root) bindFile(src, trg string, mountflags uintptr) error {
 			return err
 		}
 	}
-	return rt.bind(src, trg, mountflags)
+	return rt.bind(src, trg, mountflags, true)
 }
 
 // Bind binds src dir (absolute host path) to trg dir (path relative
 // to fsRoot or absolute guest path).
-// If mount flags includes MS_RDONLY, bind ensures the trg entry and
-// all its submounts are read-only.
-func (rt *root) bind(src, trg string, mountflags uintptr) error {
+// If mount flags includes MS_RDONLY, bind ensures  the trg entry is readonly and,
+// if recursive_ro is true, all its submounts are read-only.
+func (rt *root) bind(src, trg string, mountflags uintptr, recursive_ro bool) error {
 	mountflags |= unix.MS_BIND
 	if err := rt.mount(src, trg, "", mountflags, ""); err != nil {
 		return fmt.Errorf("bind %v", err)
@@ -114,7 +114,11 @@ func (rt *root) bind(src, trg string, mountflags uintptr) error {
 		attr := &unix.MountAttr{
 			Attr_set: unix.MOUNT_ATTR_RDONLY,
 		}
-		if err := unix.MountSetattr(-1, absTrg, unix.AT_RECURSIVE, attr); err != nil {
+		setaatrflags := uint(0)
+		if recursive_ro {
+			setaatrflags = unix.AT_RECURSIVE
+		}
+		if err := unix.MountSetattr(-1, absTrg, setaatrflags, attr); err != nil {
 			return fmt.Errorf("setting mount %s readonly failed: %v", trg, err)
 		}
 	}
@@ -144,7 +148,7 @@ func (rt *root) bindAll(mounts []config.Mount, flags uintptr) error {
 					log.Info(infoHeader+"but is a file not a directory", src)
 					continue
 				}
-				if err := rt.bind(src, trg, flags|rdonly); err != nil {
+				if err := rt.bind(src, trg, flags|rdonly, true); err != nil {
 					return err
 				}
 			} else {
@@ -205,7 +209,7 @@ func (rt *root) mountRootSubDirs() error {
 				return fmt.Errorf("failed to create symlink %s -> %s: %v", dstDir, target, err)
 			}
 		} else if info.IsDir() {
-			if err := rt.bind(dir, dir, flags); err != nil {
+			if err := rt.bind(dir, dir, flags, true); err != nil {
 				return err
 			}
 		} else {
@@ -310,7 +314,7 @@ func (rt *root) mountDev() error {
 }
 
 func (rt *root) mountTmp(paths *Paths) error {
-	return rt.bind(paths.Tmp, os.TempDir(), 0)
+	return rt.bind(paths.Tmp, os.TempDir(), 0, true)
 }
 
 func (rt *root) mountProc() error {
@@ -335,7 +339,7 @@ func (rt *root) mountSys(cfg *config.Config) error {
 
 func (rt *root) mountVar(paths *Paths) error {
 	flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV)
-	return rt.bind(paths.Var, "/var", flags)
+	return rt.bind(paths.Var, "/var", flags, true)
 }
 
 // blockEntries blocks access to file system entries by bind
@@ -353,7 +357,7 @@ func (rt *root) blockEntries(paths *Paths, entries []string) error {
 		}
 		flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_RDONLY)
 		if info.IsDir() {
-			if err := rt.bind(paths.EmptyDir, blockedPath, flags); err != nil {
+			if err := rt.bind(paths.EmptyDir, blockedPath, flags, true); err != nil {
 				return fmt.Errorf("failed to block directory %s: %v", blockedPath, err)
 			}
 		} else {
@@ -374,10 +378,10 @@ func (rt *root) pivot() error {
 	// is a normal dir, so bind mount it to itself. This also makes
 	// it read-only, which is preferred.
 	//
-	// We use rt.mount() directly instead of rt.bind(), because this is
-	// the only case where we want the MS_RDONLY flag to apply only to
-	// the root mount, not its submounts.
-	if err := rt.mount(newRoot, "/", "", flags, ""); err != nil {
+	// false as the fourth argument: this is the only case where we want
+	// the MS_RDONLY flag to apply only to the root mount, not its
+	// submounts.
+	if err := rt.bind(newRoot, "/", flags, false); err != nil {
 		return err
 	}
 

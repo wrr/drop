@@ -428,6 +428,15 @@ class TestFS(TestBase):
         self.assertEqual(0, len(snap_mounts),
                          f'Unexpected /snap/ mounts in sandbox: {snap_mounts}')
 
+    def test_root_is_read_only(self):
+        self.drop_init()
+        result = self.drop_run('mkdir /usr2')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Read-only file system', result.stderr)
+
+        result = self.drop_run('touch /foo')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Read-only file system', result.stderr)
 
 @contextmanager
 def scoped_dir(path):
