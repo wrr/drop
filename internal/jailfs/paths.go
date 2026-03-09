@@ -198,6 +198,12 @@ func DropHome(homeDir string) (string, error) {
 var envIdChars = `a-zA-Z0-9-_\.`
 
 func IsEnvIdValid(envId string) bool {
+	// 'base' is not allowed as environment id, because base.toml is a
+	// shared config file that shouldn't be overwritten by environment
+	// specific config.
+	if envId == "base" {
+		return false
+	}
 	reg := regexp.MustCompile(`^[` + envIdChars + `]+$`)
 	// Do not allow '-' and '.' at the start, because directory created
 	// for this environment will then be tricky to handle with standard

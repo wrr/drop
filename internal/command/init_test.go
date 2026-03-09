@@ -104,6 +104,15 @@ func TestInitEnv(t *testing.T) {
 		}
 	})
 
+	t.Run("base is a reserved name", func(t *testing.T) {
+		homeDir, dropHome, _ := setupTestInit(t)
+
+		err := InitEnv("base", false, homeDir, dropHome)
+		if err == nil || !strings.Contains(err.Error(), "invalid environment ID: base") {
+			t.Fatalf("expected 'invalid environment ID' error, got: %v", err)
+		}
+	})
+
 	t.Run("Existing env returns error", func(t *testing.T) {
 		homeDir, dropHome, _ := setupTestInit(t)
 
