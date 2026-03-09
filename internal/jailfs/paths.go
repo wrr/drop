@@ -46,16 +46,6 @@ type Paths struct {
 	// Home is the directory mounted as the home directory in the jail
 	// (e.g. /home/alice/.local/share/drop/envs/project-foo/home).
 	Home string
-	// Drop home dir can have entries exposed from the host home
-	// directory via mounts config. To expose these entries we need to
-	// create empty files and directories as mount points. In order not
-	// to polute Drop home dir with these empty files and dirs, we use
-	// overlayfs. Empty dirs and files are created in a disposable
-	// lowerdir of the overlayfs (kept in the jails's 'run' dir and
-	// removed when the jail terminates). The actual files created in
-	// the jailed home are written to the overlayfs upper layer.
-	HomeLower string
-	HomeWork  string
 	// Etc is the directory mounted as read-only overlay over /etc in the jail
 	// (e.g. /home/alice/.local/share/drop/envs/project-foo/etc).
 	Etc string
@@ -66,9 +56,8 @@ type Paths struct {
 	// Tmp is the directory mounted as /tmp in the jail. It is placed as a
 	// subdir of the host $TMPDIR to allow standard cleanup mechanisms.
 	Tmp string
-	// Run holds temporary files and dirs for the current jail instance
-	// (for example home dir overlayfs lower and work dirs). It can be
-	// safely remove once the jailed process terminates.
+	// Run holds temporary files and dirs for the current jail instance.
+	// It can be safely remove once the jailed process terminates.
 	Run string
 	// EmptyDir is an empty directory used to hide directories in the jail.
 	EmptyDir string
@@ -111,8 +100,6 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 		FsRoot:    filepath.Join(runDir, "root"),
 		HostHome:  hostHome,
 		Home:      filepath.Join(env, "home"),
-		HomeLower: filepath.Join(runDir, "home-lower"),
-		HomeWork:  filepath.Join(runDir, "home-work"),
 		Etc:       filepath.Join(env, "etc"),
 		Var:       filepath.Join(env, "var"),
 		Run:       runDir,
@@ -120,7 +107,7 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 		EmptyFile: filepath.Join(internal, "empty"),
 	}
 
-	toMkdir := []string{paths.FsRoot, paths.Home, paths.HomeLower, paths.HomeWork, paths.Etc, paths.Var}
+	toMkdir := []string{paths.FsRoot, paths.Home, paths.Etc, paths.Var}
 	for _, dir := range toMkdir {
 		if err := osutil.MkdirAll(dir); err != nil {
 			return nil, nil, err

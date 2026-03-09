@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import os
+import random
 import shutil
+import string
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -28,7 +30,10 @@ HOME_DIR = Path.home()
 class TestFS(TestBase):
     def test_home_dir_isolation(self):
         self.drop_init()
-        fname = 'test_file_foo_bar'
+        # random suffix to prevent test failure if user home dir
+        # already contains 'test_file'
+        suffix = ''.join(random.choices(string.ascii_lowercase, k=8))
+        fname = f'test_file_{suffix}'
         result = self.drop_run(f'bash -c "echo Hello world > ~/{fname}"')
         self.assertSuccess(result)
 
@@ -60,9 +65,9 @@ class TestFS(TestBase):
             self.assertEqual(1, result.returncode)
             self.assertIn('Read-only file system', result.stderr)
 
-            # Mount point should not be created directly in the Drop
-            # home dir, but in a disposable overlayfs lower layer.
-            self.assertFalse(
+            # Empty mount point dir should be created in the Drop home
+            # dir.
+            self.assertTrue(
                 os.path.exists(self.env_dir() / 'home' / exposed_dname))
 
     def test_cwd_mounted(self):
@@ -230,9 +235,9 @@ class TestFS(TestBase):
             self.assertEqual('world\n', base.read(hello_path))
             self.assertTrue(os.path.isdir(home_sub_path / 'foo'))
             self.assertTrue(os.path.isfile(home_sub_path / 'bar'))
-        # Mount point should not be created directly in the Drop
-        # home dir, but in a disposable overlayfs lower layer.
-        self.assertFalse(
+        # Empty mount point dir should be created in the Drop home
+        # dir.
+        self.assertTrue(
             os.path.exists(self.env_dir() / 'home' / exposed_dname))
 
     def test_add_mount_flag(self):

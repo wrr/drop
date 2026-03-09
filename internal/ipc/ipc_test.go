@@ -33,8 +33,6 @@ func TestParentChildCommunication(t *testing.T) {
 			FsRoot:    "/home/alice/.local/share/drop/internal/run/test-env-123/root",
 			HostHome:  "/home/alice",
 			Home:      "/home/alice/.local/share/drop/envs/test-env/home",
-			HomeLower: "/home/alice/.local/share/drop/internal/run/test-env-123/home-lower",
-			HomeWork:  "/home/alice/.local/share/drop/internal/run/test-env-123/home-work",
 			Etc:       "/home/alice/.local/share/drop/envs/test-env/etc",
 			Var:       "/home/alice/.local/share/drop/envs/test-env/var",
 			Tmp:       "/tmp/drop-test-env-456",

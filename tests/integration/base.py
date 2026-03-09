@@ -231,7 +231,7 @@ def grant_permissions(path, perms):
 
 def rm_drop_home(drop_home):
     # Change permissions of directories with 000 permissions
-    # (e.g. emptyd, overlayfs work dirs).
+    # (emptyd).
     ensure_can_delete_tree(drop_home)
     shutil.rmtree(drop_home)
 

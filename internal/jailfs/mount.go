@@ -225,18 +225,8 @@ func (rt *root) mountRootSubDirs() error {
 // Jail hides the real user's home dir from the host. Home dirs are
 // shared by jails with the same environment id.
 func (rt *root) mountHome(paths *Paths) error {
-	// Mount home dir as overlayfs, lowerdir holds only mount points,
-	// upperdir is where the actual files are stored.  xino=off to
-	// disable Ubuntu 24.04 dmesg warning 'overlayfs: fs on '/home/...'
-	// does not support file handles, falling back to xino=off'. It is
-	// very unlikely for home dir overlayfs layers to be on different
-	// filesystems (drop home (by default ~/.drop) would need to be
-	// placed on a different filesystem), when layers are on the same fs
-	// xino=on option does nothing.
-	// https://docs.kernel.org/filesystems/overlayfs.html
-	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,xino=off", paths.HomeLower, paths.Home, paths.HomeWork)
-	flags := uintptr(unix.MS_NOSUID)
-	return rt.mount("home", paths.HostHome, "overlay", flags, opts)
+	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_PRIVATE)
+	return rt.bind(paths.Home, paths.HostHome, flags, true)
 }
 
 func (rt *root) mountEtc(paths *Paths) error {
@@ -457,7 +447,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	// Resolve home directory in all mounts and separate by RW flag
 	mounts := resolveHomeDirInMounts(cfg.Mounts, paths.HostHome)
 
-	// This need to be done before overlayfs are mounted (/etc and user home).
+	// This needs to be done before /etc is mounted.
 	if err := createOverlayFSMountPoints(mounts, paths); err != nil {
 		return err
 	}
@@ -513,10 +503,6 @@ func resolveHomeDirInPaths(paths []string, homeDir string) []string {
 // should be created, but only if this mouint point is on overlayFS.
 // If the mount point is not on overlayFS, the functions returns "".
 func getOverlayFSMountPointPath(trg string, paths *Paths) string {
-	homeRel, err := filepath.Rel(paths.HostHome, trg)
-	if err == nil && !strings.HasPrefix(homeRel, "..") {
-		return filepath.Join(paths.HomeLower, homeRel)
-	}
 	etcRel, err := filepath.Rel("/etc", trg)
 	if err == nil && !strings.HasPrefix(etcRel, "..") {
 		return filepath.Join(paths.Etc, etcRel)
@@ -524,16 +510,12 @@ func getOverlayFSMountPointPath(trg string, paths *Paths) string {
 	return ""
 }
 
-// createOverlayFSMountPoints creates mount points on homedir and
-// /etc/ overlayfs layers before overlayfs are mounted.
+// createOverlayFSMountPoints creates mount points on /etc/ overlayfs
+// layers before overlayfs is mounted.
 //
-// For /etc this is needed, because /etc upper layer (controlled by
-// the user) is mounted read only, so it is not possible to create
-// missing sub-mount after /etc is mounted.
-//
-// For homedir, this allows to create missing mount points in the
-// disposable lower dir, and do no pollute the actual Drop home dir
-// with mount points.
+// This is needed, because /etc upper layer (controlled by the user)
+// is mounted read only, so it is not possible to create missing
+// sub-mount after /etc is mounted.
 //
 // The function is best-effort, all errors are ignored. If mount
 // points are not created, the actual mounting action will try to
