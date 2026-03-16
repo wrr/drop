@@ -356,9 +356,7 @@ func RunChild() error {
 
 	// Since the current process is replaced with Exec, we need
 	// to write coverage data manually, Go hooks will not execute.
-	if err := writeCoverage(); err != nil {
-		return err
-	}
+	writeCoverage()
 
 	// Replace the current process
 	if err := unix.Exec(prog, execArgs, envVars); err != nil {
@@ -417,11 +415,10 @@ func allFdsCloseOnExec() error {
 	return unix.CloseRange(3, math.MaxInt32, unix.CLOSE_RANGE_CLOEXEC)
 }
 
-func writeCoverage() error {
+func writeCoverage() {
 	coverdir := os.Getenv("GOCOVERDIR")
 	if coverdir != "" {
 		coverage.WriteMetaDir(coverdir)
 		coverage.WriteCountersDir(coverdir)
 	}
-	return nil
 }
