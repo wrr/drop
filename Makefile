@@ -5,7 +5,7 @@ BINDIR ?= $(PREFIX)/bin
 VERSION ?= $(shell git describe --tags --always --dirty | sed 's/^v//')
 LDFLAGS_RELEASE = -ldflags "-s -w -X main.Version=$(VERSION)"
 
-.PHONY: fmt vet get-deps build install uninstall build-release build-race test test-integration test-select test-race test-all lint cover clean imports vulncheck gen-example-config all
+.PHONY: fmt vet get-deps update-deps build install uninstall build-release build-race test test-integration test-select test-race test-all lint cover clean imports vulncheck gen-example-config all
 
 fmt:
 	go fmt ./...
@@ -15,6 +15,10 @@ vet: fmt
 
 get-deps:
 	go get ./...
+
+update-deps:
+	go get -u ./...
+	go mod tidy
 
 # Disable cgo, force version of the libcap lib that does not use it.
 build: vet
@@ -56,7 +60,6 @@ test-one: build
 # Prevent make from treating the test file argument as a target
 %.py:
 	@:
-
 
 test-all: test test-integration 
 
