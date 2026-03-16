@@ -349,7 +349,7 @@ func hasRunningDropInstances(runDirsPath string, envId string) (bool, error) {
 
 		// Check if this run directory belongs to the specified
 		// environment. Run dirs have names: {envId}-{random digits}
-		pattern := fmt.Sprintf(`^%s-\d+$`, envId)
+		pattern := fmt.Sprintf(`^%s-\d+$`, regexp.QuoteMeta(envId))
 		re := regexp.MustCompile(pattern)
 		if !re.MatchString(entry.Name()) {
 			continue
