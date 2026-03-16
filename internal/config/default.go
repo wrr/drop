@@ -23,6 +23,8 @@ import (
 	"github.com/wrr/drop/internal/osutil"
 )
 
+const defaultConfigPerms = 0600
+
 type configFileEntry struct {
 	path    string
 	comment string
@@ -183,7 +185,7 @@ udp_host_ports = []
 		return err
 	}
 
-	if err := os.WriteFile(path, []byte(defaultConfig), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(defaultConfig), defaultConfigPerms); err != nil {
 		return fmt.Errorf("failed to write default config: %v", err)
 	}
 
@@ -218,7 +220,7 @@ udp_host_ports = []
 		return err
 	}
 
-	if err := os.WriteFile(path, []byte(envConfig), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(envConfig), defaultConfigPerms); err != nil {
 		return fmt.Errorf("failed to write environment config: %v", err)
 	}
 
