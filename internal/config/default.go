@@ -80,7 +80,7 @@ func WriteDefault(path string, homeDir string) error {
 #
 # Be sure not to expose files with secrets or other sensitive
 # data. Configs without sensitive data are safe to expose as read-only
-# and make Drop more convienient to use.
+# and make Drop more convenient to use.
 #
 # Use files exposed as read-write carefully and sparingly - untrusted
 # programs should not be able to write files that are executed outside
