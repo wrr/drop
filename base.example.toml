@@ -85,7 +85,7 @@ exposed_vars = [
   "XTERM_LOCALE",
   "TERM",
   "USER",
-  "SHLLVL",
+  "SHLVL",
   "PATH",
 ]
 

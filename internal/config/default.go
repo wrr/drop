@@ -127,7 +127,7 @@ exposed_vars = [
   "XTERM_LOCALE",
   "TERM",
   "USER",
-  "SHLLVL",
+  "SHLVL",
   "PATH",
 ]
 
@@ -164,7 +164,7 @@ mode = "isolated"
 #                       to block outside traffic to this port
 # "auto" - all ports open in the sandbox are automatically published
 #          and bound to ALL the host's IP addresses. This is
-#          convienient, but must be used with care, make sure the host
+#          convenient, but must be used with care, make sure the host
 #          has firewall configured to filter outside traffic
 tcp_published_ports = []
 # UDP ports published exposed from the sandbox.

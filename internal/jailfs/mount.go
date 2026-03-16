@@ -108,17 +108,17 @@ func (rt *root) bind(src, trg string, mountflags uintptr, recursive_ro bool) err
 	// mount and remount is needed for RDONLY to work:
 	// https://github.com/containerd/containerd/issues/1368
 	// but even then RDONLY applies only to the top level mount.
-	// We use setaatr instead to apply RDONLY recursievly to all submounts.
+	// We use setattr instead to apply RDONLY recursively to all submounts.
 	// (requires kernel >= 5.12)
 	if mountflags&unix.MS_RDONLY != 0 {
 		attr := &unix.MountAttr{
 			Attr_set: unix.MOUNT_ATTR_RDONLY,
 		}
-		setaatrflags := uint(0)
+		setattrflags := uint(0)
 		if recursive_ro {
-			setaatrflags = unix.AT_RECURSIVE
+			setattrflags = unix.AT_RECURSIVE
 		}
-		if err := unix.MountSetattr(-1, absTrg, setaatrflags, attr); err != nil {
+		if err := unix.MountSetattr(-1, absTrg, setattrflags, attr); err != nil {
 			return fmt.Errorf("setting mount %s readonly failed: %v", trg, err)
 		}
 	}

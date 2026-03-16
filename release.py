@@ -147,7 +147,7 @@ def create_github_release(version):
     tag = version_to_tag(version)
 
     cmd = (f"gh release create {tag} --title 'Release {version}' "
-           "dist/drop* LICENSE NOTES")
+           "dist/drop* LICENSE NOTICE")
     run(cmd, capture_output=False)
     print(f'\nGitHub release created: {version}')
 
