@@ -284,8 +284,8 @@ These are commands to work with Drop:
 
 By default Drop config files are stored in `~/.config/drop`.
 
-When `drop init` is run for the first time, it creates a [base.toml]
-(./base.example.toml) config file, which is by default shared by all
+When `drop init` is run for the first time, it creates a 
+[base.toml](./base.example.toml) config file, which is by default shared by all
 Drop environments.
 
 The created  `base.toml` config exposes several common dotfiles that are
@@ -294,9 +294,10 @@ common environment variables. Review the generated defaults, ensure
 that no files with secrets are exposed, expose config files of other
 programs that you use.
 
-`drop init` also creates a tiny, environment specific config file:
-`ENV_ID.toml`.  This file extends `base.toml` and allows to add
-environment specific configuration.
+`drop init` also creates a tiny, [environment specific config
+file](./env.example.toml).
+This file extends `base.toml` and allows to add environment specific
+configuration.
 
 `drop init` adds only a single environment specific
 configuration option: it exposes the directory in which `drop init`
