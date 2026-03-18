@@ -342,7 +342,6 @@ func RunChild() error {
 		execArgs = []string{shell}
 	}
 
-	// Filter environment variables, then add DROP_ENV and debian_chroot
 	filteredEnv := env.Filter(os.Environ(), cfg.Environ.ExposedVars)
 	envVars := env.SetVars(filteredEnv, cfg.Environ.SetVars, envId)
 	prog, err := exec.LookPath(execArgs[0]) // Searches PATH

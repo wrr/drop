@@ -25,37 +25,44 @@ import (
 
 const defaultConfigPerms = 0600
 
-type configFileEntry struct {
-	path    string
+type mountEntry struct {
+	src     string
+	dst     string
 	comment string
 }
 
 // WriteDefault writes a default config file to path.
 func WriteDefault(path string, homeDir string) error {
-	// pathsRODefault contains files to expose from home dir, these
+	// mounts contains files to expose from home dir, these
 	// files are included in the generated default config only if they exist
 	// in the user's home.
-	pathsRODefault := []configFileEntry{
-		{"~/.ackrc", ""},
-		{"~/.emacs", ""},
-		{"~/.profile", ""},
-		{"~/.gitconfig", "Remove if you keep secrets in .gitconfig"},
-		{"~/go", ""},
-		{"~/.nvm", ""},
-		{"~/.screenrc", ""},
-		{"~/.bashrc", "Ensure there are no secrets in your shell config files"},
-		{"~/.bash_logout", ""},
-		{"~/.bash_profile", ""},
-		{"~/.zshenv", ""},
-		{"~/.zlogin", ""},
-		{"~/.zprofile", ""},
-		{"~/.zlogout", ""},
-		{"~/.zshrc", ""},
+	mounts := []mountEntry{
+		{"~/.ackrc", "", ""},
+		{"~/.emacs", "", ""},
+		{"~/.profile", "", ""},
+		{"~/.gitconfig", "", "Remove if you keep secrets in .gitconfig"},
+		{"~/go", "", ""},
+		{"~/.nvm", "", ""},
+		{"~/.screenrc", "", ""},
+		{"~/.bashrc", "", "Ensure there are no secrets in your shell config files"},
+		{"~/.bash_logout", "", ""},
+		{"~/.bash_profile", "", ""},
+		{"~/.zshenv", "", ""},
+		{"~/.zlogin", "", ""},
+		{"~/.zprofile", "", ""},
+		{"~/.zlogout", "", ""},
+		{"~/.zshrc", "", ""},
+		{"~/.local/bin", "~/.local-host/bin", "Rename .local/bin from host, so sandbox has own, writeable .local/bin"},
+		{"~/.local/include", "~/.local-host/include", ""},
+		{"~/.local/lib", "~/.local-host/lib", ""},
 	}
 
-	pathsRODefault = keepExistingEntries(pathsRODefault, homeDir)
+	mounts = keepExistingEntries(mounts, homeDir)
 
-	defaultConfig := fmt.Sprintf(`# Drop sandbox configuration file
+	defaultConfig := fmt.Sprintf(`################################################################
+# Drop sandbox base configuration file.
+# Environment-specific config files by default extend this file.
+################################################################
 
 # Directories and files exposed to Drop.
 #
@@ -63,13 +70,13 @@ func WriteDefault(path string, homeDir string) error {
 #
 # "~/bin" - expose ~/bin directory as read-only. Directories are
 #           exposed with all content, including sub-directories.
-# "~/bin:~/host-bin" - expose ~/bin directory as read-only ~/host-bin.
+# "~/bin:~/bin-host" - expose ~/bin directory as read-only ~/bin-host.
 # "~/plan::rw" - expose ~/plan file as writable.
-# "~/plan:~/host-plan:rw" - expose ~/plan file as writable ~/host-plan.
+# "~/plan:~/plan-host:rw" - expose ~/plan file as writable ~/plan-host.
 #
-# Alternatively, a verbose dictionary syntax can be used; it allows to
-# handle paths with ':' characters. Equivalents of the examples above
-# with the verbose syntax are:
+# Alternatively, a verbose dictionary syntax can be used; it allows
+# handling paths with ':' characters. Equivalents of the examples
+# above with the verbose syntax are:
 #
 # {source="~/bin"}
 # {source="~/bin", target="~/host-bin"}
@@ -79,16 +86,16 @@ func WriteDefault(path string, homeDir string) error {
 # All paths must be normalized and either start with / or ~/.
 #
 # Be sure not to expose files with secrets or other sensitive
-# data. Configs without sensitive data are safe to expose as read-only
-# and make Drop more convenient to use.
+# data. Configs without sensitive data are safe to expose as read-only.
 #
 # Use files exposed as read-write carefully and sparingly - untrusted
 # programs should not be able to write files that are executed outside
-# of the sandbox. Shell config scripts are executed, so it is safe to
-# expose them as read-only, but not as read-write.  Similarly, entries
-# from ~/.bash_history can be executed, so it is best not to expose
-# history, but allow shells in Drop environments to create isolated
-# history files, one per each environment.
+# of the sandbox. Shell config scripts are executed by the host, so
+# exposing them as read-write would let sandboxed programs inject
+# commands that run outside the sandbox. Read-only is safe.
+# Similarly, entries from ~/.bash_history can be executed, so it is
+# best not to expose history, but allow shells in Drop environments
+# to create isolated history files, one per each environment.
 mounts = %s
 
 # Paths to dirs or files to block access to.
@@ -106,7 +113,7 @@ blocked_paths = []
 # common prefix/suffix.
 #
 # Do not expose variables containing secrets. Expose all
-# other variables needed for convenient work in Drop.
+# other variables needed for convenient work.
 exposed_vars = [
   "XDG_DATA_HOME",
   "XDG_CONFIG_HOME",
@@ -133,8 +140,11 @@ exposed_vars = [
   "PATH",
 ]
 
+# New environment variables passed to the sandboxed process.
+# Values can include existing vars as ${VAR_NAME}
 set_vars = [
   "debian_chroot=drop", # Add '(drop)' prefix to shell prompts on Debian-based systems
+  "PATH=${PATH}:${HOME}/.local-host/bin", # Add .local/bin from host (mounted as .local-host/bin) to PATH.
 ]
 
 [net]
@@ -153,7 +163,7 @@ mode = "isolated"
 #
 # Entries have the form: [host_ip/][HOST_PORT:]DROP_PORT
 # If host_ip is not specified, it defaults to 127.0.0.1.
-# If HOST_PORT is not specified it equals to DROP_PORT.
+# If HOST_PORT is not specified, it defaults to DROP_PORT.
 # Empty list means no ports are exposed.
 # Example valid list items:
 # "8080" - publish port 8080 from the sandbox as 127.0.0.1:8080 on the host
@@ -167,19 +177,19 @@ mode = "isolated"
 # "auto" - all ports open in the sandbox are automatically published
 #          and bound to ALL the host's IP addresses. This is
 #          convenient, but must be used with care, make sure the host
-#          has firewall configured to filter outside traffic
+#          has firewall configured to filter outside traffic.
 tcp_published_ports = []
-# UDP ports published exposed from the sandbox.
+# UDP ports published from the sandbox.
 udp_published_ports = []
 
 # Localhost TCP ports open on the host that the sandbox can access.
 # Entries have the form
 # HOST_PORT[:DROP_PORT]
-# If DROP_PORT is not specified, it equals to HOST_PORT
+# If DROP_PORT is not specified, it defaults to HOST_PORT
 tcp_host_ports = []
 # Localhost UDP ports open on the host that the sandbox can access.
 udp_host_ports = []
-`, sliceToToml(pathsRODefault, formatConfigFile))
+`, sliceToToml(mounts, formatMountEntry))
 
 	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {
 		return err
@@ -227,10 +237,10 @@ udp_host_ports = []
 	return nil
 }
 
-func keepExistingEntries(entries []configFileEntry, homeDir string) []configFileEntry {
-	var existing []configFileEntry
+func keepExistingEntries(entries []mountEntry, homeDir string) []mountEntry {
+	var existing []mountEntry
 	for _, entry := range entries {
-		path := osutil.TildeToHomeDir(entry.path, homeDir)
+		path := osutil.TildeToHomeDir(entry.src, homeDir)
 		if osutil.Exists(path) {
 			existing = append(existing, entry)
 		}
@@ -254,9 +264,13 @@ func formatString(s string) string {
 	return fmt.Sprintf("%q,", s)
 }
 
-func formatConfigFile(e configFileEntry) string {
-	if e.comment != "" {
-		return fmt.Sprintf("%q, # %s", e.path, e.comment)
+func formatMountEntry(e mountEntry) string {
+	entry := e.src
+	if e.dst != "" {
+		entry += ":" + e.dst
 	}
-	return formatString(e.path)
+	if e.comment != "" {
+		return fmt.Sprintf("%q, # %s", entry, e.comment)
+	}
+	return formatString(entry)
 }

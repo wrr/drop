@@ -54,6 +54,7 @@ func TestWriteDefault(t *testing.T) {
 
 	expectedSetVars := []EnvVar{
 		{Name: "debian_chroot", Value: "drop"},
+		{Name: "PATH", Value: "${PATH}:${HOME}/.local-host/bin"},
 	}
 	if !slices.Equal(cfg.Environ.SetVars, expectedSetVars) {
 		t.Errorf("Expected environ.set_vars to be %+v, got %+v", expectedSetVars, cfg.Environ.SetVars)
@@ -117,10 +118,10 @@ func TestWriteDefaultForEnv(t *testing.T) {
 }
 
 func TestFilterExistingEntries(t *testing.T) {
-	entries := []configFileEntry{
-		{"~/foo", ""},
-		{"~/bar", ""},
-		{"~/baz", ""},
+	entries := []mountEntry{
+		{"~/foo", "", ""},
+		{"~/bar", "", ""},
+		{"~/baz", "", ""},
 	}
 
 	homeDir := t.TempDir()
@@ -136,26 +137,26 @@ func TestFilterExistingEntries(t *testing.T) {
 		t.Fatalf("Expected 1 filtered entry, got %d", len(filtered))
 	}
 
-	if filtered[0].path != "~/bar" {
-		t.Errorf("Invalid filtered entry '%s'", filtered[0].path)
+	if filtered[0].src != "~/bar" {
+		t.Errorf("Invalid filtered entry '%s'", filtered[0].src)
 	}
 }
 
 func TestSliceToToml(t *testing.T) {
 	tests := []struct {
 		name     string
-		entries  []configFileEntry
+		entries  []mountEntry
 		expected string
 	}{
 		{
 			name:     "empty",
-			entries:  []configFileEntry{},
+			entries:  []mountEntry{},
 			expected: "[]",
 		},
 		{
 			name: "single entry without comment",
-			entries: []configFileEntry{
-				{"~/.bashrc", ""},
+			entries: []mountEntry{
+				{"~/.bashrc", "", ""},
 			},
 			expected: `[
   "~/.bashrc",
@@ -163,8 +164,8 @@ func TestSliceToToml(t *testing.T) {
 		},
 		{
 			name: "single entry with comment",
-			entries: []configFileEntry{
-				{"~/.gitconfig", "comment foo"},
+			entries: []mountEntry{
+				{"~/.gitconfig", "", "comment foo"},
 			},
 			expected: `[
   "~/.gitconfig", # comment foo
@@ -172,12 +173,12 @@ func TestSliceToToml(t *testing.T) {
 		},
 		{
 			name: "multiple entries",
-			entries: []configFileEntry{
-				{"~/.bashrc", ""},
-				{"~/.gitconfig", "comment bar"},
+			entries: []mountEntry{
+				{"~/.bashrc", "~/.bashrc-host", ""},
+				{"~/.gitconfig", "", "comment bar"},
 			},
 			expected: `[
-  "~/.bashrc",
+  "~/.bashrc:~/.bashrc-host",
   "~/.gitconfig", # comment bar
 ]`,
 		},
@@ -185,7 +186,7 @@ func TestSliceToToml(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sliceToToml(tt.entries, formatConfigFile)
+			result := sliceToToml(tt.entries, formatMountEntry)
 			if result != tt.expected {
 				t.Errorf("Expected:\n%s\nGot:\n%s", tt.expected, result)
 			}
