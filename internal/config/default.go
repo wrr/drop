@@ -205,8 +205,17 @@ udp_host_ports = []
 // WriteDefaultForEnv writes a default config file for a new drop
 // environment to path.
 func WriteDefaultForEnv(path string, mounts []string) error {
-	envConfig := fmt.Sprintf(`# Drop environment configuration file
+	envConfig := fmt.Sprintf(`#######################################################
+# Drop sandbox environment-specific configuration file.
+#######################################################
+
+# Use all the settings from the base.toml file. All the list settings
+# set in this file are appended to the settings from the base.toml.
+# The net.mode, if set in this file, overwrites the net.mode set in
+# the base.toml.
 extends = "./base.toml"
+
+# Add any settings that apply to this environment only:
 
 mounts = %s
 
@@ -214,10 +223,10 @@ blocked_paths = []
 
 [environ]
 exposed_vars = []
-
 set_vars = []
 
 [net]
+# Uncomment to disable network access for this environment:
 # mode = "off"
 
 tcp_published_ports = []

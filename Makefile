@@ -93,9 +93,10 @@ vulncheck: build
 
 gen-example-config: build
 	DROP_HOME=$$(mktemp -d) && \
-	DROP_HOME=$$DROP_HOME ./drop init && \
-	DROP_HOME=$$DROP_HOME ./drop run ps >/dev/null && \
+	DROP_HOME=$$DROP_HOME ./drop init --no-cwd foobar && \
+	DROP_HOME=$$DROP_HOME ./drop run -e foobar ps >/dev/null && \
 	cp $$DROP_HOME/config/base.toml base.example.toml && \
+	cp $$DROP_HOME/config/foobar.toml env.example.toml && \
 	rm -rf $$DROP_HOME
 
 all: test-race test-integration vulncheck imports lint build
