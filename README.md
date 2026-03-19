@@ -93,10 +93,10 @@ Your home dir has only a couple of files:
 ```
 
 Drop TOML configuration files specify which files should be exposed
-from your home dir to Drop environments home dirs. Config files that
-you expose to Drop should in most cases be exposed read-only. This is
-because sandboxed programs shouldn't be able to write to any files
-that are executed outside of a sandbox (such as bash configs):
+from your home dir to Drop environments home dirs. Files should in
+most cases be exposed read-only. This is because sandboxed programs
+shouldn't be able to write to any files that are executed outside of a
+sandbox (such as bash configs):
 
 ```console
 (drop)alice@shodan:~/code/web-app$ echo "evil command" >> ~/.bashrc
@@ -141,7 +141,7 @@ ls: cannot access '/home/alice/.local/bin/claude': No such file or directory
 
 Each Drop environment gets its own writable home dir, so the files
 created in the Drop environment home dir are not available and do not
-pollute the original home dir. Drop home dirs are stored by default in
+pollute the original home. Drop home dirs are stored in
 `.local/share/drop/envs/ENV-NAME/home`. The `claude` file is indeed
 there:
 
@@ -170,20 +170,10 @@ start Claude Code, ask it to change and run the code:
   ⎿  Updated main.py with 7 additions        
        102 +  @app.get("/hello")
        103 +  async def hello():
-       104 +      return Response(
-       105 +          content="hello",
-       106 +          media_type="text/plain"
-       107 +      )
-       108 +  
-
+[...]
 ● Update(test_main.py)
   ⎿  Updated test_main.py with 5 additions                                             
         6 +  def test_hello():
-        7 +      response = client.get("/hello")
-        8 +      assert response.status_code == 200
-        9 +      assert response.text == "hello"
-       10 +      assert response.headers["content-type"] == "text/plain; charset=utf-8"
-
 [...]
 ● Bash(source venv/bin/activate && python -m pytest test_main.py::test_hello -v)
   ⎿  ============================= test session starts ==============================                                        
@@ -284,8 +274,8 @@ These are commands to work with Drop:
 
 By default Drop config files are stored in `~/.config/drop`.
 
-When `drop init` is run for the first time, it creates a 
-[base.toml](./base.example.toml) config file, which is by default shared by all
+When `drop init` is run for the first time, it creates a
+[base.toml](./base.example.toml) config file, which is shared by all
 Drop environments.
 
 The created  `base.toml` config exposes several common dotfiles that are
@@ -408,7 +398,7 @@ make install BINDIR=$HOME/.local/bin
 #### Ubuntu 24 - AppArmor config
 Ubuntu uses AppArmor profiles to specify which programs can use Linux
 user namespaces. To create a profile for Drop (in a config below,
-change the drop binary path to the actual path where you placed drop
+change the Drop binary path to the actual path where you placed `drop`
 on your system):
 
 ```
