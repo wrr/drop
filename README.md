@@ -350,25 +350,30 @@ $ sudo pacman -S passt        # Arch
 
 ### Downloading release binary
 
-The simplest way to install Drop is to download an executable from
+Download a prebuilt binary from
 [GitHub releases](https://github.com/wrr/drop/releases/latest/) and
-place it in your PATH.
+place it in your PATH:
 
-Download Drop:
 ```
 # Set ARCH to either amd64 or arm64
 ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 
 curl -o drop -L https://github.com/wrr/drop/releases/latest/download/drop-linux-$ARCH
-```
-
-You can use `install` to copy and chmod the drop executable:
-
-```
 install -m 755 drop ~/.local/bin/
 ```
 
-### Building from source
+### Installing with Go
+
+Requires [Go compiler](https://go.dev/doc/install) (1.24+)
+
+```
+CGO_ENABLED=0 go install github.com/wrr/drop/cmd/drop@latest
+```
+
+The option `CGO_ENABLED=0` produces a statically linked binary and does not
+require a C compiler, but is not strictly required.
+
+### Building development version
 
 Requires [Go compiler](https://go.dev/doc/install)
 
