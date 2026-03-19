@@ -76,16 +76,22 @@ func TestWriteDefaultForEnv(t *testing.T) {
 	basePath := filepath.Join(tempDir, "base.toml")
 	envPath := filepath.Join(tempDir, "env.toml")
 
-	mounts := []string{
-		"/home/alice/project::rw",
-		"/home/alice/project/.git",
+	projectDir := filepath.Join(tempDir, "project")
+	gitDir := filepath.Join(projectDir, ".git")
+	if err := os.MkdirAll(gitDir, 0700); err != nil {
+		t.Fatalf("Failed to create test dirs: %v", err)
+	}
+
+	mounts := []DefaultMount{
+		{Entry: projectDir + "::rw"},
+		{Entry: gitDir},
 	}
 
 	// WriteDefaultForEnv generates a config that extends base.toml.
 	if err := WriteDefault(basePath, tempDir); err != nil {
 		t.Fatalf("WriteDefault failed: %v", err)
 	}
-	if err := WriteDefaultForEnv(envPath, mounts); err != nil {
+	if err := WriteDefaultForEnv(envPath, mounts, tempDir); err != nil {
 		t.Fatalf("WriteDefaultForEnv failed: %v", err)
 	}
 
@@ -99,8 +105,8 @@ func TestWriteDefaultForEnv(t *testing.T) {
 	}
 
 	expectedMounts := []Mount{
-		{Source: "/home/alice/project", Target: "/home/alice/project", RW: true},
-		{Source: "/home/alice/project/.git", Target: "/home/alice/project/.git"},
+		{Source: projectDir, Target: projectDir, RW: true},
+		{Source: gitDir, Target: gitDir},
 	}
 	if !slices.Equal(cfg.Mounts, expectedMounts) {
 		t.Errorf("Expected mounts %+v, got %+v", expectedMounts, cfg.Mounts)
@@ -118,10 +124,10 @@ func TestWriteDefaultForEnv(t *testing.T) {
 }
 
 func TestFilterExistingEntries(t *testing.T) {
-	entries := []mountEntry{
-		{"~/foo", "", ""},
-		{"~/bar", "", ""},
-		{"~/baz", "", ""},
+	entries := []DefaultMount{
+		{Entry: "~/foo"},
+		{Entry: "~/bar"},
+		{Entry: "~/baz:~/baz-host"},
 	}
 
 	homeDir := t.TempDir()
@@ -137,26 +143,26 @@ func TestFilterExistingEntries(t *testing.T) {
 		t.Fatalf("Expected 1 filtered entry, got %d", len(filtered))
 	}
 
-	if filtered[0].src != "~/bar" {
-		t.Errorf("Invalid filtered entry '%s'", filtered[0].src)
+	if filtered[0].Entry != "~/bar" {
+		t.Errorf("Invalid filtered entry '%s'", filtered[0].Entry)
 	}
 }
 
-func TestSliceToToml(t *testing.T) {
+func TestMountEntriesToToml(t *testing.T) {
 	tests := []struct {
 		name     string
-		entries  []mountEntry
+		entries  []DefaultMount
 		expected string
 	}{
 		{
 			name:     "empty",
-			entries:  []mountEntry{},
+			entries:  []DefaultMount{},
 			expected: "[]",
 		},
 		{
 			name: "single entry without comment",
-			entries: []mountEntry{
-				{"~/.bashrc", "", ""},
+			entries: []DefaultMount{
+				{Entry: "~/.bashrc"},
 			},
 			expected: `[
   "~/.bashrc",
@@ -164,8 +170,8 @@ func TestSliceToToml(t *testing.T) {
 		},
 		{
 			name: "single entry with comment",
-			entries: []mountEntry{
-				{"~/.gitconfig", "", "comment foo"},
+			entries: []DefaultMount{
+				{Entry: "~/.gitconfig", Comment: "comment foo"},
 			},
 			expected: `[
   "~/.gitconfig", # comment foo
@@ -173,9 +179,9 @@ func TestSliceToToml(t *testing.T) {
 		},
 		{
 			name: "multiple entries",
-			entries: []mountEntry{
-				{"~/.bashrc", "~/.bashrc-host", ""},
-				{"~/.gitconfig", "", "comment bar"},
+			entries: []DefaultMount{
+				{Entry: "~/.bashrc:~/.bashrc-host"},
+				{Entry: "~/.gitconfig", Comment: "comment bar"},
 			},
 			expected: `[
   "~/.bashrc:~/.bashrc-host",
@@ -186,7 +192,7 @@ func TestSliceToToml(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sliceToToml(tt.entries, formatMountEntry)
+			result := mountEntriesToToml(tt.entries)
 			if result != tt.expected {
 				t.Errorf("Expected:\n%s\nGot:\n%s", tt.expected, result)
 			}

@@ -25,10 +25,9 @@ import (
 
 const defaultConfigPerms = 0600
 
-type mountEntry struct {
-	src     string
-	dst     string
-	comment string
+type DefaultMount struct {
+	Entry   string
+	Comment string
 }
 
 // WriteDefault writes a default config file to path.
@@ -36,25 +35,25 @@ func WriteDefault(path string, homeDir string) error {
 	// mounts contains files to expose from home dir, these
 	// files are included in the generated default config only if they exist
 	// in the user's home.
-	mounts := []mountEntry{
-		{"~/.ackrc", "", ""},
-		{"~/.emacs", "", ""},
-		{"~/.profile", "", ""},
-		{"~/.gitconfig", "", "Remove if you keep secrets in .gitconfig"},
-		{"~/go", "", ""},
-		{"~/.nvm", "", ""},
-		{"~/.screenrc", "", ""},
-		{"~/.bashrc", "", "Ensure there are no secrets in your shell config files"},
-		{"~/.bash_logout", "", ""},
-		{"~/.bash_profile", "", ""},
-		{"~/.zshenv", "", ""},
-		{"~/.zlogin", "", ""},
-		{"~/.zprofile", "", ""},
-		{"~/.zlogout", "", ""},
-		{"~/.zshrc", "", ""},
-		{"~/.local/bin", "~/.local-host/bin", "Rename .local/bin from host, so sandbox has own, writeable .local/bin"},
-		{"~/.local/include", "~/.local-host/include", ""},
-		{"~/.local/lib", "~/.local-host/lib", ""},
+	mounts := []DefaultMount{
+		{"~/.ackrc", ""},
+		{"~/.emacs", ""},
+		{"~/.profile", ""},
+		{"~/.gitconfig", "Remove if you keep secrets in .gitconfig"},
+		{"~/go", ""},
+		{"~/.nvm", ""},
+		{"~/.screenrc", ""},
+		{"~/.bashrc", "Ensure there are no secrets in your shell config files"},
+		{"~/.bash_logout", ""},
+		{"~/.bash_profile", ""},
+		{"~/.zshenv", ""},
+		{"~/.zlogin", ""},
+		{"~/.zprofile", ""},
+		{"~/.zlogout", ""},
+		{"~/.zshrc", ""},
+		{"~/.local/bin:~/.local-host/bin", "Rename .local/bin from host, so sandbox has own, writeable .local/bin"},
+		{"~/.local/include:~/.local-host/include", ""},
+		{"~/.local/lib:~/.local-host/lib", ""},
 	}
 
 	mounts = keepExistingEntries(mounts, homeDir)
@@ -189,7 +188,7 @@ udp_published_ports = []
 tcp_host_ports = []
 # Localhost UDP ports open on the host that the sandbox can access.
 udp_host_ports = []
-`, sliceToToml(mounts, formatMountEntry))
+`, mountEntriesToToml(mounts))
 
 	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {
 		return err
@@ -204,7 +203,8 @@ udp_host_ports = []
 
 // WriteDefaultForEnv writes a default config file for a new drop
 // environment to path.
-func WriteDefaultForEnv(path string, mounts []string) error {
+func WriteDefaultForEnv(path string, mounts []DefaultMount, homeDir string) error {
+	mounts = keepExistingEntries(mounts, homeDir)
 	envConfig := fmt.Sprintf(`#######################################################
 # Drop sandbox environment-specific configuration file.
 #######################################################
@@ -233,7 +233,7 @@ tcp_published_ports = []
 udp_published_ports = []
 tcp_host_ports = []
 udp_host_ports = []
-`, sliceToToml(mounts, formatString))
+`, mountEntriesToToml(mounts))
 
 	if err := osutil.MkdirAll(filepath.Dir(path)); err != nil {
 		return err
@@ -246,40 +246,30 @@ udp_host_ports = []
 	return nil
 }
 
-func keepExistingEntries(entries []mountEntry, homeDir string) []mountEntry {
-	var existing []mountEntry
-	for _, entry := range entries {
-		path := osutil.TildeToHomeDir(entry.src, homeDir)
+func keepExistingEntries(entries []DefaultMount, homeDir string) []DefaultMount {
+	var existing []DefaultMount
+	for _, e := range entries {
+		src := strings.SplitN(e.Entry, ":", 2)[0]
+		path := osutil.TildeToHomeDir(src, homeDir)
 		if osutil.Exists(path) {
-			existing = append(existing, entry)
+			existing = append(existing, e)
 		}
 	}
 	return existing
 }
 
-func sliceToToml[T any](entries []T, format func(T) string) string {
+func mountEntriesToToml(entries []DefaultMount) string {
 	if len(entries) == 0 {
 		return "[]"
 	}
 	lines := []string{"["}
-	for _, entry := range entries {
-		lines = append(lines, fmt.Sprintf("  %s", format(entry)))
+	for _, e := range entries {
+		if e.Comment != "" {
+			lines = append(lines, fmt.Sprintf("  %q, # %s", e.Entry, e.Comment))
+		} else {
+			lines = append(lines, fmt.Sprintf("  %q,", e.Entry))
+		}
 	}
 	lines = append(lines, "]")
 	return strings.Join(lines, "\n")
-}
-
-func formatString(s string) string {
-	return fmt.Sprintf("%q,", s)
-}
-
-func formatMountEntry(e mountEntry) string {
-	entry := e.src
-	if e.dst != "" {
-		entry += ":" + e.dst
-	}
-	if e.comment != "" {
-		return fmt.Sprintf("%q, # %s", entry, e.comment)
-	}
-	return formatString(entry)
 }
