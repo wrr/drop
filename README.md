@@ -255,14 +255,14 @@ in this case the id is `home-alice-code`.
 
 ## Running
 
-These are commands to work with Drop:
+The commands to work with Drop are:
 
  * `drop` - shows help
  * `drop init ENV_ID` - creates a new Drop environment. If ENV_ID is
    not given, the current working directory is used to construct
    ENV_ID
  * `drop run -e ENV_ID program args` - runs a program in a Drop
-   environment. For example `drop run ps aux`, if program and args are
+   environment. For example, `drop run -e vault13 ps aux`, if program and args are
    not given, shell is started. If `-e ENV_ID` is not given, the
    current working directory is used to construct ENV_ID.
  * `drop ls` - lists created environments
@@ -491,6 +491,10 @@ readers familiar with Linux internals:
   from host, other devices are not exposed by default.
 * Mounts `/etc`, `/usr`, `/bin`, `/lib`, `/lib32`, `/lib64`, `/sbin`
   from host in read-only mode.
+* For sandboxed processes that have terminal passed as stdin, stdout
+  or stderr, allocates new pseudoterminal in the sandbox and forwards
+  input and output data between this pseudoterminal and the original
+  terminal device from the host.
 
 Drop environments with the same id:
 * share environment-specific home dir and (less importantly)
