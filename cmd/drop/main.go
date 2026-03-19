@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime/debug"
 
 	"github.com/wrr/drop/internal/cli"
 	"github.com/wrr/drop/internal/command"
@@ -27,7 +28,26 @@ import (
 	"github.com/wrr/drop/internal/updater"
 )
 
-var Version = "dev" // overridden by release binaries linker
+var Version = "" // overridden by release binaries linker
+
+func init() {
+	if Version == "" {
+		// Not a realease binary, but a binary installed from the git repo
+		// with `go install` or local development binary. Obtain the
+		// version from the build info and fallback to 'dev'.
+		if info, ok := debug.ReadBuildInfo(); ok {
+			v := info.Main.Version
+			if v != "" {
+				// Version info present (builder had access to the repo and
+				// git tags). This can be a clean version number, or with a
+				// '-dirty' suffix.
+				Version = v
+			} else {
+				Version = "dev"
+			}
+		}
+	}
+}
 
 func main() {
 	var exitCode int

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -35,8 +36,8 @@ func CheckForUpdate(currentVersion string) (string, error) {
 
 // A separate function to allow to change url in tests.
 func doCheckForUpdate(url, currentVersion string) (string, error) {
-	if currentVersion == "dev" {
-		return "", fmt.Errorf("development build, no version info available")
+	if strings.Contains(currentVersion, "dev") || strings.Contains(currentVersion, "dirty") {
+		return "", fmt.Errorf("development build")
 	}
 
 	client := &http.Client{Timeout: httpTimeout}
