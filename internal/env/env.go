@@ -59,6 +59,21 @@ func SetVars(env []string, varsToSet []config.EnvVar, envId string) []string {
 	return env
 }
 
+// Lookup returns value of an environment variable with a given
+// key. If such variable is not present, it returns false.
+func Lookup(env []string, key string) (string, bool) {
+	for _, envVar := range env {
+		varName, value, found := strings.Cut(envVar, "=")
+		if !found {
+			continue // Malformed
+		}
+		if varName == key {
+			return value, true
+		}
+	}
+	return "", false
+}
+
 func doFilter(env []string, patterns []string, keepMatched bool) []string {
 	var filtered []string
 

@@ -344,6 +344,15 @@ func RunChild() error {
 
 	filteredEnv := env.Filter(os.Environ(), cfg.Environ.ExposedVars)
 	envVars := env.SetVars(filteredEnv, cfg.Environ.SetVars, envId)
+	path, _ := env.Lookup(envVars, "PATH")
+	// Drop config can set or remove PATH, so use the changed value for
+	// LookPath. This is not very elegant, would be better to have a
+	// version of LookPath that takes envVars or PATH as an argument
+	// instead of using PATH from environ.
+	if err := os.Setenv("PATH", path); err != nil {
+		return fmt.Errorf("failed to set PATH environment variable: %v", err)
+	}
+
 	prog, err := exec.LookPath(execArgs[0]) // Searches PATH
 	if err != nil {
 		return fmt.Errorf("command not found: %v", err)

@@ -41,7 +41,7 @@ class Config:
         cover_path = Path(os.getcwd()) /  'cover'
         self.mounts += [str(cover_path) + "::rw"]
         self.blocked_paths = blocked_paths or []
-        self.environ_exposed_vars = environ_exposed_vars or []
+        self.environ_exposed_vars = environ_exposed_vars or ['PATH']
         self.environ_set_vars = environ_set_vars or []
         self.tcp_published_ports = tcp_published_ports or []
         self.tcp_host_ports = tcp_host_ports or []

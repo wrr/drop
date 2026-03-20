@@ -104,6 +104,61 @@ func TestFilter(t *testing.T) {
 	}
 }
 
+func TestLookup(t *testing.T) {
+	tests := []struct {
+		name      string
+		env       []string
+		key       string
+		wantValue string
+		wantFound bool
+	}{
+		{
+			name:      "key found",
+			env:       []string{"HOME=/home/alice", "PATH=/usr/bin"},
+			key:       "PATH",
+			wantValue: "/usr/bin",
+			wantFound: true,
+		},
+		{
+			name:      "key not found",
+			env:       []string{"HOME=/home/alice"},
+			key:       "PATH",
+			wantValue: "",
+			wantFound: false,
+		},
+		{
+			name:      "empty env",
+			env:       []string{},
+			key:       "PATH",
+			wantValue: "",
+			wantFound: false,
+		},
+		{
+			name:      "empty value",
+			env:       []string{"PATH="},
+			key:       "PATH",
+			wantValue: "",
+			wantFound: true,
+		},
+		{
+			name:      "value with equalssign",
+			env:       []string{"FOO=bar=baz"},
+			key:       "FOO",
+			wantValue: "bar=baz",
+			wantFound: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, found := Lookup(tt.env, tt.key)
+			if value != tt.wantValue || found != tt.wantFound {
+				t.Errorf("Lookup() = (%q, %v), want (%q, %v)", value, found, tt.wantValue, tt.wantFound)
+			}
+		})
+	}
+}
+
 func TestSetVars(t *testing.T) {
 	tests := []struct {
 		name      string

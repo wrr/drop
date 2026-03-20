@@ -93,7 +93,7 @@ class TestCore(base.TestBase):
             self.assertSuccess(result)
             self.assertEqual('', result.stdout.strip())
 
-            config = Config(environ_exposed_vars=['FOO'])
+            config = Config(environ_exposed_vars=['FOO', 'PATH'])
             result = self.drop_run(cmd, config=config)
             self.assertSuccess(result)
             self.assertEqual('bar', result.stdout.strip())
@@ -113,6 +113,13 @@ class TestCore(base.TestBase):
 
         finally:
             del os.environ['FOO']
+
+    def test_environ_clear_path(self):
+        self.drop_init()
+        config = Config(environ_set_vars=['PATH='])
+        result = self.drop_run('ls', config=config)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('command not found', result.stderr)
 
     def test_drop_env_set(self):
         """Test that DROP_ENV is set correctly"""
