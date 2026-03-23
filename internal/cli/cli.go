@@ -60,17 +60,19 @@ func Command(version string, handlers Handlers) *cli.Command {
 	defaultEnvId, _ := jailfs.CwdToEnvId()
 	var flags RunFlags
 	return &cli.Command{
-		Name:    "drop",
-		Usage:   "Run programs in a sandboxed environment",
-		Version: version,
+		Name:      "drop",
+		Usage:     "Run programs in sandboxed environments",
+		UsageText: "drop <command> [options]",
+		Version:   version,
 		ExitErrHandler: func(_ context.Context, _ *cli.Command, err error) {
 			// blank to avoid the call to os.Exit which drop makes explicitly in main
 		},
 		Commands: []*cli.Command{
 			{
-				Name:      "init",
-				Usage:     "Create a new Drop environment",
-				ArgsUsage: "<env-id>",
+				Name:        "init",
+				Usage:       "Create a new Drop environment",
+				ArgsUsage:   "[env-id]",
+				Description: "If env-id is not given, it is derived from the current working directory.",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "no-cwd",
@@ -92,8 +94,11 @@ func Command(version string, handlers Handlers) *cli.Command {
 				},
 			},
 			{
-				Name:         "run",
-				Usage:        "Run a command in the sandbox",
+				Name:  "run",
+				Usage: "Run a command in a Drop environment",
+				Description: `If -e is not given, env-id is derived from the current working directory.
+If -c is not given, the config file is ENV_ID.toml in the Drop config directory.
+The -m, -t, -T, -u, -U options are appended to options from the TOML config file.`,
 				ArgsUsage:    "[command...]",
 				StopOnNthArg: intPtr(1),
 				Flags: []cli.Flag{
@@ -190,9 +195,10 @@ func Command(version string, handlers Handlers) *cli.Command {
 				},
 			},
 			{
-				Name:      "update",
-				Usage:     "Check if new version of drop is available",
-				ArgsUsage: " ",
+				Name:        "update",
+				Usage:       "Check if a new version of Drop is available",
+				ArgsUsage:   " ",
+				Description: "The --check flag is currently required. Automatic updating is not yet available.",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "check",

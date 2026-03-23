@@ -257,17 +257,16 @@ in this case the id is `home-alice-code`.
 
 The commands to work with Drop are:
 
- * `drop` - shows help
- * `drop init ENV_ID` - creates a new Drop environment. If ENV_ID is
-   not given, the current working directory is used to construct
-   ENV_ID
- * `drop run -e ENV_ID program args` - runs a program in a Drop
-   environment. For example, `drop run -e vault13 ps aux`, if program and args are
-   not given, shell is started. If `-e ENV_ID` is not given, the
-   current working directory is used to construct ENV_ID.
- * `drop ls` - lists created environments
- * `drop rm ENV_ID` - removes an environment
- * `drop update --check` - checks if a new version of Drop is available
+ * `drop` - show help
+ * `drop init [ENV_ID]` - create a new Drop environment. If ENV_ID is
+   not given, it is derived from the current working directory.
+ * `drop run [-e ENV_ID] [command...]` - run a command in a Drop
+   environment. For example, `drop run -e vault13 ps aux`, if command is
+   not given, a shell is started. If `-e ENV_ID` is not
+   given, it is derived from the current working directory.
+ * `drop ls` - list created environments
+ * `drop rm <ENV_ID>` - remove an environment
+ * `drop update --check` - check if a new version of Drop is available
 
 
 ## Config files
