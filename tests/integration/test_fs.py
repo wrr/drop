@@ -301,12 +301,17 @@ class TestFS(TestBase):
 
     def test_run(self):
         self.drop_init()
-        # Test that /run directory is empty
+        # Test that /run has a single entry: user/UID
         cmd = 'bash -c "ls -A /run | wc -l"'
         result = self.drop_run(cmd)
         self.assertSuccess(result)
         line_count = int(result.stdout.strip())
-        self.assertEqual(0, line_count)
+        self.assertEqual(1, line_count)
+
+        uid = os.getuid()
+        cmd = f'test -d /run/user/{uid}'
+        result = self.drop_run(cmd)
+        self.assertSuccess(result)
 
     def test_etc(self):
         self.drop_init()

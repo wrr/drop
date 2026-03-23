@@ -66,12 +66,16 @@ type root struct {
 	fsRoot string
 }
 
+func (rt *root) fromRoot(path string) string {
+	return filepath.Join(rt.fsRoot, path)
+}
+
 // mount is the entry point for all mount calls that assemble the root
 // filesystem. target argument is relative to FsRoot. mount ensures
 // that trg exists, if it is missing creates directory with
 // permissions 0700 at the target.
 func (rt *root) mount(src, trg, fstype string, flags uintptr, data string) (err error) {
-	absTrg := filepath.Join(rt.fsRoot, trg)
+	absTrg := rt.fromRoot(trg)
 	if !osutil.Exists(absTrg) {
 		if err := osutil.MkdirAll(absTrg); err != nil {
 			return err
@@ -84,7 +88,7 @@ func (rt *root) mount(src, trg, fstype string, flags uintptr, data string) (err 
 }
 
 func (rt *root) bindFile(src, trg string, mountflags uintptr) error {
-	absTrg := filepath.Join(rt.fsRoot, trg)
+	absTrg := rt.fromRoot(trg)
 	// Mount destination must exist, create an empty file to be the
 	// destination mount point
 	if _, err := os.Stat(absTrg); os.IsNotExist(err) {
@@ -104,7 +108,7 @@ func (rt *root) bind(src, trg string, mountflags uintptr, recursive_ro bool) err
 	if err := rt.mount(src, trg, "", mountflags, ""); err != nil {
 		return fmt.Errorf("bind %v", err)
 	}
-	absTrg := filepath.Join(rt.fsRoot, trg)
+	absTrg := rt.fromRoot(trg)
 	// mount and remount is needed for RDONLY to work:
 	// https://github.com/containerd/containerd/issues/1368
 	// but even then RDONLY applies only to the top level mount.
@@ -134,7 +138,7 @@ func (rt *root) bindAll(mounts []config.Mount, flags uintptr) error {
 		if !m.RW {
 			rdonly |= unix.MS_RDONLY
 		}
-		hostTrg := filepath.Join(rt.fsRoot, trg)
+		hostTrg := rt.fromRoot(trg)
 
 		if srcInfo, err := os.Stat(src); err == nil {
 
@@ -196,7 +200,7 @@ func (rt *root) mountRootSubDirs() error {
 			return fmt.Errorf("failed to stat %s: %v", dir, err)
 		}
 
-		dstDir := filepath.Join(rt.fsRoot, dir)
+		dstDir := rt.fromRoot(dir)
 
 		if info.Mode()&os.ModeSymlink != 0 {
 			// dir is a symbolic link, copy it (on many distros /bin /sbin
@@ -248,7 +252,11 @@ func (rt *root) mountEtc(paths *Paths) error {
 
 func (rt *root) mountRun() error {
 	flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV)
-	return rt.mount("run", "/run", "tmpfs", flags, "mode=700")
+	if err := rt.mount("run", "/run", "tmpfs", flags, "mode=700"); err != nil {
+		return err
+	}
+	userRun := fmt.Sprintf("/run/user/%d", os.Getuid())
+	return osutil.MkdirAll(rt.fromRoot(userRun))
 }
 
 func (rt *root) mountDev() error {
@@ -293,7 +301,7 @@ func (rt *root) mountDev() error {
 		"fd":     "/proc/self/fd",
 		"core":   "/proc/kcore",
 	}
-	devTrg := filepath.Join(rt.fsRoot, "/dev")
+	devTrg := rt.fromRoot("/dev")
 	for name, target := range symlinks {
 		if err := os.Symlink(target, devTrg+"/"+name); err != nil {
 			return fmt.Errorf("failed to create %s symlink: %v", name, err)
@@ -336,7 +344,7 @@ func (rt *root) mountVar(paths *Paths) error {
 // mounting empty files/directories over them.
 func (rt *root) blockEntries(paths *Paths, entries []string) error {
 	for _, blockedPath := range entries {
-		fullPath := filepath.Join(paths.FsRoot, blockedPath)
+		fullPath := rt.fromRoot(blockedPath)
 		info, err := os.Stat(fullPath)
 		if os.IsNotExist(err) {
 			// Path doesn't exist, nothing to block

@@ -76,7 +76,6 @@ func Lookup(env []string, key string) (string, bool) {
 
 func doFilter(env []string, patterns []string, keepMatched bool) []string {
 	var filtered []string
-
 	for _, envVar := range env {
 		varName, _, found := strings.Cut(envVar, "=")
 		if !found {

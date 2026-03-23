@@ -120,7 +120,7 @@ exposed_vars = [
   "XDG_DATA_DIRS",
   "XDG_CONFIG_DIRS",
   "XDG_CACHE_HOME",
-  "XDG_RUNTIME_DIRS",
+  "XDG_RUNTIME_DIR",
   "SHELL",
   "LC_*",
   "XTERM_SHELL",
