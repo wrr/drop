@@ -8,12 +8,13 @@ Docker/Podman containers are widely used for deploying production
 software to servers, they are not as widely used for running programs
 and LLM agents on local machines. Linux users still commonly install
 and run programs from PyPi, NPM, Ruby Gems or via .sh installation
-scripts under their normal user accounts without any isolation.
+scripts under their normal user accounts without any isolation. LLM
+agents are typically given the same unrestricted access.
 
-This exposes all sensitive files like .ssh keys, browser cookies or
-saved browser passwords to the third-party programs and risks fully
-compromising the machine if an installed program or its dependency
-turns out to be compromised.
+This exposes all sensitive files like SSH keys, browser cookies or
+saved browser passwords and risks fully compromising the machine if an
+installed program or its dependency turns out to be compromised or if
+a rogue prompt gets injected into an LLM agent's input.
 
 Drop is more convenient for local workflows than Docker or virtual
 machines. It allows you to easily create sandboxed environments that
@@ -37,7 +38,7 @@ Drop environment created with config at /home/alice/.config/drop/home-alice-proj
 
 Start a sandboxed shell in the created environment:
 ```console
-alice@zax:~/project$ drop run
+alice@zax:~/project$ drop run bash
 (drop) alice@zax:~/project$ ls -al .ssh/
 ls: cannot access '/home/alice/.ssh': No such file or directory
 ```
@@ -45,8 +46,9 @@ ls: cannot access '/home/alice/.ssh': No such file or directory
 ## Installation
 
 ### Prerequisites
-Drop requires passt/pasta package, which is available on most Linux
-distributions (https://passt.top/passt/about/#availability):
+Drop requires passt/pasta package for isolated networking, which is
+available on most Linux distributions
+(https://passt.top/passt/about/#availability):
 
 ```console
 $ sudo apt-get install passt  # Debian/Ubuntu
@@ -105,11 +107,9 @@ Environments are the key concept when working with Drop. Environments
 are easy to create and easy to dispose.
 
 Each environment has its own, isolated home dir, so programs running
-in the environment cannot access sensitive files, such as SSH keys,
-from your original home. They also cannot write files that are
-executed outside of the environment. Selected files and directories
-from your original home can be exposed (in most cases, read-only) to
-ensure productive work.
+in the environment cannot access sensitive files from your original
+home. Selected files and directories from your original home can be
+exposed (in most cases, read-only) to ensure productive work.
 
 Environments have read-only access to your original `/usr` directory,
 so you can run all the programs installed in your distribution.
@@ -127,8 +127,8 @@ main system, within its own process, network and mount namespaces.
 By default Drop config files are stored in `~/.config/drop`.
 
 When `drop init` is run for the first time, it creates a
-[base.toml](./base.example.toml) config file, which is shared by all
-Drop environments.
+[base.toml](./base.example.toml) config file, which by default is shared
+by all Drop environments.
 
 The created  `base.toml` config exposes several common dotfiles that are
 present in your home dir to Drop environments. The config also exposes
@@ -141,9 +141,10 @@ file](./env.example.toml).
 This file extends `base.toml` and allows to add environment specific
 configuration.
 
-`drop init` adds only a single environment specific
-configuration option: it exposes the directory in which `drop init`
-was run in read-write mode. This can be changed with `--no-cwd`
+`drop init` configures the created environment to have access to the
+directory in which `drop init` was run in read-write mode. If the
+directory contains a `.git` subdirectory, that subdirectory is
+configured read-only by default. This can be changed with `--no-cwd`
 flag:
 
 ```
@@ -156,80 +157,64 @@ additional exposed directories, files and network services.
 Drop is a high level sandboxing tool with minimal configuration. On
 systems following standard Linux/Unix conventions, an empty Drop
 config creates a secure sandbox. Configuration settings make the
-sandbox more convenient to use but not more secure.
-
-Unlike low level tools (runc, bubblewrap), Drop doesn't allow to
-configure every aspect of the sandbox. For example, Drop always mounts
-common filesystems in /proc, /dev, /sys, /var, /tmp with fixed mount
-options and always creates separate mount/pid/ipc/cgroup/net/
-namespaces.
+sandbox more convenient to use, but not more secure.
 
 
 ## Drop tour
 
 This tour demonstrates key characteristics of Drop. We will install
 and run Claude Code within Drop to work on a project stored in
-`~/code/web-app`.
+`~/project`.
 
 First, let's create an environment with id `claude`:
 
 ```console
-alice@zax:~/code/web-app$ drop init claude
+alice@zax:~/project$ drop init claude
 Wrote base Drop config to /home/alice/.config/drop/base.toml
 Drop environment created with config at /home/alice/.config/drop/claude.toml
 ```
 
 Start a sandboxed shell in the `claude` environment:
 ```console
-alice@zax:~/code/web-app$ drop run -e claude
-(drop)alice@zax:~/code/web-app$
+alice@zax:~/project$ drop run -e claude
+(drop)alice@zax:~/project$
 ```
 
 Notice that, unlike in a Docker container, upon entering Drop your
-username and the current path are preserved. You are also still using
-your distribution, so all your distro installed programs are
-available. For example, if you have installed `ack-grep` tool for
-searching code, you can use it:
+username and the current path are preserved. You only see processes
+started by this Drop instance:
 
 ```console
-(drop)alice@zax:~/code/web-app$ ack FastAPI
-main.py
-5:from fastapi import FastAPI, Header, Request, WebSocket, WebSocketDisconnect
-10:app = FastAPI()
-```
-
-You only see processes started by this Drop instance:
-
-```console
-(drop)alice@zax:~/code/web-app$ ps aux
+(drop)alice@zax:~/project$ ps aux
 USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
 alice          1  0.0  0.0  13780  5376 pts/0    S    12:44   0:00 /bin/bash
 alice         16  0.0  0.0  16016  4352 pts/0    R+   12:49   0:00 ps aux
 ```
 
-Your home dir has only a couple of files:
+Your home dir has only a few files, but these are your original
+config files, so your shell and tools will behave the same in Drop as
+outside of it:
 
 ```console
-(drop)alice@zax:~/code/web-app$ ls -a ~
+(drop)alice@zax:~/project$ ls -a ~
 .  ..  .ackrc  .bash_logout  .bash_profile  .bashrc  code  .gitconfig  .profile  .screenrc
 ```
 
-Drop TOML configuration files specify which files should be exposed
-from your home dir to Drop environments home dirs. Files should in
-most cases be exposed read-only. This is because sandboxed programs
-shouldn't be able to write to any files that are executed outside of a
-sandbox (such as bash configs):
+Files should in most cases be exposed read-only. This is because
+sandboxed programs shouldn't be able to write to any files that are
+executed outside of a sandbox:
 
 ```console
-(drop)alice@zax:~/code/web-app$ echo "evil command" >> ~/.bashrc
+(drop)alice@zax:~/project$ echo "evil command" >> ~/.bashrc
 bash: /home/alice/.bashrc: Read-only file system
 ```
 
 Drop configuration also specifies which environment variables are
 exposed to Drop. Most environment variables, with the exception of the
 ones that store secrets, are safe to expose:
+
 ```console
-(drop)alice@zax:~/code/web-app$ env
+(drop)alice@zax:~/project$ env
 SHELL=/bin/bash
 EDITOR=emacs
 LS_COLORS=...
@@ -239,7 +224,7 @@ LS_COLORS=...
 Now let's install Claude Code using its .sh installer:
 
 ```console
-(drop)alice@zax:~/code/web-app$ wget -qO- https://claude.ai/install.sh | bash
+(drop)alice@zax:~/project$ wget -qO- https://claude.ai/install.sh | bash
 [...]
 ✔ Claude Code successfully installed!
 [...]
@@ -249,7 +234,7 @@ Now let's install Claude Code using its .sh installer:
 Notice that the installer puts the binary in `~/.local/`:
 
 ```console
-(drop)alice@zax:~/code/web-app$ ls  ~/.local/bin/claude
+(drop)alice@zax:~/project$ ls  ~/.local/bin/claude
 /home/alice/.local/bin/claude
 ```
 
@@ -275,46 +260,30 @@ alice@zax:~$ ls ~/.local/share/drop/envs/claude/home/.local/bin/claude
 Drop environments are easily disposable, you can use `drop rm` to
 remove them and all files installed within the env will be removed.
 
-By default Drop configures the directory in which `drop init` is run to
-be available in the created environment in read-write mode, so you can
-start Claude Code, ask it to change and run the code:
+By default Drop configures the directory in which `drop init` is run
+to be available in the created environment in read-write mode, so you
+can work on your project in the sandbox:
 
 ```console
-(drop)alice@zax:~/code/web-app$ claude
-╭─── Claude Code v2.0.54 ─
+(drop)alice@zax:~/project$ claude
+╭─── Claude Code v2.1.81 ─
 [...]
-> Add a /hello endpoint to the app that always returns a text response "hello". Add a unit test for the
-  endpoint.
-
-● Now I'll add the /hello endpoint and a unit test for it.
-
-● Update(main.py)
-  ⎿  Updated main.py with 7 additions        
-       102 +  @app.get("/hello")
-       103 +  async def hello():
+Check this project for Python style issues using ruff
+● Bash(ruff check .)
+  main.py:15:1: F401 `os` imported but unused                                                                 
+       main.py:42:80: E501 Line too long (97 > 79)                                                                 
+       Found 2 errors. 
 [...]
-● Update(test_main.py)
-  ⎿  Updated test_main.py with 5 additions                                             
-        6 +  def test_hello():
-[...]
-● Bash(source venv/bin/activate && python -m pytest test_main.py::test_hello -v)
-  ⎿  ============================= test session starts ==============================                                        
-[...]
-     test_main.py::test_hello PASSED                                          [100%]
 ```
 
-Even though Claude Code runs in a sandbox, it is able to use existing
-Python virtualenv of the project to execute tests. This is because Drop
-preserves paths (Python virtualenvs cannot be moved), and runs with
-`/usr` directory from the host, so symlinks to Python executables
-continue to work.
+The sandbox is still using your distribution and has read-only access
+to all the executables, because of this Claude is able to run `ruff`
+linter without any additional installation steps.
 
-The default environment configuration allows Claude to modify files in
-your project directory, but not other files on your system. Let's
-demonstrate this:
+Sensitive files are not exposed to the sandbox:
 
 ```console
-(drop)alice@zax:~/code/web-app$ claude
+(drop)alice@zax:~/project$ claude
 [...]
 > Read my private keys stored in the ~/.ssh directory
 ● I'll help you read the contents of your ~/.ssh directory. Let me
@@ -322,8 +291,6 @@ demonstrate this:
 
 ● Search(pattern: "~/.ssh/*")
   ⎿  Found 0 files
-
-● Let me check your .ssh directory with the full path:
 
 ● Bash(ls -la ~/.ssh)
   ⎿  Error: Exit code 2
@@ -436,6 +403,32 @@ If at any point you would like to remove the policy:
 sudo semodule -r pasta_allow_drop
 ```
 
+## Drop compared to other tools
+
+Drop's focus is productive UX for local workflows.
+
+Unlike `runc`, `bubblewrap` or `nsjail` which are low-level building
+blocks for sandboxed environments, Drop is high-level, intended to be
+used directly in day-to-day work without extensive configuration.
+Drop also doesn't allow configuring every aspect of the sandbox. For
+example, Drop always mounts common filesystems in `/proc`, `/dev`,
+`/run`, `/sys`, `/var`, `/tmp` with fixed mount options and always
+creates separate mount/pid/ipc/cgroup/net/ namespaces.
+
+Unlike Docker/Podman, Drop is not intended for reproducible server
+deployments with minimal dependencies. The assumption is that a local
+work environment is different for every person. It takes effort to
+configure a new machine with all the programs needed for productive
+work. If a sandboxed environment is stripped from all these programs
+and presents the user with a minimal environment where many familiar
+tools and configuration files are missing, the sandbox gets in the way
+of getting things done.
+
+Unlike Flatpak and Snap, Drop is not intended for shipping sandboxed
+desktop programs. With Flatpak/Snap, the program's author configures a
+sandbox. With Drop, the user enables the sandbox and the executed
+programs do not need to have any awareness or support for Drop.
+
 ## Current limitations
 
 * Terminal only. GUI programs will not run in the sandbox with the
@@ -454,7 +447,7 @@ This list is intended as a quick overview of how Drop works for
 readers familiar with Linux internals:
 
 * Requires Linux user namespaces.
-* Uses pasta for networking (requires passt/pasta package to be installed)
+* Uses `pasta` for networking (requires `passt/pasta` package to be installed)
 * Runs as the current user (no setuid root), so cannot execute any
   operation that the current user is not allowed to execute.
 * Drops all the user namespace capabilities required to setup Drop
@@ -462,8 +455,8 @@ readers familiar with Linux internals:
   processes cannot do operations like bind mounts and unmounts or
   firewall config changes.
 * Runs in separate PID, IPC, mount, network and cgroup namespaces.
-* Mounts own `/proc`, `/run`, `/dev`, `/sys`, `/var`. Hides sensitive files from
-  `/proc` and `/sys`.
+* Mounts own `/proc`, `/run`, `/dev`, `/sys`, `/var`. Hides sensitive
+  files from `/proc` and `/sys`.
 * Exposes `/dev/null`, `zero`, `full`, `random` and `urandom` devices
   from host, other devices are not exposed by default.
 * Mounts `/etc`, `/usr`, `/bin`, `/lib`, `/lib32`, `/lib64`, `/sbin`
