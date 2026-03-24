@@ -1,4 +1,4 @@
-# Drop - sandbox programs and agents on Linux, but stay productive
+# Drop - productivity-focused sandboxing for Linux
 
 
 ## Why Drop?
