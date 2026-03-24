@@ -69,10 +69,16 @@ func Command(version string, handlers Handlers) *cli.Command {
 		},
 		Commands: []*cli.Command{
 			{
-				Name:        "init",
-				Usage:       "Create a new Drop environment",
-				ArgsUsage:   "[env-id]",
-				Description: "If env-id is not given, it is derived from the current working directory.",
+				Name:      "init",
+				Usage:     "Create a new Drop environment",
+				ArgsUsage: "[env-id]",
+				Description: `If env-id is not given, it is derived from the current working directory.
+
+The created environment is configured to have read-write access to the current
+working directory with the exception of the .git folder, which is configured
+read-only. This can be changed by passing the --no-cwd flag or by editing
+the TOML config file of the created environment.
+`,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "no-cwd",
