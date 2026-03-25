@@ -1,47 +1,68 @@
 # Drop - productivity-focused sandboxing for Linux
 
-
-## Why Drop?
-
-Even though process isolation solutions such as virtual machines or
-Docker/Podman containers are widely used for deploying production
-software to servers, they are not as widely used for running programs
-and LLM agents on local machines. Linux users still commonly install
-and run programs from PyPi, NPM, Ruby Gems or via .sh installation
-scripts under their normal user accounts without any isolation. LLM
-agents are typically given the same unrestricted access.
-
-This exposes all sensitive files like SSH keys, browser cookies or
-saved browser passwords and risks fully compromising the machine if an
-installed program or its dependency turns out to be compromised or if
-a rogue prompt gets injected into an LLM agent's input.
-
-Drop is more convenient for local workflows than Docker or virtual
-machines. It allows you to easily create sandboxed environments that
-isolate executed programs while preserving as many aspects of your
-work environment as possible. Drop uses your existing distribution -
-your installed programs, your username, filesystem paths, config files
-carry over into the sandbox. There are no images to build or maintain.
-
+Drop allows you to easily create sandboxed environments that isolate
+executed programs and LLM agents while preserving as many aspects of
+your work environment as possible. Drop uses your existing
+distribution, so all the programs you've installed are available in
+the sandbox. Your username is preserved, and selected configuration
+files remain readable in the sandbox.
 
 ## Quick start
 
-Create a new Drop environment. The created environment gets its own
-home dir with selected files and dirs from your original home available
-in read-only mode. By default the environment has access to your
-current working directory in read-write mode.
+The workflow is inspired by Python's virtualenv: create an easily
+disposable environment, enter it, work normally - but with enforced
+sandboxing.
+
+To create a new Drop environment you simply:
 
 ```console
 alice@zax:~/project$ drop init
 Drop environment created with config at /home/alice/.config/drop/home-alice-project.toml
 ```
 
-Start a sandboxed shell in the created environment:
+To start a sandboxed shell in the created environment:
+
 ```console
 alice@zax:~/project$ drop run bash
-(drop) alice@zax:~/project$ ls -al .ssh/
-ls: cannot access '/home/alice/.ssh': No such file or directory
 ```
+
+The created environment gets its own writeable home dir with selected
+files and dirs from your original home available in read-only mode. By
+default the environment has access to your current working directory
+in read-write mode:
+
+```console
+(drop)alice@zax:~/project$ file ~/.bashrc
+/home/alice/.bashrc: ASCII text
+(drop)alice@zax:~/project$ file ~/.ssh
+/home/alice/.ssh: cannot open `/home/alice/.ssh' (No such file or directory)
+(drop)alice@zax:~/project$ echo "evil command" >> ~/.bashrc
+bash: /home/alice/.bashrc: Read-only file system
+```
+
+## Sandbox overview
+
+Drop uses a Linux mount namespace to arrange its own root filesystem, hiding the original host file system:
+
+* `/usr`, `/bin`, `/sbin`, `/lib`, `/etc` are bind mounted from the host in read-only mode.
+* Fresh `/proc`, `/run`, `/dev`, `/sys` are mounted.
+* Each Drop environment gets its own writable and persistent home dir,
+  `/tmp` and `/var`. The original user home dir is hidden.
+* By default, new Drop environments are configured to mount the
+  directory in which the environment was initialized in read-write
+  mode.
+
+A TOML configuration file specifies which other dirs and files from the
+host should be mounted to the sandbox. Default config mounts common
+configuration files, such as `~/.bashrc`, executables dirs, such as
+`~/.local/bin`, all in read-only mode.
+
+In addition to filesystem restriction, the sandbox has:
+
+* own process and IPC namespaces, so it only sees and can interact
+  with processes from the sandbox.
+* own network namespace which, by default, allows external network
+  access, but disallows access to services running on localhost.
 
 ## Installation
 
@@ -99,27 +120,6 @@ The commands to work with Drop are:
  * `drop ls` - list created environments
  * `drop rm <ENV_ID>` - remove an environment
  * `drop update --check` - check if a new version of Drop is available
-
-
-## Drop environments
-
-Environments are the key concept when working with Drop. Environments
-are easy to create and easy to dispose.
-
-Each environment has its own, isolated home dir, so programs running
-in the environment cannot access sensitive files from your original
-home. Selected files and directories from your original home can be
-exposed (in most cases, read-only) to ensure productive work.
-
-Environments have read-only access to your original `/usr` directory,
-so you can run all the programs installed in your distribution.
-
-By default, environments share a common configuration that controls
-which files, network services, and environment variables are exposed
-from your system.
-
-When you start a program in an environment, it runs isolated from your
-main system, within its own process, network and mount namespaces.
 
 
 ## Configuration
@@ -410,10 +410,6 @@ Drop's focus is productive UX for local workflows.
 Unlike `runc`, `bubblewrap` or `nsjail` which are low-level building
 blocks for sandboxed environments, Drop is high-level, intended to be
 used directly in day-to-day work without extensive configuration.
-Drop also doesn't allow configuring every aspect of the sandbox. For
-example, Drop always mounts common filesystems in `/proc`, `/dev`,
-`/run`, `/sys`, `/var`, `/tmp` with fixed mount options and always
-creates separate mount/pid/ipc/cgroup/net/ namespaces.
 
 Unlike Docker/Podman, Drop is not intended for reproducible server
 deployments with minimal dependencies. The assumption is that a local
@@ -455,26 +451,12 @@ readers familiar with Linux internals:
   processes cannot do operations like bind mounts and unmounts or
   firewall config changes.
 * Runs in separate PID, IPC, mount, network and cgroup namespaces.
-* Mounts own `/proc`, `/run`, `/dev`, `/sys`, `/var`. Hides sensitive
-  files from `/proc` and `/sys`.
 * Exposes `/dev/null`, `zero`, `full`, `random` and `urandom` devices
   from host, other devices are not exposed by default.
-* Mounts `/etc`, `/usr`, `/bin`, `/lib`, `/lib32`, `/lib64`, `/sbin`
-  from host in read-only mode.
 * For sandboxed processes that have terminal passed as stdin, stdout
   or stderr, allocates new pseudoterminal in the sandbox and forwards
   input and output data between this pseudoterminal and the original
   terminal device from the host.
-
-Drop environments with the same id:
-* share environment-specific home dir and (less importantly)
-  `/var`. By default these are mounted from
-  `.drop/envs/ENV_ID/{home|var}`.
-* share `/tmp`. `/tmp` in Drop is a subdir of the host's `/tmp`, so the
-  standard `/tmp` cleanup mechanism applies to it.
-* share modifications of `/etc`. Files stored in `.drop/envs/ENV_ID/etc`
-  are a read-only upper layer of overlayfs over the original `/etc` and
-  take priority over the original content of `/etc`.
 
 
 ## Building Drop from source
