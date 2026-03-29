@@ -26,10 +26,11 @@ To start a sandboxed shell in the created environment:
 alice@zax:~/project$ drop run bash
 ```
 
-The created environment gets its own writeable home dir with selected
+The created environment gets its own writable home dir with selected
 files and dirs from your original home available in read-only mode. By
 default the environment has access to your current working directory
-in read-write mode:
+in read-write mode, with the exception of the `.git` subdirectory,
+which is read-only:
 
 ```console
 (drop)alice@zax:~/project$ file ~/.bashrc
@@ -50,7 +51,8 @@ Drop uses a Linux mount namespace to arrange its own root filesystem, hiding the
   `/tmp` and `/var`. The original user home dir is hidden.
 * By default, new Drop environments are configured to mount the
   directory in which the environment was initialized in read-write
-  mode.
+  mode, with the exception of the `.git` subdirectory, which is
+  read-only.
 
 A TOML configuration file specifies which other dirs and files from the
 host should be mounted to the sandbox. Default config mounts common
@@ -68,8 +70,7 @@ In addition to filesystem restriction, the sandbox has:
 
 ### Prerequisites
 Drop requires passt/pasta package for isolated networking, which is
-available on most Linux distributions
-(https://passt.top/passt/about/#availability):
+[available on most Linux distributions](https://passt.top/passt/about/#availability):
 
 ```console
 $ sudo apt-get install passt  # Debian/Ubuntu
@@ -93,7 +94,9 @@ install -m 755 drop ~/.local/bin/
 
 ### Installing with Go
 
-Requires [Go compiler](https://go.dev/doc/install) (1.24+)
+An alternative to downloading the release binaries is to use the [Go
+compiler](https://go.dev/doc/install) (1.24+) to build and install
+Drop with a single command:
 
 ```
 CGO_ENABLED=0 go install github.com/wrr/drop/cmd/drop@latest
@@ -439,8 +442,7 @@ programs do not need to have any awareness or support for Drop.
 
 
 ## Drop technical characteristics
-This list is intended as a quick overview of how Drop works for
-readers familiar with Linux internals:
+A quick overview of how Drop works:
 
 * Requires Linux user namespaces.
 * Uses `pasta` for networking (requires `passt/pasta` package to be installed)
