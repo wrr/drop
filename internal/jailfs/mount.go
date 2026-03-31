@@ -38,9 +38,9 @@ import (
 // "/proc/irq",
 // "/proc/sys",
 // "/proc/sysrq-trigger"
-// We skip this step, Linux already makes these paths writable by root
-// only, perhaps this is needed in case container is started as root,
-// which Drop doesn't allow.
+// We skip this step, Linux already makes these paths writable by real
+// host root only, perhaps this is needed in case container is started
+// as root, which Drop doesn't allow.
 //
 // The motivation for blocking /sys/firmware is here:
 // https://github.com/moby/moby/pull/26618
