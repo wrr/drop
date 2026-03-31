@@ -188,7 +188,7 @@ func (rt *root) mountRootSubDirs() error {
 	// need to be still available in the user namespace.  If dropping
 	// mounts by not using MS_REC option was possible, it would enable
 	// exposing of the hidden content (See man mount_namespaces).
-	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_RDONLY | unix.MS_PRIVATE)
+	flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_REC | unix.MS_RDONLY | unix.MS_PRIVATE)
 	dirs := []string{"/usr", "/bin", "/lib", "/lib32", "/lib64", "/sbin"}
 
 	for _, dir := range dirs {
@@ -229,7 +229,7 @@ func (rt *root) mountRootSubDirs() error {
 // Jail hides the real user's home dir from the host. Home dirs are
 // shared by jails with the same environment id.
 func (rt *root) mountHome(paths *Paths) error {
-	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_PRIVATE)
+	flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_REC | unix.MS_PRIVATE)
 	return rt.bind(paths.Home, paths.HostHome, flags, true)
 }
 
@@ -312,7 +312,8 @@ func (rt *root) mountDev() error {
 }
 
 func (rt *root) mountTmp(paths *Paths) error {
-	return rt.bind(paths.Tmp, os.TempDir(), 0, true)
+	flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV)
+	return rt.bind(paths.Tmp, os.TempDir(), flags, true)
 }
 
 func (rt *root) mountProc() error {
@@ -468,7 +469,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	}
 
 	// MS_REC is required, see the comment in mountRootSubDirs
-	flags := uintptr(unix.MS_NOSUID | unix.MS_REC | unix.MS_PRIVATE)
+	flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_REC | unix.MS_PRIVATE)
 	if err := rt.bindAll(mounts, flags); err != nil {
 		return err
 	}
