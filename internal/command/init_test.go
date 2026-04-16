@@ -113,6 +113,23 @@ func TestInitEnv(t *testing.T) {
 		}
 	})
 
+	t.Run("unwritable config dir returns error", func(t *testing.T) {
+		_, dropHome, _ := setupTestInit(t)
+
+		configDir := filepath.Join(dropHome, "config")
+		if err := os.MkdirAll(configDir, 0500); err != nil {
+			t.Fatalf("mkdirall failed: %v", err)
+		}
+		t.Cleanup(func() {
+			os.Chmod(configDir, 0700)
+		})
+
+		err := InitEnv("myenv", false, filepath.Join(dropHome, "home"), dropHome)
+		if err == nil || !strings.Contains(err.Error(), "failed to write default config") {
+			t.Fatalf("expected error when config dir is not writable, got: %v", err)
+		}
+	})
+
 	t.Run("Existing env returns error", func(t *testing.T) {
 		homeDir, dropHome, _ := setupTestInit(t)
 
