@@ -46,7 +46,7 @@ import (
 // invokes RunChild.
 func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 	var configPath string
-	if !osutil.Exists(jailfs.EnvPath(dropHome, flags.EnvId)) {
+	if !osutil.CanStat(jailfs.EnvPath(dropHome, flags.EnvId)) {
 		return fmt.Errorf("environment %q doesn't exist, run 'drop init %v' to create it", flags.EnvId, flags.EnvId)
 	}
 	if flags.ConfigPath == "" {

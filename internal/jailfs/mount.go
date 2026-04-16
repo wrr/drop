@@ -76,7 +76,7 @@ func (rt *root) fromRoot(path string) string {
 // permissions 0700 at the target.
 func (rt *root) mount(src, trg, fstype string, flags uintptr, data string) (err error) {
 	absTrg := rt.fromRoot(trg)
-	if !osutil.Exists(absTrg) {
+	if !osutil.CanStat(absTrg) {
 		if err := osutil.MkdirAll(absTrg); err != nil {
 			return err
 		}

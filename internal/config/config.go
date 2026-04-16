@@ -205,7 +205,7 @@ func Read(path string, homeDir string) (*Config, error) {
 	}
 	config, err := r.read(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config %s: %v", path, err)
+		return nil, fmt.Errorf("read config %s: %v", path, err)
 	}
 	return config, err
 }
@@ -242,7 +242,7 @@ func (r *reader) parse(configStr string, configDir string) (*Config, error) {
 	var cfg *Config = &Config{}
 	meta, err := toml.Decode(configStr, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse config: %v", err)
+		return nil, err
 	}
 	if undecoded := meta.Undecoded(); len(undecoded) > 0 {
 		return nil, fmt.Errorf("unrecognized key: %s", undecoded[0].String())

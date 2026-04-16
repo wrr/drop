@@ -251,7 +251,7 @@ func keepExistingEntries(entries []DefaultMount, homeDir string) []DefaultMount 
 	for _, e := range entries {
 		src := strings.SplitN(e.Entry, ":", 2)[0]
 		path := osutil.TildeToHomeDir(src, homeDir)
-		if osutil.Exists(path) {
+		if osutil.CanStat(path) {
 			existing = append(existing, e)
 		}
 	}

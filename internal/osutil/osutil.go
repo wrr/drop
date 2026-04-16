@@ -31,15 +31,15 @@ func MkdirAll(path string) error {
 	return nil
 }
 
-func Exists(path string) bool {
+func CanStat(path string) bool {
 	_, err := os.Stat(path)
-	return !os.IsNotExist(err)
+	return err == nil
 }
 
 // IsDebianBased returns true if the system is Debian-based by checking
 // for the presence of /etc/debian_version file.
 func IsDebianBased() bool {
-	return Exists("/etc/debian_version")
+	return CanStat("/etc/debian_version")
 }
 
 // TildeToHomeDir replaces tilde in a path with the given

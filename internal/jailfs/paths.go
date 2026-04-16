@@ -573,7 +573,7 @@ func RmEnv(homeDir, dropHome string, envId string) error {
 	}
 
 	envConfigPath := EnvConfigPath(homeDir, envId)
-	if osutil.Exists(envConfigPath) {
+	if osutil.CanStat(envConfigPath) {
 		if err := os.Remove(envConfigPath); err != nil {
 			return fmt.Errorf("failed to remove environment config %v: %v", envConfigPath, err)
 		}

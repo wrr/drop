@@ -149,7 +149,7 @@ func setupTestInit(t *testing.T) (string, string, string) {
 
 func assertExists(t *testing.T, path string) {
 	t.Helper()
-	if !osutil.Exists(path) {
+	if !osutil.CanStat(path) {
 		t.Fatalf("expected %q to exist", path)
 	}
 }

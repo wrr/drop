@@ -541,7 +541,7 @@ environ.set_vars = ["=value"]
 home_visible = [invalid syntax
 `,
 			expected: Config{},
-			error:    "failed to parse config",
+			error:    "toml: line",
 		},
 		{
 			name: "invalid tcp_published_ports, not a string",

@@ -53,7 +53,7 @@ func InitEnv(envId string, noCwd bool, homeDir, dropHome string) error {
 	}()
 
 	baseConfigPath := jailfs.BaseConfigPath(homeDir)
-	if !osutil.Exists(baseConfigPath) {
+	if !osutil.CanStat(baseConfigPath) {
 		if err := config.WriteDefault(baseConfigPath, homeDir); err != nil {
 			return fmt.Errorf("write base config to %v: %v", baseConfigPath, err)
 		}
@@ -61,7 +61,7 @@ func InitEnv(envId string, noCwd bool, homeDir, dropHome string) error {
 	}
 
 	envConfigPath := jailfs.EnvConfigPath(homeDir, envId)
-	if !osutil.Exists(envConfigPath) {
+	if !osutil.CanStat(envConfigPath) {
 		var mounts []config.DefaultMount
 		// Add cwd to configured mounts, but only if cwd is not the home
 		// directory or a parent of it to avoid exposing the whole home
