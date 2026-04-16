@@ -84,9 +84,7 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 	}
 	defer cleanup()
 
-	// /proc/self/exe would be better, because it handles the case of
-	// the current binary being removed
-	cmd := exec.Command(os.Args[0], "-child")
+	cmd := exec.Command("/proc/self/exe", "-child")
 	// 1) If stdin is a terminal, we pass it as-is to the child, so the
 	// child is also able to detect that stdin is a terminal. The terminal
 	// is then replaced with a new PTY created in the sandbox.
