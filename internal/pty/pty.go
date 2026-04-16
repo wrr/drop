@@ -27,7 +27,7 @@ import (
 )
 
 func ptyError(format string, a ...any) error {
-	return fmt.Errorf("PTY setup error: "+format, a...)
+	return fmt.Errorf("PTY setup: "+format, a...)
 }
 
 // NewPty creates a new pseduterminal and returns its parent and child
@@ -35,28 +35,28 @@ func ptyError(format string, a ...any) error {
 func NewPty() (*os.File, *os.File, error) {
 	parent, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
 	if err != nil {
-		return nil, nil, ptyError("failed to open /dev/ptmx: %v", err)
+		return nil, nil, ptyError("%v", err)
 	}
 	parentFd := int(parent.Fd())
 
 	// Unlock the child PTY
 	if err := unix.IoctlSetPointerInt(parentFd, unix.TIOCSPTLCK, 0); err != nil {
 		parent.Close()
-		return nil, nil, ptyError("failed to unlock PTY: %v", err)
+		return nil, nil, ptyError("unlock PTY: %v", err)
 	}
 
 	// Get the child PTY number
 	ptyNum, err := unix.IoctlGetInt(parentFd, unix.TIOCGPTN)
 	if err != nil {
 		parent.Close()
-		return nil, nil, ptyError("failed to get PTY number: %v", err)
+		return nil, nil, ptyError("get PTY number: %v", err)
 	}
 	childPath := fmt.Sprintf("/dev/pts/%d", ptyNum)
 
 	child, err := os.OpenFile(childPath, os.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
 		parent.Close()
-		return nil, nil, ptyError("failed to open child PTY %s: %v", childPath, err)
+		return nil, nil, ptyError("%v", err)
 	}
 
 	return parent, child, nil
@@ -76,7 +76,7 @@ func PtyNeeded() bool {
 func SetControllingTerminal(pty *os.File) error {
 	err := unix.IoctlSetPointerInt(int(pty.Fd()), unix.TIOCSCTTY, 0)
 	if err != nil {
-		return fmt.Errorf("failed to set controlling terminal: %v", err)
+		return fmt.Errorf("set controlling terminal: %v", err)
 	}
 	return nil
 }
@@ -200,7 +200,7 @@ func ReplaceTerminal(ptyToUse *os.File) error {
 	for _, i := range []int{0, 1, 2} {
 		if term.IsTerminal(i) {
 			if err := unix.Dup3(int(ptyToUse.Fd()), i, 0); err != nil {
-				return fmt.Errorf("replace terminal: failed to point fd %d to the new PTY: %v", i, err)
+				return fmt.Errorf("replace terminal: point fd %d to the new PTY: %v", i, err)
 			}
 		}
 	}

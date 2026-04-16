@@ -30,8 +30,8 @@ type DefaultMount struct {
 	Comment string
 }
 
-// WriteDefault writes a default config file to path.
-func WriteDefault(path string, homeDir string) error {
+// WriteBase writes a default base config file to path.
+func WriteBase(path string, homeDir string) error {
 	// mounts contains files to expose from home dir, these
 	// files are included in the generated default config only if they exist
 	// in the user's home.
@@ -195,7 +195,7 @@ udp_host_ports = []
 	}
 
 	if err := os.WriteFile(path, []byte(defaultConfig), defaultConfigPerms); err != nil {
-		return fmt.Errorf("failed to write default config: %v", err)
+		return fmt.Errorf("write base config to %v: %v", path, err)
 	}
 
 	return nil
@@ -240,7 +240,7 @@ udp_host_ports = []
 	}
 
 	if err := os.WriteFile(path, []byte(envConfig), defaultConfigPerms); err != nil {
-		return fmt.Errorf("failed to write environment config: %v", err)
+		return fmt.Errorf("write environment config to %v: %v", path, err)
 	}
 
 	return nil

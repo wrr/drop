@@ -55,7 +55,7 @@ type ChildArgs struct {
 func NewParentChildSocket() (*ParentEnd, *ChildEnd, error) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create socket pair: %v", err)
+		return nil, nil, fmt.Errorf("create socket pair: %v", err)
 	}
 	return NewParentEnd(uintptr(fds[0])), NewChildEnd(uintptr(fds[1])), nil
 }
@@ -82,7 +82,7 @@ func NewChildEnd(fd uintptr) *ChildEnd {
 // can be launched.
 func (p *ParentEnd) SendChildArgs(args ChildArgs) error {
 	if err := gob.NewEncoder(p.socket).Encode(args); err != nil {
-		return fmt.Errorf("failed to send arguments to child: %v", err)
+		return fmt.Errorf("send arguments to child: %v", err)
 	}
 	return nil
 }
@@ -137,7 +137,7 @@ func (p *ParentEnd) Close() error {
 func (c *ChildEnd) RecvChildArgs() (*ChildArgs, error) {
 	childArgs := ChildArgs{}
 	if err := gob.NewDecoder(c.Socket).Decode(&childArgs); err != nil {
-		return nil, fmt.Errorf("failed to receive arguments from parent: %v", err)
+		return nil, fmt.Errorf("receive arguments from parent: %v", err)
 	}
 	return &childArgs, nil
 }
@@ -149,7 +149,7 @@ func (c *ChildEnd) SendPty(f *os.File) error {
 	rights := unix.UnixRights(int(f.Fd()))
 	err := unix.Sendmsg(int(c.Socket.Fd()), []byte{0}, rights, nil, 0)
 	if err != nil {
-		return fmt.Errorf("failed to send pty file descriptor to parent: %v", err)
+		return fmt.Errorf("send pty file descriptor to parent: %v", err)
 	}
 	return nil
 }

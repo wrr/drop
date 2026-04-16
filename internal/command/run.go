@@ -188,7 +188,7 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 	defer runtime.UnlockOSThread()
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("jailed process start failed: %v", err)
+		return fmt.Errorf("jailed process start: %v", err)
 	}
 	defer func() {
 		if cmd != nil {
@@ -251,7 +251,7 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 			// code without printing any error message.
 			return err
 		}
-		return fmt.Errorf("jailed process failed to run: %v", err)
+		return fmt.Errorf("jailed process run: %v", err)
 	}
 	return nil
 }
@@ -278,11 +278,11 @@ func RunChild() error {
 	}
 
 	if _, err := unix.Setsid(); err != nil {
-		return fmt.Errorf("setsid failed: %v", err)
+		return fmt.Errorf("setsid for child process: %v", err)
 	}
 
 	if err := jailfs.WriteEtcFiles(paths); err != nil {
-		return fmt.Errorf("failed to write /etc files: %v", err)
+		return fmt.Errorf("write /etc files: %v", err)
 	}
 
 	if err := jailfs.ArrangeFilesystem(paths, cfg); err != nil {
@@ -300,7 +300,7 @@ func RunChild() error {
 		}
 	}
 	if chdirErr != nil {
-		return fmt.Errorf("failed to chdir to /: %v", chdirErr)
+		return fmt.Errorf("chdir to /: %v", chdirErr)
 	}
 
 	if pty.PtyNeeded() {
@@ -348,7 +348,7 @@ func RunChild() error {
 	// version of LookPath that takes envVars or PATH as an argument
 	// instead of using PATH from environ.
 	if err := os.Setenv("PATH", path); err != nil {
-		return fmt.Errorf("failed to set PATH environment variable: %v", err)
+		return fmt.Errorf("set PATH environment variable: %v", err)
 	}
 
 	prog, err := exec.LookPath(execArgs[0]) // Searches PATH
@@ -357,7 +357,7 @@ func RunChild() error {
 	}
 
 	if err := allFdsCloseOnExec(); err != nil {
-		return fmt.Errorf("failed to set open file descriptors to close: %v", err)
+		return fmt.Errorf("set all open file descriptors to close: %v", err)
 	}
 
 	// Since the current process is replaced with Exec, we need
@@ -366,11 +366,11 @@ func RunChild() error {
 
 	// Replace the current process
 	if err := unix.Exec(prog, execArgs, envVars); err != nil {
-		return fmt.Errorf("exec %s failed: %v", execArgs[0], err)
+		return fmt.Errorf("exec %s: %v", execArgs[0], err)
 	}
 
 	// Should never be reached
-	return fmt.Errorf("exec failed")
+	return fmt.Errorf("exec did not replace the drop process")
 }
 
 // ensureCapSysAdmin returns an error if process doesn't have
@@ -386,7 +386,7 @@ func ensureCapSysAdmin() error {
 	caps := cap.GetProc()
 	hasCap, err := caps.GetFlag(cap.Effective, unix.CAP_SYS_ADMIN)
 	if err != nil {
-		return fmt.Errorf("failed to check CAP_SYS_ADMIN capability: %v", err)
+		return fmt.Errorf("check CAP_SYS_ADMIN capability: %v", err)
 	}
 	if !hasCap {
 		return fmt.Errorf("not enough capabilities. Are Linux user namespaces enabled? " +
@@ -399,11 +399,11 @@ func dropAllCaps() error {
 	old := cap.GetProc()
 	empty := cap.NewSet()
 	if err := empty.SetProc(); err != nil {
-		return fmt.Errorf("failed to drop privilege: %q -> %q: %v", old, empty, err)
+		return fmt.Errorf("drop privilege: %q -> %q: %v", old, empty, err)
 	}
 	now := cap.GetProc()
 	if cf, _ := now.Cf(empty); cf != 0 {
-		return fmt.Errorf("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
+		return fmt.Errorf("privileges not fully dropped: have=%q, wanted=%q", now, empty)
 	}
 	return nil
 }

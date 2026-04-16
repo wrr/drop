@@ -54,8 +54,8 @@ func InitEnv(envId string, noCwd bool, homeDir, dropHome string) error {
 
 	baseConfigPath := jailfs.BaseConfigPath(homeDir)
 	if !osutil.CanStat(baseConfigPath) {
-		if err := config.WriteDefault(baseConfigPath, homeDir); err != nil {
-			return fmt.Errorf("write base config to %v: %v", baseConfigPath, err)
+		if err := config.WriteBase(baseConfigPath, homeDir); err != nil {
+			return err
 		}
 		fmt.Fprintf(os.Stderr, "Wrote base Drop config to %s\n", baseConfigPath)
 	}
@@ -73,9 +73,8 @@ func InitEnv(envId string, noCwd bool, homeDir, dropHome string) error {
 			}
 		}
 
-		err = config.WriteDefaultForEnv(envConfigPath, mounts, homeDir)
-		if err != nil {
-			return fmt.Errorf("write env config to %v: %v", envConfigPath, err)
+		if err := config.WriteDefaultForEnv(envConfigPath, mounts, homeDir); err != nil {
+			return err
 		}
 	}
 	fmt.Fprintf(os.Stderr, "Drop environment created with config at %s\n", envConfigPath)

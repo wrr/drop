@@ -26,7 +26,7 @@ import (
 // up without adding an aditional context.
 func MkdirAll(path string) error {
 	if err := os.MkdirAll(path, 0700); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", path, err)
+		return fmt.Errorf("create directories %s: %v", path, err)
 	}
 	return nil
 }
@@ -128,5 +128,5 @@ func CurrentUserHomeDir() (string, error) {
 	if home := os.Getenv("HOME"); home != "" {
 		return home, nil
 	}
-	return "", fmt.Errorf("failed to determine the current user home directory; HOME environment variable is not set")
+	return "", fmt.Errorf("HOME environment variable is not set; cannot determine the current user home directory")
 }

@@ -80,9 +80,8 @@ func parentProcessEntry() (int, error) {
 
 	handlers := cli.Handlers{
 		Init: func(envId string, noCwd bool) error {
-			err := command.InitEnv(envId, noCwd, homeDir, dropHome)
-			if err != nil {
-				return fmt.Errorf("failed to init environment: %v", err)
+			if err := command.InitEnv(envId, noCwd, homeDir, dropHome); err != nil {
+				return fmt.Errorf("init environment: %v", err)
 			}
 			return nil
 		},
@@ -92,7 +91,7 @@ func parentProcessEntry() (int, error) {
 		Ls: func() error {
 			envs, err := jailfs.LsEnvs(dropHome)
 			if err != nil {
-				return fmt.Errorf("failed to list environments: %v", err)
+				return fmt.Errorf("list environments: %v", err)
 			}
 			for _, envId := range envs {
 				fmt.Println(envId)
@@ -101,7 +100,7 @@ func parentProcessEntry() (int, error) {
 		},
 		Rm: func(envId string) error {
 			if err := jailfs.RmEnv(homeDir, dropHome, envId); err != nil {
-				return fmt.Errorf("failed to remove environment '%s': %v", envId, err)
+				return fmt.Errorf("remove environment '%s': %v", envId, err)
 			}
 			return nil
 		},
@@ -111,7 +110,7 @@ func parentProcessEntry() (int, error) {
 			}
 			newVersion, err := updater.CheckForUpdate(Version)
 			if err != nil {
-				return fmt.Errorf("failed to check for updates: %v", err)
+				return fmt.Errorf("check for updates: %v", err)
 			}
 			if newVersion != "" {
 				fmt.Printf("Drop %s is available, your installed version is %s\n", newVersion, Version)

@@ -325,7 +325,7 @@ func TestCurrentUserHomeDir(t *testing.T) {
 	}
 	os.Unsetenv("HOME")
 	_, err = CurrentUserHomeDir()
-	if terr := checkError("failed to determine the current user home directory", err); terr != nil {
+	if terr := checkError("HOME environment variable is not set", err); terr != nil {
 		t.Fatal(terr)
 	}
 }

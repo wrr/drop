@@ -197,7 +197,7 @@ func (rt *root) mountRootSubDirs() error {
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("failed to stat %s: %v", dir, err)
+			return err
 		}
 
 		dstDir := rt.fromRoot(dir)
@@ -207,10 +207,10 @@ func (rt *root) mountRootSubDirs() error {
 			// /lib* are just links to sub dirs of /usr)
 			target, err := os.Readlink(dir)
 			if err != nil {
-				return fmt.Errorf("failed to read symlink %s: %v", dir, err)
+				return fmt.Errorf("read symlink %s: %v", dir, err)
 			}
 			if err := os.Symlink(target, dstDir); err != nil {
-				return fmt.Errorf("failed to create symlink %s -> %s: %v", dstDir, target, err)
+				return fmt.Errorf("create symlink %s -> %s: %v", dstDir, target, err)
 			}
 		} else if info.IsDir() {
 			if err := rt.bind(dir, dir, flags, true); err != nil {
@@ -304,7 +304,7 @@ func (rt *root) mountDev() error {
 	devTrg := rt.fromRoot("/dev")
 	for name, target := range symlinks {
 		if err := os.Symlink(target, devTrg+"/"+name); err != nil {
-			return fmt.Errorf("failed to create %s symlink: %v", name, err)
+			return err
 		}
 	}
 
@@ -352,16 +352,16 @@ func (rt *root) blockEntries(paths *Paths, entries []string) error {
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("failed to stat %s: %v", fullPath, err)
+			return err
 		}
 		flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_RDONLY)
 		if info.IsDir() {
 			if err := rt.bind(paths.EmptyDir, blockedPath, flags, true); err != nil {
-				return fmt.Errorf("failed to block directory %s: %v", blockedPath, err)
+				return fmt.Errorf("block directory %s: %v", blockedPath, err)
 			}
 		} else {
 			if err := rt.bindFile(paths.EmptyFile, blockedPath, flags); err != nil {
-				return fmt.Errorf("failed to block file %s: %v", blockedPath, err)
+				return fmt.Errorf("block file %s: %v", blockedPath, err)
 			}
 		}
 	}
@@ -419,7 +419,7 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		Propagation: unix.MS_PRIVATE,
 	}
 	if err := unix.MountSetattr(-1, "/", unix.AT_RECURSIVE, attr); err != nil {
-		return fmt.Errorf("failed to set root filesystem propagation to private")
+		return fmt.Errorf("set root filesystem propagation to private: %v", err)
 	}
 	// Alternatively: unix.Mount("", "/", "", unix.MS_PRIVATE|unix.MS_REC, "");
 
@@ -559,7 +559,7 @@ func createEmptyFile(path string) error {
 
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
-		return fmt.Errorf("failed to create %s: %w", path, err)
+		return fmt.Errorf("create empty file: %v", err)
 	}
 	return file.Close()
 }

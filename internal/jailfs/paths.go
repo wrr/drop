@@ -202,7 +202,7 @@ func IsEnvIdValid(envId string) bool {
 func CwdToEnvId() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("get current directory failed: %v", err)
+		return "", fmt.Errorf("get current directory: %v", err)
 	}
 	return pathToEnvId(cwd), nil
 }
@@ -226,7 +226,7 @@ func newRunDir(dropHome string, envId string) (string, func(), error) {
 	}
 	runDir, err := os.MkdirTemp(parent, fmt.Sprintf("%s-", envId))
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to create run sub-directory: %v", err)
+		return "", nil, fmt.Errorf("create run sub-directory: %v", err)
 	}
 
 	lockFile, err := lockRunDir(runDir)
@@ -241,10 +241,10 @@ func newRunDir(dropHome string, envId string) (string, func(), error) {
 		lockFile.Close()
 		// Remove the current instance run dir
 		if err := os.RemoveAll(runDir); err != nil {
-			log.Info("failed to clean run dir %v", err)
+			log.Info("failed to clean run dir: %v", err)
 		}
 		if err := removeOrphanedRunDirs(filepath.Dir(runDir)); err != nil {
-			log.Info("failed to remove orphaned run dirs %v", err)
+			log.Info("failed to remove orphaned run dirs: %v", err)
 		}
 	}
 	return runDir, cleanRunDir, nil
@@ -297,14 +297,14 @@ func lockRunDir(runDir string) (*os.File, error) {
 	lockPath := filepath.Join(runDir, runLockFname)
 	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create a file %v: %v", lockPath, err)
+		return nil, fmt.Errorf("create a file: %v", err)
 	}
 	// Do not close the file, as this releases the lock. The lock should
 	// be released when the process terminates.
 
 	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if err != nil {
-		return nil, fmt.Errorf("failed to lock a file %v: %v", lockPath, err)
+		return nil, fmt.Errorf("lock a file %v: %v", lockPath, err)
 	}
 	return file, nil
 }
@@ -453,17 +453,17 @@ func initEnvTmpDir(envId string, paths *Paths) (string, error) {
 	userName := filepath.Base(paths.HostHome)
 	parentPath, err := createTmpParentDir(userName)
 	if err != nil {
-		return "", fmt.Errorf("failed to create parent temporary directory: %v", err)
+		return "", fmt.Errorf("create parent temporary directory: %v", err)
 	}
 
 	tmpSubDir, err := os.MkdirTemp(parentPath, envId+"-")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temporary directory: %v", err)
+		return "", fmt.Errorf("create temporary directory: %v", err)
 	}
 
 	// Create symbolic link to the tmp directory
 	if err := os.Symlink(tmpSubDir, tmpSymlink); err != nil {
-		return "", fmt.Errorf("failed to create symlink: %v", err)
+		return "", fmt.Errorf("create symlink: %v", err)
 	}
 	return tmpSubDir, nil
 }
@@ -575,7 +575,7 @@ func RmEnv(homeDir, dropHome string, envId string) error {
 	envConfigPath := EnvConfigPath(homeDir, envId)
 	if osutil.CanStat(envConfigPath) {
 		if err := os.Remove(envConfigPath); err != nil {
-			return fmt.Errorf("failed to remove environment config %v: %v", envConfigPath, err)
+			return fmt.Errorf("remove environment config %v: %v", envConfigPath, err)
 		}
 	}
 

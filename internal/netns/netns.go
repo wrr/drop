@@ -94,10 +94,10 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 	// require these files to exists (perhaps this is some system
 	// policy/mechanism, not directly related to Pasta code).
 	if err := createEmptyFile(logPath); err != nil {
-		return nil, fmt.Errorf("failed to create pasta log file: %v", err)
+		return nil, fmt.Errorf("create pasta log file: %v", err)
 	}
 	if err := createEmptyFile(pidPath); err != nil {
-		return nil, fmt.Errorf("failed to create pasta pid file: %v", err)
+		return nil, fmt.Errorf("create pasta pid file: %v", err)
 	}
 
 	pastaArgs = []string{
@@ -157,13 +157,13 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 				"The package is available on most Linux distributions, see:\n" +
 				"https://passt.top/passt/about/#availability")
 		}
-		return nil, fmt.Errorf("failed to start pasta: %v%s", err, pastaOutput())
+		return nil, fmt.Errorf("start pasta: %v%s", err, pastaOutput())
 	}
 
 	// When started as a daemon, pasta parent process exits after
 	// network setup is done and pid is written to pidPath.
 	if err := pastaCmd.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to start pasta to isolate networking: %v%s", err, pastaOutput())
+		return nil, fmt.Errorf("wait for pasta to start: %v%s", err, pastaOutput())
 	}
 
 	var daemonPid int
@@ -180,7 +180,7 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 	daemonPid, err := readDaemonPid(pidPath)
 	if err != nil {
 		cleanup()
-		return nil, fmt.Errorf("failed to read pasta daemon pid: %v%s", err, pastaOutput())
+		return nil, fmt.Errorf("%v%s", err, pastaOutput())
 	}
 
 	return cleanup, nil
@@ -190,12 +190,12 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 func readDaemonPid(pidPath string) (int, error) {
 	content, err := os.ReadFile(pidPath)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read %s: %v", pidPath, err)
+		return 0, fmt.Errorf("read pasta daemon pid: %v", err)
 	}
 	pidStr := strings.TrimSpace(string(content))
 	pid, err := strconv.Atoi(pidStr)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse pasta pid: %v", err)
+		return 0, fmt.Errorf("parse pasta daemon pid: %v", err)
 	}
 	return pid, nil
 }

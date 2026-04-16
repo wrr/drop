@@ -125,7 +125,7 @@ func TestInitEnv(t *testing.T) {
 		})
 
 		err := InitEnv("myenv", false, filepath.Join(dropHome, "home"), dropHome)
-		if err == nil || !strings.Contains(err.Error(), "failed to write default config") {
+		if err == nil || !strings.Contains(err.Error(), "write base config") {
 			t.Fatalf("expected error when config dir is not writable, got: %v", err)
 		}
 	})

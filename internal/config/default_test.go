@@ -28,18 +28,18 @@ func expectEmptyList[T any](t *testing.T, name string, l []T) {
 	}
 }
 
-func TestWriteDefault(t *testing.T) {
+func TestWriteBase(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config")
 
-	err := WriteDefault(configPath, tempDir)
+	err := WriteBase(configPath, tempDir)
 	if err != nil {
-		t.Fatalf("WriteDefault failed: %v", err)
+		t.Fatalf("WriteBase failed: %v", err)
 	}
 
 	cfg, err := Read(configPath, "/test-home-dir/")
 	if err != nil {
-		t.Fatalf("Failed to read created default config: %v", err)
+		t.Fatalf("Failed to read created base config: %v", err)
 	}
 
 	if cfg.Mounts == nil {
@@ -88,7 +88,7 @@ func TestWriteDefaultForEnv(t *testing.T) {
 	}
 
 	// WriteDefaultForEnv generates a config that extends base.toml.
-	if err := WriteDefault(basePath, tempDir); err != nil {
+	if err := WriteBase(basePath, tempDir); err != nil {
 		t.Fatalf("WriteDefault failed: %v", err)
 	}
 	if err := WriteDefaultForEnv(envPath, mounts, tempDir); err != nil {
