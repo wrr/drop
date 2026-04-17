@@ -89,7 +89,7 @@ func TestWriteDefaultForEnv(t *testing.T) {
 
 	// WriteDefaultForEnv generates a config that extends base.toml.
 	if err := WriteBase(basePath, tempDir); err != nil {
-		t.Fatalf("WriteDefault failed: %v", err)
+		t.Fatalf("WriteBase failed: %v", err)
 	}
 	if err := WriteDefaultForEnv(envPath, mounts, tempDir); err != nil {
 		t.Fatalf("WriteDefaultForEnv failed: %v", err)
