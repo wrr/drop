@@ -198,6 +198,15 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 		}
 	}()
 
+	// Catch catchable shutdown signals, so deferred cleanups (jailfs
+	// run dir, pasta, PTY restore) run before the parent exits. Forward
+	// the signals to the child to make sure it exits before the parent
+	// in majority of cases. Pdeathsig above is the safety net to kill
+	// the child in case parent dies without terminating the child (for
+	// example SIGKILL).
+	processTerminated := osutil.CatchAndForwardSignals(cmd.Process)
+	defer processTerminated()
+
 	childEnd.Close()
 
 	// Start pasta to provide network connectivity to the jailed process
