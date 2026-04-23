@@ -360,10 +360,60 @@ func RunChild() error {
 		return fmt.Errorf("set PATH environment variable: %v", err)
 	}
 
-	prog, err := exec.LookPath(execArgs[0]) // Searches PATH
-	if err != nil {
+	sandboxedProg := execArgs[0]
+
+	// Searches PATH. We do it instead of relying on env, because if
+	// PATH is empty, env uses some default for the PATH.
+	if _, err := exec.LookPath(sandboxedProg); err != nil {
 		return fmt.Errorf("command not found: %v", err)
 	}
+	// Do not execute the sandboxed binary directly, but let
+	// /usr/bin/env execute it. This is to ensure that the executed
+	// binary cannot point to Drop executable via /proc/self/exe. This
+	// would be dangerous on systems where Drop executable is writable
+	// by the current user (/usr/bin/env is root-owned, and drop refuses
+	// to run as root, so a sandboxed process cannot overwrite it).
+	//
+	// See CVE-2019-5736;
+	// https://blog.dragonsector.pl/2019/02/cve-2019-5736-escape-from-docker-and.html
+	// and
+	// https://aws.amazon.com/blogs/compute/anatomy-of-cve-2019-5736-a-runc-container-escape/
+	// For explanation how writable /proc/self/exe could be exploited.
+	//
+	// Drop other characteristics could be sufficient to prevent
+	// CVE-2019-5736 style attack, but to be extra sure we don't rely
+	// only on them:
+	//
+	// 1) Linux has a mechanism that prevents a binary from being
+	// overwritten as long as there is any running process that uses the
+	// binary, so the Drop two process architecture, with continuously
+	// running parent process prevents sandboxed child from modifying
+	// the `drop` binary. Unfortunately, this is not
+	// bulletproof. PR_SET_PDEATHSIG on Linux, guarantees the child
+	// process is killed, but the process can still execute some
+	// instructions before it happens. If the child attempts to write to
+	// /proc/self/exe in a tight loop, and the parent is abruptly killed
+	// with SIGKILL (so the signal handler is not run and cannot kill
+	// the child before parent terminates), there is a short window in
+	// which the child write can succeed (tested to work in
+	// practice). This attack is hard to execute, because child does not
+	// see and cannot kill the parent, it just needs to loop utilizing
+	// full CPU and hope the parent will be killed at some point.
+	//
+	// 2) Sandboxed processes cannot control files in locations from
+	// which dynamic libraries are loaded. I'm not aware how or if at
+	// all in such case the /proc/self/exe replacement technique could
+	// be executed.
+	prog := "/usr/bin/env"
+	canOverwrite, err := osutil.CanOverwrite(prog)
+	if err != nil {
+		return err
+	}
+	if canOverwrite {
+		return fmt.Errorf("%v must not be writable by the current user", prog)
+	}
+
+	execArgs = append([]string{"env", "--"}, execArgs...)
 
 	if err := allFdsCloseOnExec(); err != nil {
 		return fmt.Errorf("set all open file descriptors to close: %v", err)
@@ -375,7 +425,7 @@ func RunChild() error {
 
 	// Replace the current process
 	if err := unix.Exec(prog, execArgs, envVars); err != nil {
-		return fmt.Errorf("exec %s: %v", execArgs[0], err)
+		return fmt.Errorf("exec %s: %v", sandboxedProg, err)
 	}
 
 	// Should never be reached

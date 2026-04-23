@@ -19,6 +19,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // MkdirAll is a simple wrapper over os.MkdirAll. It always uses
@@ -129,4 +132,19 @@ func CurrentUserHomeDir() (string, error) {
 		return home, nil
 	}
 	return "", fmt.Errorf("HOME environment variable is not set; cannot determine the current user home directory")
+}
+
+// CanOverwrite returns true if the current user can be able to
+// overwrite a file located at path.
+func CanOverwrite(path string) (bool, error) {
+	if err := unix.Access(path, unix.W_OK); err == nil {
+		return true, nil
+	}
+	uid := os.Getuid()
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	stat := info.Sys().(*syscall.Stat_t)
+	return uid == int(stat.Uid), nil
 }
