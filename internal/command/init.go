@@ -67,9 +67,12 @@ func InitEnv(envId string, noCwd bool, homeDir, dropHome string) error {
 		// directory or a parent of it to avoid exposing the whole home
 		// directory.
 		if !noCwd && !osutil.IsSubDirOrSame(cwd, homeDir) {
+			// If CWD is under home dir, add a config entry that uses '~' to
+			// represent home, not the absolute home dir path.
+			cwdCleaned := osutil.HomeDirToTilde(cwd, homeDir)
 			mounts = []config.DefaultMount{
-				{Entry: cwd + "::rw", Comment: "Allow read-write"},
-				{Entry: cwd + "/.git", Comment: "Allow read-only, block changing git config or adding hooks"},
+				{Entry: cwdCleaned + "::rw", Comment: "Allow read-write"},
+				{Entry: cwdCleaned + "/.git", Comment: "Allow read-only, block changing git config or adding hooks"},
 			}
 		}
 

@@ -27,8 +27,21 @@ func TestInitEnv(t *testing.T) {
 		// cwd is a subdirectory of homeDir, so env config should contain
 		// cwd mount.
 		cfg := readConfig(t, envConfig, homeDir)
-		if !hasMountSource(cfg.Mounts, cwd) {
+		if !hasMountSource(cfg.Mounts, cwd, homeDir) {
 			t.Fatalf("env config mounts don't contain cwd %q", cwd)
+		}
+
+		// Mount entries for paths under homeDir should be written in
+		// tilde form, not as absolute paths.
+		raw, err := os.ReadFile(envConfig)
+		if err != nil {
+			t.Fatalf("read env config: %v", err)
+		}
+		if !strings.Contains(string(raw), `"~/project::rw"`) {
+			t.Errorf("expected env config to contain tilde-form cwd mount, got:\n%s", raw)
+		}
+		if strings.Contains(string(raw), cwd) {
+			t.Errorf("env config should not contain absolute cwd path %q, got:\n%s", cwd, raw)
 		}
 	})
 
@@ -40,7 +53,7 @@ func TestInitEnv(t *testing.T) {
 		}
 
 		cfg := readConfig(t, jailfs.EnvConfigPath(homeDir, "myenv"), homeDir)
-		if hasMountSource(cfg.Mounts, cwd) {
+		if hasMountSource(cfg.Mounts, cwd, homeDir) {
 			t.Fatal("env config should not contain cwd when noCwd is true")
 		}
 	})
@@ -56,7 +69,7 @@ func TestInitEnv(t *testing.T) {
 		}
 
 		cfg := readConfig(t, jailfs.EnvConfigPath(cwd, "myenv"), cwd)
-		if hasMountSource(cfg.Mounts, cwd) {
+		if hasMountSource(cfg.Mounts, cwd, cwd) {
 			t.Fatal("env config should not contain cwd mount when cwd is homeDir")
 		}
 	})
@@ -180,9 +193,9 @@ func readConfig(t *testing.T, path, homeDir string) *config.Config {
 	return cfg
 }
 
-func hasMountSource(mounts []config.Mount, source string) bool {
+func hasMountSource(mounts []config.Mount, source, homeDir string) bool {
 	for _, m := range mounts {
-		if m.Source == source {
+		if osutil.TildeToHomeDir(m.Source, homeDir) == source {
 			return true
 		}
 	}

@@ -54,6 +54,20 @@ func TildeToHomeDir(path string, homeDir string) string {
 	return path
 }
 
+// HomeDirToTilde replaces the homeDir prefix in path with "~". If path
+// is not equal to or under homeDir, it is returned unchanged.
+func HomeDirToTilde(path string, homeDir string) string {
+	cleanedHome := filepath.Clean(homeDir)
+	cleanedPath := filepath.Clean(path)
+	if !IsSubDirOrSame(cleanedHome, cleanedPath) {
+		return path
+	}
+	if cleanedPath == cleanedHome {
+		return "~"
+	}
+	return "~" + cleanedPath[len(cleanedHome):]
+}
+
 func IsRootOrHomeSubPath(path string) bool {
 	return strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~/")
 }

@@ -76,6 +76,55 @@ func TestTildeToHomeDir(t *testing.T) {
 	}
 }
 
+func TestHomeDirToTilde(t *testing.T) {
+	homeDir := "/home/alice"
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "subdir of home",
+			path: "/home/alice/project",
+			want: "~/project",
+		},
+		{
+			name: "nested subdir of home",
+			path: "/home/alice/code/drop",
+			want: "~/code/drop",
+		},
+		{
+			name: "equal to home",
+			path: "/home/alice",
+			want: "~",
+		},
+		{
+			name: "equal to home with trailing slash",
+			path: "/home/alice/",
+			want: "~",
+		},
+		{
+			name: "outside home",
+			path: "/opt/code",
+			want: "/opt/code",
+		},
+		{
+			name: "outside home, same prefix",
+			path: "/home/alice2/project",
+			want: "/home/alice2/project",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := HomeDirToTilde(tt.path, homeDir)
+			if got != tt.want {
+				t.Errorf("HomeDirToTilde(%q, %q) = %q, want %q", tt.path, homeDir, got, tt.want)
+			}
+		})
+	}
+}
+
 func checkError(wantErr string, err error) error {
 	if wantErr == "" {
 		if err != nil {
