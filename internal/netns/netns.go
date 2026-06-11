@@ -62,18 +62,23 @@ func publishedPortArgs(argName string, mappings []config.PublishedPort) []string
 
 	var args []string
 	for _, m := range mappings {
+		argValue := ""
+		// Format: hostIP/hostPort[:guestPort]. If HostIP is missing Pasta
+		// defaults to all addresses, but Drop defaults to localhost only,
+		// so the config parser sets HostIP to 127.0.0.1 if it is not set
+		// by the user.
+		if m.HostIP != "" {
+			argValue += fmt.Sprintf("%s/", m.HostIP)
+		}
 		if m.Auto {
-			args = append(args, argName, "auto")
+			argValue += "auto"
 		} else {
-			// Format: hostIP/hostPort[:guestPort]
-			// Always include HostIP, when it is missing pasta defaults to
-			// all addresses, but Drop defaults to only localhost address.
-			argValue := fmt.Sprintf("%s/%d", m.HostIP, m.HostPort)
+			argValue += strconv.Itoa(m.HostPort)
 			if m.HostPort != m.GuestPort {
 				argValue += fmt.Sprintf(":%d", m.GuestPort)
 			}
-			args = append(args, argName, argValue)
 		}
+		args = append(args, argName, argValue)
 	}
 	return args
 }

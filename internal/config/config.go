@@ -370,13 +370,20 @@ func ParseMountCompact(str string) (*Mount, error) {
 //   - hostIP/hostPort:guestPort (e.g., "192.168.0.3/8080:80") ->
 //     published Drop port 80 as host port 8080 bound to IP address
 //     192.168.0.3
-//   - "auto" -> automatically publishes all open ports and binds them
+//   - "127.0.0.1/auto" -> automatically publishes all open ports, binds them
+//     to localhost only
+//   - "auto" -> automatically publishes all open ports, binds them
 //     to ALL available IP addresses
 func ParsePublishedPort(spec string) (*PublishedPort, error) {
 	var p PublishedPort
 
 	spec = strings.TrimSpace(spec)
 	if spec == "auto" {
+		// Bare "auto" is the one case where HostIP stays empty, so pasta
+		// binds to all host addresses. We don't default to 127.0.0.1 here
+		// because pasta only accepts "IP/auto" since May 2026 and
+		// older distro builds reject it. Once that version is widely
+		// deployed, defaulting bare "auto" to 127.0.0.1 would be preferable.
 		p.Auto = true
 		return &p, nil
 	}
@@ -393,6 +400,11 @@ func ParsePublishedPort(spec string) (*PublishedPort, error) {
 		portPart = parts[1]
 		if net.ParseIP(p.HostIP) == nil {
 			return nil, fmt.Errorf("invalid port publish IP address: %s", p.HostIP)
+		}
+		if portPart == "auto" {
+			// Automatically bind all ports, but only to the provided IP address.
+			p.Auto = true
+			return &p, nil
 		}
 	}
 

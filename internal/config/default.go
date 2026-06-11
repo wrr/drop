@@ -173,6 +173,12 @@ mode = "isolated"
 #                       addresses. This makes the port externally
 #                       accessible if the host has no firewall rules
 #                       to block outside traffic to this port
+# "127.0.0.1/auto" - all ports open in the sandbox are automatically
+#                    published and bound to the host's localhost
+#                    addresses. This is preferred to the plain "auto"
+#                    option below when external exposure is not needed,
+#                    but requires pasta version 2026_05_07.1afd4ed or
+#                    newer.
 # "auto" - all ports open in the sandbox are automatically published
 #          and bound to ALL the host's IP addresses. This is
 #          convenient, but must be used with care, make sure the host

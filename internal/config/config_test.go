@@ -252,6 +252,15 @@ func TestParsePublishedPort(t *testing.T) {
 			error: "",
 		},
 		{
+			name:  "auto with IP",
+			input: "127.0.0.1/auto",
+			expected: PublishedPort{
+				Auto:   true,
+				HostIP: "127.0.0.1",
+			},
+			error: "",
+		},
+		{
 			name:  "auto",
 			input: "auto",
 			expected: PublishedPort{
