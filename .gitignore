@@ -1,5 +1,7 @@
 # Program binary
 /drop
+# Helper scripts
+/drop_with_custom_pasta
 
 # Code coverage
 /cover
