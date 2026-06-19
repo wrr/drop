@@ -59,6 +59,9 @@ type Paths struct {
 	// Run holds temporary files and dirs for the current jail instance.
 	// It can be safely remove once the jailed process terminates.
 	Run string
+	// PtySocket is a path to a named socket that the child uses to send
+	// pty to the parent.
+	PtySocket string
 	// EmptyDir is an empty directory used to hide directories in the jail.
 	EmptyDir string
 	// EmptyFile is an empty file used to hide files in the jail.
@@ -103,6 +106,7 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 		Etc:       filepath.Join(env, "etc"),
 		Var:       filepath.Join(env, "var"),
 		Run:       runDir,
+		PtySocket: filepath.Join(runDir, "pty.sock"),
 		EmptyDir:  filepath.Join(internal, "emptyd"),
 		EmptyFile: filepath.Join(internal, "empty"),
 	}

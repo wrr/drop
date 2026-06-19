@@ -84,6 +84,15 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 	}
 	defer cleanup()
 
+	var ptyReceiver *ipc.PtyReceiver
+	if pty.PtyNeeded() {
+		ptyReceiver, err = ipc.NewPtyReceiver(paths.PtySocket)
+		if err != nil {
+			return err
+		}
+		defer ptyReceiver.Close()
+	}
+
 	cmd := exec.Command("/proc/self/exe", "-child")
 	// 1) If stdin is a terminal, we pass it as-is to the child, so the
 	// child is also able to detect that stdin is a terminal. The terminal
@@ -229,40 +238,66 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 	if err := parentEnd.SendChildArgs(childArgs); err != nil {
 		return err
 	}
-
-	if pty.PtyNeeded() {
-		parentPty, err := parentEnd.RecvPty()
-		if errors.Is(err, io.EOF) {
-			// EOF means child terminated, most likely do to some not socket
-			// related problem which will be reported by the child. Continue
-			// to cmd.Wait to detect the child termination.
-		} else {
-			if err != nil {
-				return err
-			}
-
-			cleanForwardPty, err := pty.ForwardPty(parentPty)
-			parentPty = nil // owned by ForwardPty
-			if err != nil {
-				return err
-			}
-			defer cleanForwardPty()
-		}
-	}
-
 	parentEnd.Close()
 
-	err = cmd.Wait()
-	cmd = nil
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			// ExitError causes parent process to exit with child's exit
-			// code without printing any error message.
-			return err
-		}
-		return fmt.Errorf("jailed process run: %v", err)
+	type ptyResult struct {
+		parentPty *os.File
+		err       error
 	}
-	return nil
+
+	ptyCh := make(chan ptyResult, 1)
+	if ptyReceiver != nil {
+		// Run concurrently with cmd.Wait, because it can block in case
+		// the child dies before sending the pty.
+		go func() {
+			parentPty, err := ptyReceiver.RecvPty()
+			ptyCh <- ptyResult{parentPty, err}
+		}()
+	}
+
+	childCh := make(chan error, 1)
+	go func() {
+		childCh <- cmd.Wait()
+	}()
+	var ptyError error
+
+	for {
+		select {
+		case err := <-childCh:
+			cmd = nil
+			if ptyError != nil && !errors.Is(ptyError, io.EOF) {
+				// EOF means child terminated, most likely due to some non
+				// pty related reason, in all other cases ptyError takes
+				// priority as it likely was the cause of the child failure.
+				return fmt.Errorf("pty setup: %v", ptyError)
+			}
+
+			if err == nil {
+				return nil
+			}
+			if _, ok := err.(*exec.ExitError); ok {
+				// ExitError causes parent process to exit with child's exit
+				// code without printing any error message.
+				return err
+			}
+			return fmt.Errorf("jailed process run: %v", err)
+		case result := <-ptyCh:
+			ptyError = result.err
+			if ptyError == nil {
+				var cleanForwardPty func()
+				cleanForwardPty, ptyError = pty.ForwardPty(result.parentPty)
+				if cleanForwardPty != nil {
+					defer cleanForwardPty()
+				}
+			}
+			if ptyError != nil {
+				// We need to wait for the child to exit in this select(), it
+				// is incorrect to call Wait() again while another go routine
+				// already waits in the Wait() call.
+				cmd.Process.Kill()
+			}
+		}
+	}
 }
 
 // RunChild handles child process logic for the 'drop run' command.
@@ -284,6 +319,15 @@ func RunChild() error {
 
 	if err := ensureCapSysAdmin(); err != nil {
 		return err
+	}
+
+	var ptySender *ipc.PtySender
+	if pty.PtyNeeded() {
+		// Must be done before pivot root, so PtySocket is still accessible.
+		ptySender, err = ipc.NewPtySender(paths.PtySocket)
+		if err != nil {
+			return err
+		}
 	}
 
 	if _, err := unix.Setsid(); err != nil {
@@ -312,13 +356,15 @@ func RunChild() error {
 		return fmt.Errorf("chdir to /: %v", chdirErr)
 	}
 
-	if pty.PtyNeeded() {
+	if ptySender != nil {
 		parentPty, childPty, err := pty.NewPty()
 		if err != nil {
 			return err
 		}
 
-		if err := childEnd.SendPty(parentPty); err != nil {
+		err = ptySender.SendPty(parentPty)
+		ptySender.Close()
+		if err != nil {
 			return err
 		}
 		parentPty.Close()

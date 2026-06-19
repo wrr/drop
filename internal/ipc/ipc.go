@@ -20,7 +20,6 @@ package ipc
 import (
 	"encoding/gob"
 	"fmt"
-	"io"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -52,6 +51,9 @@ type ChildArgs struct {
 	ExecArgs []string
 }
 
+// NewParentChildSocket creates an anonymous socket that parent uses
+// to send arguments to the child, which also signals to the child
+// that parent has already setup networking.
 func NewParentChildSocket() (*ParentEnd, *ChildEnd, error) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
@@ -87,42 +89,6 @@ func (p *ParentEnd) SendChildArgs(args ChildArgs) error {
 	return nil
 }
 
-func recvPtyError(format string, a ...any) error {
-	return fmt.Errorf("recv pty: "+format, a...)
-}
-
-// RecvPty receives a parent descriptor of a sandboxed pseudoterminal
-// and wraps it into os.File
-func (p *ParentEnd) RecvPty() (*os.File, error) {
-	buf := make([]byte, 1)
-	oob := make([]byte, unix.CmsgSpace(4))
-	n, oobn, _, _, err := unix.Recvmsg(int(p.socket.Fd()), buf, oob, 0)
-	if err != nil {
-		return nil, recvPtyError("recvmsg: %v", err)
-	}
-	// Recvmsg has a bug and does not propagate err correctly,
-	// so we detect EOF manually.
-	// https://github.com/golang/go/issues/58898
-	if n == 0 && oobn == 0 {
-		return nil, io.EOF
-	}
-	scms, err := unix.ParseSocketControlMessage(oob[:oobn])
-	if err != nil {
-		return nil, recvPtyError("parse socket control message: %v", err)
-	}
-	if len(scms) != 1 {
-		return nil, recvPtyError("expected 1 socket control message, got %d", len(scms))
-	}
-	fds, err := unix.ParseUnixRights(&scms[0])
-	if err != nil {
-		return nil, recvPtyError("parse unix rights: %v", err)
-	}
-	if len(fds) != 1 {
-		return nil, recvPtyError("expected 1 fd, got %d", len(fds))
-	}
-	return os.NewFile(uintptr(fds[0]), "pty"), nil
-}
-
 func (p *ParentEnd) Close() error {
 	if p.socket != nil {
 		err := p.socket.Close()
@@ -140,18 +106,6 @@ func (c *ChildEnd) RecvChildArgs() (*ChildArgs, error) {
 		return nil, fmt.Errorf("receive arguments from parent: %v", err)
 	}
 	return &childArgs, nil
-}
-
-// SendPty sends parent descriptor of a sandboxed
-// pseudoterminal. Parent process uses this descriptor to stream input
-// and output between the sandboxed and the original terminal.
-func (c *ChildEnd) SendPty(f *os.File) error {
-	rights := unix.UnixRights(int(f.Fd()))
-	err := unix.Sendmsg(int(c.Socket.Fd()), []byte{0}, rights, nil, 0)
-	if err != nil {
-		return fmt.Errorf("send pty file descriptor to parent: %v", err)
-	}
-	return nil
 }
 
 func (c *ChildEnd) Close() error {

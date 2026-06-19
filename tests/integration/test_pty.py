@@ -16,6 +16,8 @@ import sys
 import tempfile
 import unittest
 
+from pathlib import Path
+
 from base import TestBase, ENV_ID
 
 class TestPty(TestBase):
@@ -39,6 +41,21 @@ class TestPty(TestBase):
         result = self.drop_run('ps -o tty=', stdin=sys.stdin)
         self.assertSuccess(result)
         self.assertEqual('pts/0', result.stdout.strip())
+
+    def test_exit_code_passed_with_terminal(self):
+        self.drop_init()
+        result = self.drop_run('bash -c "exit 77"', stdin=sys.stdin)
+        self.assertEqual('', result.stderr)
+        self.assertEqual(77, result.returncode)
+
+    def test_run_dir_cleaned_up_after_terminal_session(self):
+        self.drop_init()
+        result = self.drop_run('true', stdin=sys.stdin)
+        self.assertSuccess(result)
+
+        run_dir = Path(self.drop_home) / 'internal' / 'run'
+        leftovers = list(run_dir.iterdir()) if run_dir.exists() else []
+        self.assertEqual([], leftovers)
 
     def test_no_terminal_when_streams_redirected(self):
         self.drop_init()

@@ -17,7 +17,6 @@ func TestParentChildCommunication(t *testing.T) {
 	}
 	defer os.Remove(ftmp.Name())
 	defer ftmp.Close()
-	fcontent := "hello from child"
 
 	parentEnd, childEnd, err := NewParentChildSocket()
 	if err != nil {
@@ -75,40 +74,11 @@ func TestParentChildCommunication(t *testing.T) {
 			return
 		}
 
-		if _, err := ftmp.WriteString(fcontent); err != nil {
-			done <- err
-			return
-		}
-		if _, err := ftmp.Seek(0, 0); err != nil {
-			done <- err
-			return
-		}
-
-		if err := childEnd.SendPty(ftmp); err != nil {
-			done <- err
-			return
-		}
 		done <- nil
 	}()
 
 	if err := parentEnd.SendChildArgs(sentArgs); err != nil {
 		t.Fatalf("SendChildArgs: %v", err)
-	}
-
-	received, err := parentEnd.RecvPty()
-	if err != nil {
-		t.Errorf("RecvPty: %v", err)
-	} else {
-		defer received.Close()
-
-		buf := make([]byte, 100)
-		n, err := received.Read(buf)
-		if err != nil {
-			t.Fatalf("Read from received fd: %v", err)
-		}
-		if got := string(buf[:n]); got != fcontent {
-			t.Fatalf("got %q, want %q", got, fcontent)
-		}
 	}
 
 	if err := parentEnd.Close(); err != nil {
