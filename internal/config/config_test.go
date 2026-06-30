@@ -40,6 +40,9 @@ func expectConfigsEqual(t *testing.T, actual *Config, expected *Config) {
 	if actual.Extends != expected.Extends {
 		t.Errorf("expected Extends '%s', got '%s'", expected.Extends, actual.Extends)
 	}
+	if actual.Runtime != expected.Runtime {
+		t.Errorf("expected Runtime '%s', got '%s'", expected.Runtime, actual.Runtime)
+	}
 
 	expectSlicesEqual(t, "Mounts", actual.Mounts, expected.Mounts)
 	expectSlicesEqual(t, "BlockedPaths", actual.BlockedPaths, expected.BlockedPaths)
@@ -367,6 +370,7 @@ udp_published_ports = ["5000"]
 udp_host_ports = ["12000:1700", "9000"]
 `,
 			expected: Config{
+				Runtime: RuntimeNative,
 				Net: Net{
 					Mode:              "isolated",
 					TCPPublishedPorts: []PublishedPort{{Auto: true}},
@@ -388,6 +392,7 @@ udp_published_ports = []
 udp_host_ports = []
 `,
 			expected: Config{
+				Runtime: RuntimeNative,
 				Net: Net{
 					Mode:              "off",
 					TCPPublishedPorts: []PublishedPort{},
@@ -402,6 +407,7 @@ udp_host_ports = []
 			name:    "no net section",
 			tomlStr: ``,
 			expected: Config{
+				Runtime: RuntimeNative,
 				Net: Net{
 					Mode:              "isolated", // default
 					TCPPublishedPorts: []PublishedPort{},
@@ -441,6 +447,7 @@ func TestParse(t *testing.T) {
 		{
 			name: "complete valid config",
 			tomlStr: `
+runtime = "gvisor"
 mounts = [
   "/home/user/docs",
   "/tmp:~/tmp:rw,overlay",
@@ -459,6 +466,7 @@ udp_published_ports = ["5000"]
 udp_host_ports = ["12000:1700", "9000"]
 `,
 			expected: Config{
+				Runtime: RuntimeGvisor,
 				Mounts: []Mount{
 					{Source: "/home/user/docs", Target: "/home/user/docs"},
 					{Source: "/tmp", Target: "~/tmp", RW: true, Overlay: true},
@@ -490,6 +498,7 @@ udp_host_ports = ["12000:1700", "9000"]
 			name:    "empty config",
 			tomlStr: ``,
 			expected: Config{
+				Runtime:      RuntimeNative,
 				Mounts:       nil,
 				BlockedPaths: nil,
 				Net: Net{
@@ -501,6 +510,14 @@ udp_host_ports = ["12000:1700", "9000"]
 				},
 			},
 			error: "",
+		},
+		{
+			name: "invalid runtime",
+			tomlStr: `
+runtime = "foo"
+`,
+			expected: Config{},
+			error:    "invalid runtime",
 		},
 		{
 			name: "invalid exposed_vars pattern",
@@ -516,6 +533,7 @@ environ.exposed_vars = ["HOME", "INVALID["]
 environ.set_vars = ["FOO=bar", "BAZ=qux=123"]
 `,
 			expected: Config{
+				Runtime: RuntimeNative,
 				Environ: Environ{
 					SetVars: []EnvVar{
 						{Name: "FOO", Value: "bar"},
@@ -719,6 +737,20 @@ func TestValidateNetworkMode(t *testing.T) {
 		} else if !strings.Contains(err.Error(), "invalid network mode") {
 			t.Errorf("unexpected error for mode '%s': %s", mode, err.Error())
 		}
+	}
+}
+
+func TestValidateRuntime(t *testing.T) {
+	valid := []string{RuntimeNative, RuntimeGvisor}
+	for _, r := range valid {
+		if err := validateRuntime(r); err != nil {
+			t.Errorf("validateRuntime(%q) = %v, want nil", r, err)
+		}
+	}
+	if err := validateRuntime("foo"); err == nil {
+		t.Error("validateRuntime(\"foo\") = nil, want error")
+	} else if !strings.Contains(err.Error(), "invalid runtime") {
+		t.Errorf("validateRuntime(\"foo\") = %v, want error containing 'invalid runtime'", err)
 	}
 }
 

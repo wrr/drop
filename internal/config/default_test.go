@@ -46,6 +46,10 @@ func TestWriteBase(t *testing.T) {
 		t.Errorf("Expected mounts to be not nil")
 	}
 
+	if cfg.Runtime != RuntimeNative {
+		t.Errorf("Expected default runtime %q, got %q", RuntimeNative, cfg.Runtime)
+	}
+
 	if cfg.Environ.ExposedVars == nil {
 		t.Errorf("Expected environ.exposed_vars to be not nil")
 	} else if l := len(cfg.Environ.ExposedVars); l < 10 {

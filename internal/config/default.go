@@ -63,6 +63,16 @@ func WriteBase(path string, homeDir string) error {
 # Environment-specific config files by default extend this file.
 ################################################################
 
+# Sandboxing runtime:
+# "native" - run directly on the host kernel, isolated by
+#            Linux namespaces and capability dropping. Maximum
+#            compatibility and native speed.
+# "gvisor" - for added isolation run inside a gVisor userspace
+#            kernel (runsc), which shrinks the host-kernel attack
+#            surface. Best-effort compatible (gVisor implements a
+#            subset of Linux).
+runtime = "native"
+
 # Directories and files exposed to Drop.
 #
 # Entries can have a compact string syntax, like:
@@ -217,8 +227,8 @@ func WriteDefaultForEnv(path string, mounts []DefaultMount, homeDir string) erro
 
 # Use all the settings from the base.toml file. All the list settings
 # set in this file are appended to the settings from the base.toml.
-# The net.mode, if set in this file, overwrites the net.mode set in
-# the base.toml.
+# The runtime and net.mode, if set in this file, overwrite the
+# settings from the base.toml.
 extends = "./base.toml"
 
 # Add any settings that apply to this environment only:

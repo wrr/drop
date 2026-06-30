@@ -64,6 +64,10 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 		return err
 	}
 
+	if cfg.Runtime == config.RuntimeGvisor {
+		return fmt.Errorf("the %q runtime is not implemented yet", config.RuntimeGvisor)
+	}
+
 	if (len(flags.TcpPublishedPorts) > 0 ||
 		len(flags.TcpHostPorts) > 0 ||
 		len(flags.UdpPublishedPorts) > 0 ||

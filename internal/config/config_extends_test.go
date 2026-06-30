@@ -53,16 +53,19 @@ func TestExtends(t *testing.T) {
 			files: map[string]string{
 				"/config/entry.toml": `
 extends = "base.toml"
+runtime = "gvisor"
 mounts = ["~/entry-mount"]
 net.mode = "off"
 `,
 				"/config/base.toml": `
+runtime = "native"
 mounts = ["~/base-mount"]
 net.mode = "isolated"
 `,
 			},
 			expected: Config{
 				Extends: "base.toml",
+				Runtime: RuntimeGvisor,
 				Mounts: []Mount{
 					{Source: "~/base-mount", Target: "~/base-mount"},
 					{Source: "~/entry-mount", Target: "~/entry-mount"},
@@ -79,11 +82,13 @@ mounts = ["~/entry-mount"]
 `,
 				"/home/alice/base.toml": `
 mounts = ["~/base-mount"]
+runtime = "gvisor"
 net.mode = "off"
 `,
 			},
 			expected: Config{
 				Extends: "~/base.toml",
+				Runtime: RuntimeGvisor,
 				Mounts: []Mount{
 					{Source: "~/base-mount", Target: "~/base-mount"},
 					{Source: "~/entry-mount", Target: "~/entry-mount"},
@@ -104,6 +109,7 @@ mounts = ["~/base-mount"]
 			},
 			expected: Config{
 				Extends: "/etc/drop/base.toml",
+				Runtime: RuntimeNative,
 				Mounts: []Mount{
 					{Source: "~/base-mount", Target: "~/base-mount"},
 					{Source: "~/entry-mount", Target: "~/entry-mount"},
@@ -116,6 +122,7 @@ mounts = ["~/base-mount"]
 			files: map[string]string{
 				"/config/entry.toml": `
 extends = "base.toml"
+runtime = "native"
 mounts = ["~/entry-mount"]
 blocked_paths = ["/child-blocked"]
 `,
@@ -125,12 +132,14 @@ mounts = ["~/base-mount"]
 blocked_paths = ["/base-blocked"]
 `,
 				"/config/base-base.toml": `
+runtime = "gvisor"
 mounts = ["~/base-base-mount"]
 blocked_paths = ["/base-base-blocked"]
 `,
 			},
 			expected: Config{
 				Extends: "base.toml",
+				Runtime: RuntimeNative,
 				Mounts: []Mount{
 					{Source: "~/base-base-mount", Target: "~/base-base-mount"},
 					{Source: "~/base-mount", Target: "~/base-mount"},
@@ -171,6 +180,7 @@ udp_host_ports = ["8003"]
 			},
 			expected: Config{
 				Extends: "base.toml",
+				Runtime: RuntimeNative,
 				Mounts: []Mount{
 					{Source: "~/base-mount", Target: "~/base-mount"},
 					{Source: "~/entry-mount", Target: "~/entry-mount"},

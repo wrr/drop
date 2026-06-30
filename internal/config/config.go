@@ -29,11 +29,17 @@ import (
 
 type Config struct {
 	Extends      string   `toml:"extends"`
+	Runtime      string   `toml:"runtime"`
 	Mounts       []Mount  `toml:"mounts"`
 	BlockedPaths []string `toml:"blocked_paths"`
 	Environ      Environ  `toml:"environ"`
 	Net          Net      `toml:"net"`
 }
+
+const (
+	RuntimeNative = "native"
+	RuntimeGvisor = "gvisor"
+)
 
 type Mount struct {
 	Source  string
@@ -255,6 +261,10 @@ func (r *reader) parse(configStr string, configDir string) (*Config, error) {
 		cfg = merge(base, cfg)
 	}
 
+	if cfg.Runtime == "" {
+		cfg.Runtime = RuntimeNative
+	}
+
 	if cfg.Net.Mode == "" {
 		cfg.Net.Mode = "isolated"
 	}
@@ -267,12 +277,17 @@ func (r *reader) parse(configStr string, configDir string) (*Config, error) {
 }
 
 func merge(base *Config, sub *Config) *Config {
+	runtime := base.Runtime
+	if sub.Runtime != "" {
+		runtime = sub.Runtime
+	}
 	netMode := base.Net.Mode
 	if sub.Net.Mode != "" {
 		netMode = sub.Net.Mode
 	}
 	return &Config{
 		Extends:      sub.Extends,
+		Runtime:      runtime,
 		Mounts:       slices.Concat(base.Mounts, sub.Mounts),
 		BlockedPaths: slices.Concat(base.BlockedPaths, sub.BlockedPaths),
 		Environ: Environ{
@@ -290,6 +305,9 @@ func merge(base *Config, sub *Config) *Config {
 }
 
 func Validate(cfg *Config) error {
+	if err := validateRuntime(cfg.Runtime); err != nil {
+		return err
+	}
 	if err := validateMounts("mounts", cfg.Mounts, osutil.ValidateRootOrHomeSubPath); err != nil {
 		return err
 	}
@@ -459,6 +477,15 @@ func parsePortPair(s string) (int, int, error) {
 
 }
 
+func validateRuntime(runtime string) error {
+	switch runtime {
+	case RuntimeNative, RuntimeGvisor:
+		return nil
+	default:
+		return fmt.Errorf("invalid runtime '%s': must be '%s' or '%s'", runtime, RuntimeNative, RuntimeGvisor)
+	}
+}
+
 // validateMounts checks if all mount source and target paths pass the
 // provided validation function.
 func validateMounts(propId string, mounts []Mount, validateFn func(string) error) error {
@@ -495,7 +522,6 @@ func validateEnvironExposedVars(patterns []string) error {
 	return nil
 }
 
-// validateNetworkMode validates that the network mode is one of the allowed values.
 func validateNetworkMode(mode string) error {
 	switch mode {
 	case "off", "isolated", "unjailed":

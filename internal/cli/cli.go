@@ -31,6 +31,7 @@ import (
 // command.
 type RunFlags struct {
 	EnvId       string
+	Runtime     string
 	ConfigPath  string
 	NetworkMode string
 
@@ -126,6 +127,11 @@ The -m, -t, -T, -u, -U options are appended to options from the TOML config file
 						Aliases:     []string{"r"},
 						Usage:       "Be root (uid 0) in the sandbox (doesn't grant any additional privileges to the sandboxed processes).",
 						Destination: &flags.BeRoot,
+					},
+					&cli.StringFlag{
+						Name:        "runtime",
+						Usage:       "Sandboxing runtime: native or gvisor",
+						Destination: &flags.Runtime,
 					},
 					&cli.StringSliceFlag{
 						Name:        "mount",
@@ -234,6 +240,9 @@ func FlagsToConfig(cfg *config.Config, flags *RunFlags) error {
 
 	if flags.NetworkMode != "" {
 		cfg.Net.Mode = flags.NetworkMode
+	}
+	if flags.Runtime != "" {
+		cfg.Runtime = flags.Runtime
 	}
 	if len(flags.TcpPublishedPorts) > 0 {
 		p, err := parsePublishPortFlags(flags.TcpPublishedPorts)
