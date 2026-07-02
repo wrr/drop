@@ -41,6 +41,10 @@ const (
 	RuntimeGvisor = "gvisor"
 )
 
+func (c *Config) IsGvisorRuntime() bool {
+	return c.Runtime == RuntimeGvisor
+}
+
 type Mount struct {
 	Source  string
 	Target  string

@@ -34,6 +34,7 @@ import (
 	"github.com/wrr/drop/internal/cli"
 	"github.com/wrr/drop/internal/config"
 	"github.com/wrr/drop/internal/env"
+	"github.com/wrr/drop/internal/gvisor"
 	"github.com/wrr/drop/internal/ipc"
 	"github.com/wrr/drop/internal/jailfs"
 	"github.com/wrr/drop/internal/netns"
@@ -62,10 +63,6 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 
 	if err := cli.FlagsToConfig(cfg, flags); err != nil {
 		return err
-	}
-
-	if cfg.Runtime == config.RuntimeGvisor {
-		return fmt.Errorf("the %q runtime is not implemented yet", config.RuntimeGvisor)
 	}
 
 	if (len(flags.TcpPublishedPorts) > 0 ||
@@ -325,8 +322,10 @@ func RunChild() error {
 		return err
 	}
 
+	ptyNeeded := pty.PtyNeeded()
 	var ptySender *ipc.PtySender
-	if pty.PtyNeeded() {
+	// gVisor sets up PTY and sends the socket on its own.
+	if ptyNeeded && !cfg.IsGvisorRuntime() {
 		// Must be done before pivot root, so PtySocket is still accessible.
 		ptySender, err = ipc.NewPtySender(paths.PtySocket)
 		if err != nil {
@@ -417,6 +416,7 @@ func RunChild() error {
 	if _, err := exec.LookPath(sandboxedProg); err != nil {
 		return fmt.Errorf("command not found: %v", err)
 	}
+
 	// Do not execute the sandboxed binary directly, but let
 	// /usr/bin/env execute it. This is to ensure that the executed
 	// binary cannot point to Drop executable via /proc/self/exe. This
@@ -455,15 +455,18 @@ func RunChild() error {
 	// all in such case the /proc/self/exe replacement technique could
 	// be executed.
 	prog := "/usr/bin/env"
-	canOverwrite, err := osutil.CanOverwrite(prog)
-	if err != nil {
-		return err
-	}
-	if canOverwrite {
-		return fmt.Errorf("%v must not be writable by the current user", prog)
-	}
+	// The protection is not needed with gVisor
+	if !cfg.IsGvisorRuntime() {
+		canOverwrite, err := osutil.CanOverwrite(prog)
+		if err != nil {
+			return err
+		}
+		if canOverwrite {
+			return fmt.Errorf("%v must not be writable by the current user", prog)
+		}
 
-	execArgs = append([]string{"env", "--"}, execArgs...)
+		execArgs = append([]string{"env", "--"}, execArgs...)
+	}
 
 	if err := allFdsCloseOnExec(); err != nil {
 		return fmt.Errorf("set all open file descriptors to close: %v", err)
@@ -474,8 +477,14 @@ func RunChild() error {
 	writeCoverage()
 
 	// Replace the current process
-	if err := unix.Exec(prog, execArgs, envVars); err != nil {
-		return fmt.Errorf("exec %s: %v", sandboxedProg, err)
+	if cfg.IsGvisorRuntime() {
+		if err := gvisor.Exec(execArgs, envVars, ptyNeeded, paths); err != nil {
+			return fmt.Errorf("gvisor exec %s: %v", sandboxedProg, err)
+		}
+	} else {
+		if err := unix.Exec(prog, execArgs, envVars); err != nil {
+			return fmt.Errorf("exec %s: %v", sandboxedProg, err)
+		}
 	}
 
 	// Should never be reached

@@ -102,5 +102,7 @@ func containerMounts(fsRootSrc string, bindMounts []string) []specs.Mount {
 			Options:     []string{"rbind", "nosuid", "nodev"},
 		})
 	}
+	// gVisor automatically mounts /proc, /sys, and /dev, these mounts
+	// don't need to be included in the JSON spec.
 	return mounts
 }

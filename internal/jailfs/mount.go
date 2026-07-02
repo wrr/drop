@@ -433,20 +433,31 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
-	if err := rt.mountDev(); err != nil {
-		return err
-	}
-
 	if err := rt.mountTmp(paths); err != nil {
 		return err
 	}
+	if !cfg.IsGvisorRuntime() {
+		if err := rt.mountProc(); err != nil {
+			return err
+		}
+		if err := rt.mountDev(); err != nil {
+			return err
+		}
+		if err := rt.mountSys(cfg); err != nil {
+			return err
+		}
 
-	if err := rt.mountProc(); err != nil {
-		return err
-	}
-
-	if err := rt.mountSys(cfg); err != nil {
-		return err
+	} else {
+		// gVisor automatically mounts /proc, /dev and /sys implemented by
+		// its own kernel. But Drop must mount proc of the namespace it
+		// sets up into /proc, so gVisor can access information about
+		// namespaced processes, keeping host's original /proc causes
+		// gVisor startup failure with permission denied when accessing
+		// /proc/self/exe.
+		flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV)
+		if err := unix.Mount("proc", "/proc", "proc", flags, ""); err != nil {
+			return fmt.Errorf("mount /proc failed: %v (dmesg may have more details)", err)
+		}
 	}
 
 	if err := rt.mountVar(paths); err != nil {
@@ -483,6 +494,11 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 		return err
 	}
 
+	if cfg.IsGvisorRuntime() {
+		// gVisor later pivots into its own root assembled based on the
+		// content of paths.FsRoot.
+		return nil
+	}
 	return rt.pivot()
 }
 
