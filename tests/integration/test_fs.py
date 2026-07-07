@@ -378,13 +378,27 @@ class TestFS(TestBase):
         self.assertIn('No space left on device', result.stderr)
         self.assertEqual(1, result.returncode)
 
-        # In total, expect only 14 entries in the jailed /dev dir (6
-        # devices, 2 dirs, 6 links)
-        cmd = 'bash -c "ls -1A /dev |wc -l"'
+        required_devs = {
+            'fd', 'full', 'null', 'ptmx',
+            'pts', 'random', 'shm',
+            'stderr', 'stdin', 'stdout',
+            'tty', 'urandom', 'zero'
+        }
+        optional_devs = {
+            'core', # missing with gGisor runtime
+            'fuse', # only with gVisor runtime
+        }
+
+        cmd = 'bash -c "ls -1A /dev"'
         result = self.drop_run(cmd)
         self.assertSuccess(result)
-        stat_out = result.stdout.strip()
-        self.assertEqual('14', stat_out)
+        devs = set(result.stdout.split())
+
+        missing = required_devs - devs
+        self.assertFalse(missing, 'missing /dev entries')
+
+        unexpected = devs - (required_devs | optional_devs)
+        self.assertFalse(unexpected, 'unexpected /dev entries')
 
     def test_blocked_fs_entries(self):
         """Test that always blocked paths are not readable"""
