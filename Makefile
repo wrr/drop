@@ -53,6 +53,8 @@ test-integration: build
 	mkdir -p cover
 	python3 -m unittest discover tests/integration/
 
+# LAST_ARG must be a full file name, like:
+# make test-one test_fs.py
 LAST_ARG := $(lastword $(MAKECMDGOALS))
 test-one: build
 	python3 -m unittest discover tests/integration/ -p "$(LAST_ARG)"
