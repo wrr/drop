@@ -283,6 +283,9 @@ func (rt *root) mountDev() error {
 		{Source: "/dev/full", Target: "/dev/full"},
 		{Source: "/dev/random", Target: "/dev/random"},
 		{Source: "/dev/urandom", Target: "/dev/urandom"},
+		// /dev/tty bind mounted from the host still resolves correct
+		// controlling terminal of sandboxed calling processes.
+		{Source: "/dev/tty", Target: "/dev/tty"},
 		// /dev/ptmx is not bind-mounted from host, but from the container
 		// /dev/pts/ptmx.
 		// This is prefered to a symlink, because symlinks can be changed

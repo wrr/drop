@@ -378,13 +378,13 @@ class TestFS(TestBase):
         self.assertIn('No space left on device', result.stderr)
         self.assertEqual(1, result.returncode)
 
-        # In total, expect only 13 entries in the jailed /dev dir (5
+        # In total, expect only 14 entries in the jailed /dev dir (6
         # devices, 2 dirs, 6 links)
         cmd = 'bash -c "ls -1A /dev |wc -l"'
         result = self.drop_run(cmd)
         self.assertSuccess(result)
         stat_out = result.stdout.strip()
-        self.assertEqual('13', stat_out)
+        self.assertEqual('14', stat_out)
 
     def test_blocked_fs_entries(self):
         """Test that always blocked paths are not readable"""

@@ -13,12 +13,11 @@
 # limitations under the License.
 
 import sys
-import tempfile
 import unittest
 
+from base import TestBase
 from pathlib import Path
 
-from base import TestBase, ENV_ID
 
 class TestPty(TestBase):
 
@@ -95,3 +94,21 @@ class TestPty(TestBase):
         result = self.drop_run('rm -rf /dev/ptmx')
         self.assertEqual(1, result.returncode)
         self.assertIn('Device or resource busy', result.stderr.strip())
+
+    def test_dev_tty(self):
+        self.drop_init()
+        # /dev/tty must be the char device with major:minor 5:0.
+        result = self.drop_run('stat -c %t:%T /dev/tty')
+        self.assertSuccess(result)
+        self.assertEqual('5:0', result.stdout.strip())
+
+        # Writing to /dev/pty with controlling terminal should succeed
+        result = self.drop_run('bash -c "echo \"\" > /dev/tty"',
+                               stdin=sys.stdin)
+        self.assertSuccess(result)
+
+        # Writing to /dev/pty without controlling terminal should fail
+        result = self.drop_run('bash -c "echo hello > /dev/tty"')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('/dev/tty: No such device or address',
+                      result.stderr.strip())
