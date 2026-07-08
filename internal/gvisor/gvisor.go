@@ -106,9 +106,11 @@ func Exec(args []string, env []string, ptyNeeded bool, paths *jailfs.Paths) erro
 		// the files while this gVisor container is running.
 		"--file-access-mounts=shared",
 		"--root", gvisorDir,
-		"run",
-		"--bundle", bundleDir,
 	}
+	if debug_log := os.Getenv("DROP_GVISOR_DEBUG_LOG"); debug_log != "" {
+		argv = append(argv, "--debug", "--debug-log", debug_log)
+	}
+	argv = append(argv, "run", "--bundle", bundleDir)
 	if ptyNeeded {
 		argv = append(argv, "--console-socket", paths.PtySocket)
 	}
