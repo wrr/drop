@@ -67,10 +67,9 @@ func WriteBase(path string, homeDir string) error {
 # "native" - run directly on the host kernel, isolated by
 #            Linux namespaces and capability dropping. Maximum
 #            compatibility and native speed.
-# "gvisor" - for added isolation run inside a gVisor userspace
-#            kernel (runsc), which shrinks the host-kernel attack
-#            surface. Best-effort compatible (gVisor implements a
-#            subset of Linux).
+# "gvisor" - for added isolation run inside a gVisor userspace kernel,
+#            which shrinks the host-kernel attack surface. Best-effort
+#            compatible (gVisor implements a subset of Linux).
 runtime = "native"
 
 # Directories and files exposed to Drop.
