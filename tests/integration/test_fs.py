@@ -485,10 +485,6 @@ def scoped_empty_file(path):
 class TestFSGvisor(TestFS):
     runtime = 'gvisor'
 
-    @unittest.skip('gVisor root is not yet read-only')
-    def test_root_is_read_only(self):
-        pass
-
     @unittest.skip('gVisor fails to start when top level dirs are blocked')
     def test_blocked_paths(self):
         pass

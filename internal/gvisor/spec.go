@@ -56,7 +56,7 @@ func CreateSpec(cfg ContainerConfig) (string, error) {
 	spec := &specs.Spec{
 		Version:  specs.Version,
 		Hostname: hostname,
-		Root:     &specs.Root{Path: cfg.FsRootDst, Readonly: false},
+		Root:     &specs.Root{Path: cfg.FsRootDst, Readonly: true},
 		Process: &specs.Process{
 			Terminal:        cfg.Terminal,
 			User:            specs.User{UID: uint32(cfg.UID), GID: uint32(cfg.GID)},
