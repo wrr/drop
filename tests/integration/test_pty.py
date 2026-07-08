@@ -112,3 +112,20 @@ class TestPty(TestBase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn('/dev/tty: No such device or address',
                       result.stderr.strip())
+
+
+class TestPtyGvisor(TestPty):
+    runtime = 'gvisor'
+
+    @unittest.skip('terminal reporting not working with gVisor')
+    def test_has_terminal(self):
+        # See https://github.com/google/gvisor/issues/13535
+        pass
+
+    @unittest.skip('investigate with gVisor')
+    def test_only_terminal_fds_are_terminals_in_sandbox(self):
+        pass
+
+    @unittest.skip('investigate with gVisor')
+    def test_ptmx_cannot_be_removed(self):
+        pass

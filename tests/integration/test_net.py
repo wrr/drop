@@ -16,7 +16,7 @@ import os
 import select
 import socket
 
-from base import TestBase, Config, ENV_ID
+from base import TestBase, Config
 
 
 class TestNet(TestBase):
@@ -220,3 +220,6 @@ def loopback_read_udp(udp_port):
         return response.decode('utf-8')
     finally:
         sock.close()
+
+class TestNetGvisor(TestNet):
+    runtime = 'gvisor'

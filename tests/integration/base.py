@@ -68,6 +68,10 @@ class Config:
 class TestBase(unittest.TestCase):
     """Base class for Drop integration tests"""
 
+    # Runtime to use. If a subclass sets it to 'gvisor', 'drop run'
+    # is invoked with '-runtime gvisor' param.
+    runtime = 'native'
+
     def setUp(self):
         self.drop_home = tempfile.mkdtemp(prefix='drop-tests')
 
@@ -171,6 +175,11 @@ class TestBase(unittest.TestCase):
         write_config(config, config_file)
         if env_id is not None:
             added_args += ['-e', env_id]
+
+        self.assertIn(self.runtime, {'native', 'gvisor'}, 'invalid runtime')
+
+        if self.runtime == 'gvisor':
+            added_args += ['-runtime', 'gvisor']
         command = f'run {" ".join(added_args)} {args}'
         return self.drop_background(command, drop_home=drop_home,
                                     **subprocess_kwargs)
@@ -204,7 +213,7 @@ class TestBase(unittest.TestCase):
         process.wait()
 
     def rm_env(self, env_id, drop_home=None):
-        result = self.drop(f'rm {env_id}', drop_home=drop_home)
+        self.drop(f'rm {env_id}', drop_home=drop_home)
 
     def assertSuccess(self, result):
         self.assertTrue(not result.stderr, f'Unexpected error {result.stderr}')

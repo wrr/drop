@@ -72,5 +72,5 @@ class TestInit(TestBase):
     def test_init_too_many_arguments(self):
         result = self.drop('init foo bar')
         self.assertEqual(1, result.returncode)
-        self.assertEqual(f'Error: usage: drop init [env-id]\n',
+        self.assertEqual('Error: usage: drop init [env-id]\n',
                          result.stderr)

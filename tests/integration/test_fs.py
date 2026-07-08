@@ -16,6 +16,7 @@ import os
 import random
 import shutil
 import string
+import unittest
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -480,3 +481,19 @@ def scoped_empty_file(path):
     finally:
         if path.exists():
             path.unlink()
+
+class TestFSGvisor(TestFS):
+    runtime = 'gvisor'
+
+    @unittest.skip('gVisor root is not yet read-only')
+    def test_root_is_read_only(self):
+        pass
+
+    @unittest.skip('gVisor fails to start when top level dirs are blocked')
+    def test_blocked_paths(self):
+        pass
+
+    def test_blocked_fs_entries(self):
+        # gVisor has own synthetic /proc and /sys with smaller number
+        # of entries, all safe to access from within the sandbox.
+        pass

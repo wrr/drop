@@ -16,6 +16,7 @@ import getpass
 import os
 import re
 import tempfile
+import unittest
 
 import base
 
@@ -268,4 +269,9 @@ class TestCore(base.TestBase):
         self.assertSuccess(result)
         self.assertEqual('env3', result.stdout.strip())
 
+class TestCoreGvisor(TestCore):
+    runtime = 'gvisor'
 
+    @unittest.skip('fd passing to gvisor not working yet')
+    def test_cannot_overwrite_input_files_passed_via_std_streams(self):
+        pass
