@@ -385,12 +385,11 @@ class TestFS(TestBase):
             'tty', 'urandom', 'zero'
         }
         optional_devs = {
-            'core', # missing with gGisor runtime
+            'core', # missing with gVisor runtime
             'fuse', # only with gVisor runtime
         }
 
-        cmd = 'bash -c "ls -1A /dev"'
-        result = self.drop_run(cmd)
+        result = self.drop_run("ls -1A /dev")
         self.assertSuccess(result)
         devs = set(result.stdout.split())
 
