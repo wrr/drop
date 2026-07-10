@@ -178,22 +178,13 @@ func arrangeRootDir(fsRootDst, fsRootSrc string) ([]string, error) {
 			bindMounts = append(bindMounts, rootPath)
 		default:
 			// Regular file (or any other non-dir, non-symlink entry):
-			if err := createEmptyFile(dstPath); err != nil {
+			// The content and permissions are irrelevant as the bind
+			// mount hides them.
+			if err := osutil.CreateEmptyFile(dstPath, 0600); err != nil {
 				return nil, err
 			}
 			bindMounts = append(bindMounts, rootPath)
 		}
 	}
 	return bindMounts, nil
-}
-
-// createEmptyFile creates an empty file to be used as a
-// bind-mount target. Its content and permissions are irrelevant as
-// the bind mount hides them.
-func createEmptyFile(path string) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return fmt.Errorf("create empty file %s: %v", path, err)
-	}
-	return file.Close()
 }

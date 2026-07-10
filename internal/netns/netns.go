@@ -26,6 +26,7 @@ import (
 	"syscall"
 
 	"github.com/wrr/drop/internal/config"
+	"github.com/wrr/drop/internal/osutil"
 )
 
 // hostPortArgs and publishedPortArgs return pasta port mapping
@@ -98,10 +99,10 @@ func StartPasta(jailedPid int, netConfig config.Net, runDir string) (func(), err
 	// Create empty log and pid files. Pasta version used by Fedora
 	// require these files to exists (perhaps this is some system
 	// policy/mechanism, not directly related to Pasta code).
-	if err := createEmptyFile(logPath); err != nil {
+	if err := osutil.CreateEmptyFile(logPath, 0600); err != nil {
 		return nil, fmt.Errorf("create pasta log file: %v", err)
 	}
-	if err := createEmptyFile(pidPath); err != nil {
+	if err := osutil.CreateEmptyFile(pidPath, 0600); err != nil {
 		return nil, fmt.Errorf("create pasta pid file: %v", err)
 	}
 
@@ -203,11 +204,4 @@ func readDaemonPid(pidPath string) (int, error) {
 		return 0, fmt.Errorf("parse pasta daemon pid: %v", err)
 	}
 	return pid, nil
-}
-
-func createEmptyFile(path string) error {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return os.WriteFile(path, []byte{}, 0600)
-	}
-	return nil
 }

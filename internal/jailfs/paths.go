@@ -421,11 +421,7 @@ func ensureEmptyFile(path string) error {
 		return err
 	}
 
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0000)
-	if err != nil {
-		return err
-	}
-	return file.Close()
+	return osutil.CreateEmptyFile(path, 0000)
 }
 
 // initEnvTmpDir checks if a tmp directory for the current

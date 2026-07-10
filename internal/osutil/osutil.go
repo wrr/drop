@@ -39,6 +39,18 @@ func CanStat(path string) bool {
 	return err == nil
 }
 
+// CreateEmptyFile creates an empty file with the given
+// permissions. It fails if the file already exists. Takes umask into
+// account, so the actual permissions of the created file can be
+// reduced.
+func CreateEmptyFile(path string, perm os.FileMode) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return fmt.Errorf("create empty file %s: %v", path, err)
+	}
+	return file.Close()
+}
+
 // IsDebianBased returns true if the system is Debian-based by checking
 // for the presence of /etc/debian_version file.
 func IsDebianBased() bool {

@@ -92,7 +92,7 @@ func (rt *root) bindFile(src, trg string, mountflags uintptr) error {
 	// Mount destination must exist, create an empty file to be the
 	// destination mount point
 	if _, err := os.Stat(absTrg); os.IsNotExist(err) {
-		if err := createEmptyFile(absTrg); err != nil {
+		if err := createFileMountPoint(absTrg); err != nil {
 			return err
 		}
 	}
@@ -562,23 +562,19 @@ func createOverlayFSMountPoints(mounts []config.Mount, paths *Paths) error {
 			if info.IsDir() {
 				osutil.MkdirAll(ovrlTrg)
 			} else {
-				createEmptyFile(ovrlTrg)
+				createFileMountPoint(ovrlTrg)
 			}
 		}
 	}
 	return nil
 }
 
-// createEmptyFile creates an empty file and all its missing parent directories
-func createEmptyFile(path string) error {
+// createFileMountPoint creates an empty file to be used as a bind-mount
+// target, along with all its missing parent directories.
+func createFileMountPoint(path string) error {
 	parent := filepath.Dir(path)
 	if err := osutil.MkdirAll(parent); err != nil {
 		return err
 	}
-
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return fmt.Errorf("create empty file: %v", err)
-	}
-	return file.Close()
+	return osutil.CreateEmptyFile(path, 0600)
 }

@@ -17,7 +17,9 @@ package osutil
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -139,6 +141,56 @@ func checkError(wantErr string, err error) error {
 		return fmt.Errorf("expected error containing %q, got %q", wantErr, err.Error())
 	}
 	return nil
+}
+
+func TestCreateEmptyFile(t *testing.T) {
+	// Clear the umask so the requested permissions are applied verbatim.
+	oldMask := syscall.Umask(0)
+	defer syscall.Umask(oldMask)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty")
+
+	if err := CreateEmptyFile(path, 0600); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat created file: %v", err)
+	}
+	if info.Size() != 0 {
+		t.Errorf("created file should be empty, got size %d", info.Size())
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Errorf("created file permissions = %o, want %o", got, 0600)
+	}
+
+	// Creating the same file again must fail as O_EXCL is used.
+	err = CreateEmptyFile(path, 0600)
+	if terr := checkError("create empty file", err); terr != nil {
+		t.Fatal(terr)
+	}
+}
+
+func TestCreateEmptyFilePermissions(t *testing.T) {
+	oldMask := syscall.Umask(0)
+	defer syscall.Umask(oldMask)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "perm")
+
+	if err := CreateEmptyFile(path, 0647); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat created file: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0647 {
+		t.Errorf("created file permissions = %o, want %o", got, 0647)
+	}
 }
 
 func TestIsRootOrHomeSubPath(t *testing.T) {
