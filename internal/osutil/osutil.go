@@ -39,6 +39,12 @@ func CanStat(path string) bool {
 	return err == nil
 }
 
+// CanRead returns true if the current user can read the file or
+// directory at path.
+func CanRead(path string) bool {
+	return unix.Access(path, unix.R_OK) == nil
+}
+
 // CreateEmptyFile creates an empty file with the given
 // permissions. It fails if the file already exists. Takes umask into
 // account, so the actual permissions of the created file can be

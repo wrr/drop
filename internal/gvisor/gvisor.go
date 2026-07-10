@@ -145,6 +145,14 @@ func Exec(args []string, env []string, ptyNeeded bool, paths *jailfs.Paths) erro
 // ["/etc", "/tmp", "/home"]. Symlinks resolve within the tree and need
 // no mount, so they are not included.
 //
+// If a top-level entry within fsRootSrc is not readable by the
+// current user (for example it is included in the 'blocked_paths'
+// list), the function instead creates an equally unreadable empty dir
+// or file in fsRootDst and does not return it as a bind-mount target.
+// gVisor cannot bind mount an unreadable dir or file, recreating
+// it as an unreadable placeholder in the gVisor root achieves the
+// same result: the entry stays inaccessible to the sandboxed process.
+//
 // Only the top level is recreated. The spec bind mounts each top-level
 // entry recursively (rbind), so everything nested below comes along and
 // appears inside gVisor as ordinary files; there is no need to descend
@@ -172,18 +180,34 @@ func arrangeRootDir(fsRootDst, fsRootSrc string) ([]string, error) {
 				return nil, fmt.Errorf("create symlink %s: %v", dstPath, err)
 			}
 		case entry.IsDir():
-			if err := osutil.MkdirAll(dstPath); err != nil {
-				return nil, err
+			// A readable dir or file is a bind-mount target, so its content
+			// and permissions are irrelevant (the mount hides them). An
+			// unreadable dir or file cannot be bind mounted, so it is
+			// recreated as an unreadable placeholder and not returned as a
+			// bind mount.
+			readable := osutil.CanRead(srcPath)
+			perm := os.FileMode(0700)
+			if !readable {
+				perm = 0000
 			}
-			bindMounts = append(bindMounts, rootPath)
+			if err := os.Mkdir(dstPath, perm); err != nil {
+				return nil, fmt.Errorf("create dir %s: %v", dstPath, err)
+			}
+			if readable {
+				bindMounts = append(bindMounts, rootPath)
+			}
 		default:
-			// Regular file (or any other non-dir, non-symlink entry):
-			// The content and permissions are irrelevant as the bind
-			// mount hides them.
-			if err := osutil.CreateEmptyFile(dstPath, 0600); err != nil {
+			readable := osutil.CanRead(srcPath)
+			perm := os.FileMode(0600)
+			if !readable {
+				perm = 0000
+			}
+			if err := osutil.CreateEmptyFile(dstPath, perm); err != nil {
 				return nil, err
 			}
-			bindMounts = append(bindMounts, rootPath)
+			if readable {
+				bindMounts = append(bindMounts, rootPath)
+			}
 		}
 	}
 	return bindMounts, nil

@@ -103,6 +103,48 @@ func TestArrangeRootDir(t *testing.T) {
 	}
 }
 
+func TestArrangeRootDirUnreadableEntries(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	// A readable dir and file, plus an unreadable dir and file.
+	if err := os.Mkdir(filepath.Join(src, "readable-dir"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "readable-file"), []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(src, "blocked-dir"), 0000); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "blocked-file"), []byte("data"), 0000); err != nil {
+		t.Fatal(err)
+	}
+
+	bindMounts, err := arrangeRootDir(dst, src)
+	if err != nil {
+		t.Fatalf("arrangeRootDir: %v", err)
+	}
+
+	// Only the readable entries are returned as bind-mount targets.
+	wantMounts := []string{"/readable-dir", "/readable-file"}
+	if !reflect.DeepEqual(bindMounts, wantMounts) {
+		t.Errorf("bindMounts = %v, want %v", bindMounts, wantMounts)
+	}
+
+	// The unreadable entries are still recreated as placeholders, but
+	// with no permissions.
+	for _, name := range []string{"blocked-dir", "blocked-file"} {
+		info, err := os.Lstat(filepath.Join(dst, name))
+		if err != nil {
+			t.Fatalf("stat %s: %v", name, err)
+		}
+		if got := info.Mode().Perm(); got != 0000 {
+			t.Errorf("%s permissions = %o, want 0", name, got)
+		}
+	}
+}
+
 func TestArrangeRootDirMissingSrc(t *testing.T) {
 	dst := t.TempDir()
 	if _, err := arrangeRootDir(dst, filepath.Join(dst, "does-not-exist")); err == nil {

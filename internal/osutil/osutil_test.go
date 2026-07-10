@@ -193,6 +193,51 @@ func TestCreateEmptyFilePermissions(t *testing.T) {
 	}
 }
 
+func TestCanRead(t *testing.T) {
+	dir := t.TempDir()
+
+	testFile := filepath.Join(dir, "file")
+	if err := os.WriteFile(testFile, []byte("data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	testDir := filepath.Join(dir, "dir")
+	if err := os.Mkdir(testDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		path string
+		perm os.FileMode
+		want bool
+	}{
+		{path: testFile, perm: 0600, want: true},
+		{path: testFile, perm: 0400, want: true},
+		{path: testFile, perm: 0000, want: false},
+		{path: testFile, perm: 0200, want: false},
+		{path: testFile, perm: 0100, want: false},
+		{path: testFile, perm: 0040, want: false},
+		{path: testFile, perm: 0004, want: false},
+		{path: testDir, perm: 0700, want: true},
+		{path: testDir, perm: 0400, want: true},
+		{path: testDir, perm: 0000, want: false},
+		{path: testDir, perm: 0100, want: false},
+		{path: testDir, perm: 0040, want: false},
+	}
+
+	for _, tt := range tests {
+		if err := os.Chmod(tt.path, tt.perm); err != nil {
+			t.Fatal(err)
+		}
+		if got := CanRead(tt.path); got != tt.want {
+			t.Errorf("CanRead(%s, perm %o) = %v, want %v", tt.path, tt.perm, got, tt.want)
+		}
+	}
+
+	if CanRead(filepath.Join(dir, "does-not-exist")) {
+		t.Error("CanRead of a missing path should be false")
+	}
+}
+
 func TestIsRootOrHomeSubPath(t *testing.T) {
 	tests := []struct {
 		path   string

@@ -485,10 +485,6 @@ def scoped_empty_file(path):
 class TestFSGvisor(TestFS):
     runtime = 'gvisor'
 
-    @unittest.skip('gVisor fails to start when top level dirs are blocked')
-    def test_blocked_paths(self):
-        pass
-
     def test_blocked_fs_entries(self):
         # gVisor has own synthetic /proc and /sys with smaller number
         # of entries, all safe to access from within the sandbox.
