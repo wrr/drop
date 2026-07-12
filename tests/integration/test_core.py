@@ -57,6 +57,17 @@ class TestCore(base.TestBase):
         self.assertEqual(0, jail_uid),
         self.assertEqual(0, jail_gid)
 
+    def test_capabilities_dropping(self):
+        # With -r the sandboxed process runs as uid 0 but must not
+        # regain capabilities. Without CAP_SYS_ADMIN, privileged
+        # operations like bind mounting are denied: bind mounting /proc
+        # over /tmp fails with permission denied.
+        self.drop_init()
+        for flag in ['', '-r ']:
+            result = self.drop_run(f'{flag}mount --bind /proc /tmp')
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('mount: /tmp', result.stderr.lower())
+
     def test_process_isolation(self):
         self.drop_init()
         result = self.drop_run('bash -c "sleep 10 & ps aux --noheaders"')

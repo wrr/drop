@@ -16,7 +16,7 @@ import os
 import random
 import shutil
 import string
-import unittest
+import tempfile
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -349,6 +349,34 @@ class TestFS(TestBase):
             result = self.drop_run(f'ls {blocked_path}', config=config)
             self.assertNotEqual(0, result.returncode)
             self.assertIn('Permission denied', result.stderr)
+
+    def test_umounting_denied(self):
+        # A path is blocked by an empty, inaccessible file mounted
+        # over it. The sandboxed process must not be able to unmount
+        # that empty file nor read it, both in normal mode and with -r
+        # (uid 0), as neither should grant CAP_SYS_ADMIN for mounting
+        # and CAP_DAC_OVERRIDE for reading files with permissions 0.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base.write('hello', os.path.join(tmp_dir, 'blocked'))
+            config = Config(
+                mounts=[f'{tmp_dir}:/test'],
+                blocked_paths=['/test/blocked'])
+            self.drop_init()
+
+            for flag in ['', '-r ']:
+                # Reading the blocked file is denied.
+                result = self.drop_run(f'{flag}cat /test/blocked',
+                                       config=config)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn('Permission denied', result.stderr)
+
+                # Unmounting the overlay that hides the file is denied.
+                result = self.drop_run(f'{flag}umount /test/blocked',
+                                       config=config)
+                self.assertNotEqual(
+                    0, result.returncode,
+                    f'unmounting unexpectedly succeeded ({flag}umount)')
+                self.assertIn('umount: /test/blocked', result.stderr)
 
     def test_devices(self):
         self.drop_init()

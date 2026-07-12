@@ -478,10 +478,19 @@ func RunChild() error {
 
 	// Replace the current process
 	if cfg.IsGvisorRuntime() {
+		// With gVisor, we don't call noNewPrivileges(), because when
+		// gVisor runs as uid 0, its Gofer process actually needs extra
+		// caps to restrict itself. The caps dropping and new privileges
+		// blocking is still done, but by gVisor. The sandboxed process
+		// that gVisor spawns is configured in the JSON spec to have
+		// noCaps and NoNewPrivileges.
 		if err := gvisor.Exec(execArgs, envVars, ptyNeeded, paths); err != nil {
 			return fmt.Errorf("gvisor exec %s: %v", sandboxedProg, err)
 		}
 	} else {
+		if err := noNewPrivileges(); err != nil {
+			return fmt.Errorf("set no_new_privs: %v", err)
+		}
 		if err := unix.Exec(prog, execArgs, envVars); err != nil {
 			return fmt.Errorf("exec %s: %v", sandboxedProg, err)
 		}
@@ -524,6 +533,15 @@ func dropAllCaps() error {
 		return fmt.Errorf("privileges not fully dropped: have=%q, wanted=%q", now, empty)
 	}
 	return nil
+}
+
+// noNewPrivileges forbids all the child processes from regaining
+// capabilities. The blocking is done unconditionally, but it is
+// needed only when Drop runs as uid 0 in the sandbox (-r option),
+// because otherwise the kernel re-grants the full capability set to a
+// uid 0 process on execve. no_new_privs suppresses that re-grant.
+func noNewPrivileges() error {
+	return unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
 }
 
 // allFdsCloseOnExec ensures all open file descriptors have O_CLOEXEC
