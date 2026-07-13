@@ -93,7 +93,10 @@ class TestPty(TestBase):
         # kernel should not allow to remove it.
         result = self.drop_run('rm -rf /dev/ptmx')
         self.assertEqual(1, result.returncode)
-        self.assertIn('Device or resource busy', result.stderr.strip())
+        # 'Device or resource busy' with native runtime, 'Permission
+        # denied' with gVisor.
+        self.assertRegex(result.stderr.strip(),
+                         r'Device or resource busy|Permission denied')
 
     def test_dev_tty(self):
         self.drop_init()
@@ -124,8 +127,4 @@ class TestPtyGvisor(TestPty):
 
     @unittest.skip('investigate with gVisor')
     def test_only_terminal_fds_are_terminals_in_sandbox(self):
-        pass
-
-    @unittest.skip('investigate with gVisor')
-    def test_ptmx_cannot_be_removed(self):
         pass
