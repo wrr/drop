@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import functools
+import os
+import select
 import sys
 import unittest
 
@@ -19,37 +22,85 @@ from base import TestBase
 from pathlib import Path
 
 
+class Pty:
+    """A pseudoterminal allocated for a test.
+
+    parent is the manager fd (read/write it to drive the terminal).
+    child is the subsidiary fd (pass it as a subprocess's stdin,
+    stdout and/or stderr).
+    """
+
+    def __init__(self):
+        self.parent, self.child = os.openpty()
+
+    def read(self):
+        """Returns the output currently available on the parent side as
+        a string without blocking.
+        """
+        chunks = []
+        while select.select([self.parent], [], [], 0)[0]:
+            try:
+                chunk = os.read(self.parent, 4096)
+            except OSError:
+                # the child side is closed
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b''.join(chunks).decode(errors='replace')
+
+    def close(self):
+        for fd in (self.parent, self.child):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def allocate_pty(test_func):
+    """Test decorator that allocates a Pty and passes it as a single
+    argument to the test, closing it when the test finishes."""
+    @functools.wraps(test_func)
+    def wrapper(self, *args, **kwargs):
+        pty = Pty()
+        try:
+            return test_func(self, pty, *args, **kwargs)
+        finally:
+            pty.close()
+    return wrapper
+
+
 class TestPty(TestBase):
 
-    @classmethod
-    def setUpClass(cls):
-        if not sys.stdin.isatty():
-            raise unittest.SkipTest(
-                "PTY test cases must be run from a terminal, skipping")
-
-    def test_has_terminal(self):
+    @allocate_pty
+    def test_has_terminal(self, pty):
         self.drop_init()
         # pass terminal as stdin, then tty should be allocated in the sandbox
-        result = self.drop_run('tty', stdin=sys.stdin)
+        result = self.drop_run('tty', stdin=pty.child)
         self.assertSuccess(result)
         self.assertEqual('/dev/pts/0', result.stdout.strip())
 
         # processes should have a controlling terminal, reported in ps
         # output (if process has not controlling terminal, ps reports
         # ? as the TTY)
-        result = self.drop_run('ps -o tty=', stdin=sys.stdin)
+        result = self.drop_run('ps -o tty=', stdin=pty.child)
         self.assertSuccess(result)
         self.assertEqual('pts/0', result.stdout.strip())
 
-    def test_exit_code_passed_with_terminal(self):
+    @allocate_pty
+    def test_exit_code_passed_with_terminal(self, pty):
         self.drop_init()
-        result = self.drop_run('bash -c "exit 77"', stdin=sys.stdin)
+        result = self.drop_run('bash -c "exit 77"', stdin=pty.child)
         self.assertEqual('', result.stderr)
         self.assertEqual(77, result.returncode)
 
-    def test_run_dir_cleaned_up_after_terminal_session(self):
+    @allocate_pty
+    def test_run_dir_cleaned_up_after_terminal_session(self, pty):
         self.drop_init()
-        result = self.drop_run('true', stdin=sys.stdin)
+        # gVisor runtime allocates own pty only if all three file
+        # descriptors point to a terminal
+        result = self.drop_run('true', stdin=pty.child, stdout=pty.child,
+                               stderr=pty.child)
         self.assertSuccess(result)
 
         run_dir = Path(self.drop_home) / 'internal' / 'run'
@@ -71,10 +122,11 @@ class TestPty(TestBase):
         self.assertSuccess(ps_result)
         self.assertEqual('?', ps_result.stdout.strip())
 
-    def test_only_terminal_fds_are_terminals_in_sandbox(self):
+    @allocate_pty
+    def test_only_terminal_fds_are_terminals_in_sandbox(self, pty):
         self.drop_init()
         result = self.drop_run('readlink /proc/self/fd/0',
-                               stdin=sys.stdin)
+                               stdin=pty.child)
         self.assertSuccess(result)
         self.assertEqual('/dev/pts/0', result.stdout.strip())
 
@@ -98,17 +150,21 @@ class TestPty(TestBase):
         self.assertRegex(result.stderr.strip(),
                          r'Device or resource busy|Permission denied')
 
-    def test_dev_tty(self):
+    @allocate_pty
+    def test_dev_tty(self, pty):
         self.drop_init()
         # /dev/tty must be the char device with major:minor 5:0.
         result = self.drop_run('stat -c %t:%T /dev/tty')
         self.assertSuccess(result)
         self.assertEqual('5:0', result.stdout.strip())
 
-        # Writing to /dev/pty with controlling terminal should succeed
-        result = self.drop_run('bash -c "echo \"\" > /dev/tty"',
-                               stdin=sys.stdin)
-        self.assertSuccess(result)
+        # Writing to /dev/tty with a controlling terminal should succeed
+        result = self.drop_run('bash -c "echo hello > /dev/tty"',
+                               stdin=pty.child,
+                               stdout=pty.child,
+                               stderr=pty.child)
+        self.assertEqual(0, result.returncode)
+        self.assertEqual('hello', pty.read().strip())
 
         # Writing to /dev/pty without controlling terminal should fail
         result = self.drop_run('bash -c "echo hello > /dev/tty"')
@@ -125,6 +181,31 @@ class TestPtyGvisor(TestPty):
         # See https://github.com/google/gvisor/issues/13535
         pass
 
-    @unittest.skip('investigate with gVisor')
-    def test_only_terminal_fds_are_terminals_in_sandbox(self):
-        pass
+    @allocate_pty
+    def test_only_terminal_fds_are_terminals_in_sandbox(self, pty):
+        # Unlike native runtime, gVisor will allocate terminal in the
+        # sandbox only if all three fds are terminals. When some
+        # non-terminal descriptors are passed to the sandbox, terminal
+        # is not allocted within gVisor, but passed to it from Drop
+        # (such terminal doesn't have /dev/tty entry).
+        #
+        # Suprisingly, even when gVisor allocates terminal, readlink
+        # still reports std descriptors to point to host:[1], maybe due
+        # to https://github.com/google/gvisor/issues/13535
+        self.drop_init()
+        result = self.drop_run('sh -c "readlink /proc/self/fd/0; ' +
+                               'readlink /proc/self/fd/1; ' +
+                               'readlink /proc/self/fd/2"',
+                               stdin=pty.child, stdout=pty.child,
+                               stderr=pty.child)
+        self.assertEqual(0, result.returncode)
+        self.assertEqual('host:[1]\r\nhost:[1]\r\nhost:[1]',
+                         pty.read().strip())
+
+        # Pipes should not go through terminal
+        result = self.drop_run('sh -c "readlink /proc/self/fd/0; ' +
+                               'readlink /proc/self/fd/1; ' +
+                               'readlink /proc/self/fd/2"')
+        self.assertSuccess(result)
+        self.assertEqual('host:[1]\nhost:[2]\nhost:[3]', result.stdout.strip())
+

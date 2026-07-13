@@ -67,7 +67,13 @@ func NewPty() (*os.File, *os.File, error) {
 // create own PTY instead of using the original, not sandboxed
 // terminal.
 func PtyNeeded() bool {
-	return slices.ContainsFunc([]int{0, 1, 2}, term.IsTerminal)
+	return term.IsTerminal(0) || term.IsTerminal(1) || term.IsTerminal(2)
+}
+
+// AllFdsAreTerminal returns true if all of stdin, stdout, stderr are
+// terminals.
+func AllFdsAreTerminal() bool {
+	return term.IsTerminal(0) && term.IsTerminal(1) && term.IsTerminal(2)
 }
 
 // SetControllingTerminal sets the pty as the controlling terminal for

@@ -439,28 +439,40 @@ func ArrangeFilesystem(paths *Paths, cfg *config.Config) error {
 	if err := rt.mountTmp(paths); err != nil {
 		return err
 	}
-	if !cfg.IsGvisorRuntime() {
-		if err := rt.mountProc(); err != nil {
+
+	if err := rt.mountDev(); err != nil {
+		return err
+	}
+
+	procRt := rt
+	if cfg.IsGvisorRuntime() {
+		// gVisor automatically mounts /proc, /dev and /sys implemented by
+		// its own kernel. But Drop must mount proc of the
+		// namespace it sets up into /proc, so gVisor can access
+		// information about namespaced processes, keeping host's original
+		// /proc causes gVisor startup failure with permission denied when
+		// accessing /proc/self/exe.
+		hostRt := &root{fsRoot: "/"}
+		// With gVisor Drop needs also /dev, so terminal setup code run by
+		// Drop when some standard descriptors do not point to the
+		// terminal (see a comment in gvisor.go) uses namespaced terminal
+		// devices, not the original host devices.
+		//
+		// Note that just mounting dev directly into /dev (as it is done
+		// with /proc) will not work, because mountDev needs the original
+		// /dev to be available to bind mount devices such as /dev/null.
+		if err := hostRt.bind(rt.fromRoot("/dev"), "/dev", unix.MS_NOSUID|unix.MS_REC, false); err != nil {
 			return err
 		}
-		if err := rt.mountDev(); err != nil {
-			return err
-		}
+		procRt = hostRt
+	} else {
 		if err := rt.mountSys(cfg); err != nil {
 			return err
 		}
+	}
 
-	} else {
-		// gVisor automatically mounts /proc, /dev and /sys implemented by
-		// its own kernel. But Drop must mount proc of the namespace it
-		// sets up into /proc, so gVisor can access information about
-		// namespaced processes, keeping host's original /proc causes
-		// gVisor startup failure with permission denied when accessing
-		// /proc/self/exe.
-		flags := uintptr(unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV)
-		if err := unix.Mount("proc", "/proc", "proc", flags, ""); err != nil {
-			return fmt.Errorf("mount /proc failed: %v (dmesg may have more details)", err)
-		}
+	if err := procRt.mountProc(); err != nil {
+		return err
 	}
 
 	if err := rt.mountVar(paths); err != nil {

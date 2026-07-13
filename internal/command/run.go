@@ -324,12 +324,19 @@ func RunChild() error {
 
 	ptyNeeded := pty.PtyNeeded()
 	var ptySender *ipc.PtySender
-	// gVisor sets up PTY and sends the socket on its own.
-	if ptyNeeded && !cfg.IsGvisorRuntime() {
-		// Must be done before pivot root, so PtySocket is still accessible.
-		ptySender, err = ipc.NewPtySender(paths.PtySocket)
-		if err != nil {
-			return err
+	gVisorPtyAllocate := false
+	if ptyNeeded {
+		if cfg.IsGvisorRuntime() && pty.AllFdsAreTerminal() {
+			// gVisor sets up PTY and sends the socket on its own. See the
+			// comment in gvisor.go for the explanation why this is done
+			// only if all fds are terminal.
+			gVisorPtyAllocate = true
+		} else {
+			// Must be done before pivot root, so PtySocket is still accessible.
+			ptySender, err = ipc.NewPtySender(paths.PtySocket)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -484,7 +491,7 @@ func RunChild() error {
 		// blocking is still done, but by gVisor. The sandboxed process
 		// that gVisor spawns is configured in the JSON spec to have
 		// noCaps and NoNewPrivileges.
-		if err := gvisor.Exec(execArgs, envVars, ptyNeeded, paths); err != nil {
+		if err := gvisor.Exec(execArgs, envVars, gVisorPtyAllocate, paths); err != nil {
 			return fmt.Errorf("gvisor exec %s: %v", sandboxedProg, err)
 		}
 	} else {

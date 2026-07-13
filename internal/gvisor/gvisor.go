@@ -33,8 +33,25 @@
 // with pasta. This allows to reuse all the network namespace setup
 // and share networking configuration between gVisor and native paths.
 //
-// gVisor passes a pseudo terminal file descriptor via a Unix named
-// socket to the Drop parent process.
+//
+// gVisor allocates terminal and passes it to Drop via
+// -console-socket, but only if all standard file descriptors point to
+// a terminal. gVisor does not support allocating terminal only for
+// some standard descriptors. For example, it is not possible to pass
+// stdin as a pipe to gVisor, but have it allocate terminal for
+// stdout/err.
+// If 'Terminal: true' is set in JSON spec and we add '-pass-fd 0:0'
+// command line argument, the 0 descriptor is duplicated into 1 and 2
+// (this is likely a bug).
+//
+// For this reason, if only some standard descriptors are terminals,
+// Drop allocates pty in its own user namespace, passes it to gVisor
+// for the terminal descriptors and for non-terminal descriptors
+// passes the relevant pipe wrappers. This allows terminal to work
+// correctly, but because such terminal is a device from outside of
+// the gVisor sandbox, /dev/tty within sandbox does not point to it
+// (there is also no /dev/pts/ entry, but due to gVisor issue #13535
+// these entries are in general missing).
 
 package gvisor
 
@@ -50,7 +67,7 @@ import (
 	"github.com/wrr/drop/internal/osutil"
 )
 
-func Exec(args []string, env []string, ptyNeeded bool, paths *jailfs.Paths) error {
+func Exec(args []string, env []string, terminal bool, paths *jailfs.Paths) error {
 	runscPath, err := exec.LookPath("runsc")
 	if err != nil {
 		return fmt.Errorf("runsc binary for the gVisor runtime not found.\n" +
@@ -75,7 +92,7 @@ func Exec(args []string, env []string, ptyNeeded bool, paths *jailfs.Paths) erro
 		Cwd:        paths.Cwd,
 		UID:        os.Getuid(),
 		GID:        os.Getgid(),
-		Terminal:   ptyNeeded,
+		Terminal:   terminal,
 		BindMounts: bindMounts,
 	})
 	if err != nil {
@@ -111,7 +128,7 @@ func Exec(args []string, env []string, ptyNeeded bool, paths *jailfs.Paths) erro
 		argv = append(argv, "--debug", "--debug-log", debug_log)
 	}
 	argv = append(argv, "run", "--bundle", bundleDir)
-	if ptyNeeded {
+	if terminal {
 		argv = append(argv, "--console-socket", paths.PtySocket)
 	}
 	argv = append(argv,
@@ -168,6 +185,13 @@ func arrangeRootDir(fsRootDst, fsRootSrc string) ([]string, error) {
 		dstPath := filepath.Join(fsRootDst, entry.Name())
 		// The entry as seen from the container root, e.g. "/etc".
 		rootPath := "/" + entry.Name()
+
+		if rootPath == "/dev" {
+			// fsRootSrc contains /dev, but it should not be mounted, gVisor
+			// will provide own /dev. The same applies to /proc and /sys,
+			// but these are not created in fsRootSrc in gVisor mode.
+			continue
+		}
 
 		switch {
 		case entry.Type()&os.ModeSymlink != 0:
