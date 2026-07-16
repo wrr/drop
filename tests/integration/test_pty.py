@@ -172,6 +172,24 @@ class TestPty(TestBase):
         self.assertIn('/dev/tty: No such device or address',
                       result.stderr.strip())
 
+    @allocate_pty
+    def test_dev_tty_with_piped_stdin(self, pty):
+        self.drop_init()
+        # Equivalent of: echo 'x' | drop run sh -c "echo hello > /dev/tty"
+        # stdin is a pipe while stdout/stderr are the terminal (mixed fds).
+        stdin_r, stdin_w = os.pipe()
+        os.write(stdin_w, b'x\n')
+        os.close(stdin_w)
+        try:
+            result = self.drop_run('sh -c "echo hello > /dev/tty"',
+                                   stdin=stdin_r,
+                                   stdout=pty.child,
+                                   stderr=pty.child)
+        finally:
+            os.close(stdin_r)
+        self.assertEqual(0, result.returncode)
+        self.assertEqual('hello', pty.read().strip())
+
 
 class TestPtyGvisor(TestPty):
     runtime = 'gvisor'
@@ -208,4 +226,25 @@ class TestPtyGvisor(TestPty):
                                'readlink /proc/self/fd/2"')
         self.assertSuccess(result)
         self.assertEqual('host:[1]\nhost:[2]\nhost:[3]', result.stdout.strip())
+
+    @allocate_pty
+    def test_dev_tty_with_piped_stdin(self, pty):
+        self.drop_init()
+        # When only some std descriptors are terminals, gVisor does not
+        # allocate the terminal itself; Drop allocates it and passes it in,
+        # so the sandbox has no /dev/tty entry for it (see the comment in
+        # gvisor.go). Opening /dev/tty therefore fails.
+        stdin_r, stdin_w = os.pipe()
+        os.write(stdin_w, b'x\n')
+        os.close(stdin_w)
+        try:
+            result = self.drop_run('sh -c "echo hello > /dev/tty"',
+                                   stdin=stdin_r,
+                                   stdout=pty.child,
+                                   stderr=pty.child)
+        finally:
+            os.close(stdin_r)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('cannot create /dev/tty: No such device or address',
+                      pty.read())
 
