@@ -220,10 +220,17 @@ class TestCore(base.TestBase):
             result = self.drop_run(
                 'bash -c "echo -n modified > /proc/self/fd/0"',
                 stdin=input_file)
-            self.assertSuccess(result)
+            if self.runtime == 'gvisor':
+                # gVisor can't reopen the read-only pipe fd for writing.
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn('Bad file descriptor', result.stderr)
+            else:
+                # On native the write reopens the pipe's other end and
+                # succeeds, but lands in the pipe and doesn't modify
+                # the original file.
+                self.assertSuccess(result)
 
-            # The write should either fail or be redirected elsewhere.
-            # The original file must remain unchanged.
+
             input_file.seek(0)
             actual_content = input_file.read()
 
@@ -282,7 +289,3 @@ class TestCore(base.TestBase):
 
 class TestCoreGvisor(TestCore):
     runtime = 'gvisor'
-
-    @unittest.skip('fd passing to gvisor not working yet')
-    def test_cannot_overwrite_input_files_passed_via_std_streams(self):
-        pass
