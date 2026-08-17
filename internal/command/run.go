@@ -352,18 +352,21 @@ func RunChild() error {
 		return err
 	}
 
-	// Change working directory to what it was originally, but on the
-	// new filesystem root. If Cwd is not accessible on the new
-	// filesystem, fallback to home dir and then to /
-	chdirPaths := []string{paths.Cwd, paths.HostHome, "/"}
-	var chdirErr error
-	for _, p := range chdirPaths {
-		if chdirErr = unix.Chdir(p); chdirErr == nil {
-			break
+	// Change working directory to what it should be on the new
+	// filesystem root.
+	//
+	// gVisor applies the CWD on its own (it couldn't be done here
+	// anyway, because with gVisor fs root is not pivoted by Drop).
+	if !cfg.IsGvisorRuntime() {
+		var chdirErr error
+		for _, p := range paths.CwdCandidates() {
+			if chdirErr = unix.Chdir(p); chdirErr == nil {
+				break
+			}
 		}
-	}
-	if chdirErr != nil {
-		return fmt.Errorf("chdir to /: %v", chdirErr)
+		if chdirErr != nil {
+			return fmt.Errorf("chdir to /: %v", chdirErr)
+		}
 	}
 
 	if ptySender != nil {

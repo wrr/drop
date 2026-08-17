@@ -60,6 +60,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -84,12 +85,16 @@ func Exec(args []string, env []string, terminal bool, paths *jailfs.Paths) error
 	if err != nil {
 		return err
 	}
+	cwd, err := selectCwd(paths.FsRoot, paths.CwdCandidates())
+	if err != nil {
+		return err
+	}
 	spec, err := CreateSpec(ContainerConfig{
 		FsRootDst:  fsRootDst,
 		FsRootSrc:  paths.FsRoot,
 		Args:       args,
 		Env:        env,
-		Cwd:        paths.Cwd,
+		Cwd:        cwd,
 		UID:        os.Getuid(),
 		GID:        os.Getgid(),
 		Terminal:   terminal,
@@ -140,6 +145,32 @@ func Exec(args []string, env []string, terminal bool, paths *jailfs.Paths) error
 	}
 
 	return nil
+}
+
+// selectCwd returns the working directory of the sandboxed process:
+// the first of the cwdCandidates that exists as a directory that can
+// be entered within the assembled root filesystem (fsRoot).
+func selectCwd(fsRoot string, cwdCandidates []string) (string, error) {
+	root, err := os.OpenRoot(fsRoot)
+	if err != nil {
+		return "", fmt.Errorf("open sandbox root %s: %v", fsRoot, err)
+	}
+	defer root.Close()
+
+	for _, dir := range cwdCandidates {
+		name := strings.TrimPrefix(dir, "/") // Root wants a root-relative name
+		if name == "" {
+			name = "."
+		}
+		// The trailing "." makes the stat fail if the candidate is not
+		// a directory or cannot be entered. Without it a directory
+		// mounted with no permissions (see blockEntries) would be
+		// selected and gVisor would fail to chdir into it.
+		if _, err := root.Stat(name + "/."); err == nil {
+			return dir, nil
+		}
+	}
+	return "", fmt.Errorf("failed to obtain CWD for the sandbox root %s", fsRoot)
 }
 
 // arrangeRootDir builds the gVisor container root in fsRootDst dir so

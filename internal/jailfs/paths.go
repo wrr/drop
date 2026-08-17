@@ -68,6 +68,15 @@ type Paths struct {
 	EmptyFile string
 }
 
+// CwdCandidates returns the candidates for the working directory to
+// use for the sandboxed process, ordered by preference: the directory
+// Drop was started from, the home dir and "/". The first candidate
+// dir that exists in the sandbox should be used as the sandboxed
+// process CWD.
+func (p *Paths) CwdCandidates() []string {
+	return []string{p.Cwd, p.HostHome, "/"}
+}
+
 // NewPaths creates Paths object with the relevant paths for the
 // current environment and creates missing dir and files.
 //

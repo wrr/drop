@@ -76,6 +76,11 @@ class TestFS(TestBase):
         # read-write mode with the exception of the .git folder
         # exposed in read-only mode
         self.drop_init()
+
+        result = self.drop_run('pwd')
+        self.assertSuccess(result)
+        self.assertEqual(f'{os.getcwd()}\n', result.stdout)
+
         # Reading and writing to CWD should work
         result = self.drop_run('cat go.mod')
         self.assertSuccess(result)
@@ -109,6 +114,16 @@ class TestFS(TestBase):
         result = self.drop_run('touch e2e_test_file')
         self.assertSuccess(result)
         self.assertFalse(os.path.exists('e2e_test_file'))
+
+    def test_cwd_falls_back_to_homedir(self):
+        self.drop_init()
+        # When Drop is run from a directory which is not exposed to
+        # the sandbox, so it cannot be used as the cwd, the cwd should
+        # be changed to the sandboxed home dir.
+        with tempfile.TemporaryDirectory() as not_shared_dir:
+            result = self.drop_run('pwd', cwd=not_shared_dir)
+            self.assertSuccess(result)
+            self.assertEqual(f'{HOME_DIR}\n', result.stdout)
 
     def test_mounts_from_root_dir(self):
         self.drop_init()

@@ -17,6 +17,7 @@ package jailfs
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -415,5 +416,17 @@ func TestCreateTmpParentDir(t *testing.T) {
 	}
 	if stat.Mode().Perm() != 0700 {
 		t.Fatalf("fallback dir perms are %o, want 0700", stat.Mode().Perm())
+	}
+}
+
+func TestCwdCandidates(t *testing.T) {
+	paths := Paths{
+		Cwd:      "/home/alice/project",
+		HostHome: "/home/alice",
+	}
+	want := []string{"/home/alice/project", "/home/alice", "/"}
+	got := paths.CwdCandidates()
+	if !slices.Equal(got, want) {
+		t.Errorf("CwdCandidates() = %v, want %v", got, want)
 	}
 }
