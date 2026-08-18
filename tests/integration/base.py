@@ -20,6 +20,7 @@ import stat
 import tempfile
 import unittest
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List
 
@@ -258,3 +259,12 @@ def read(path: str) -> str:
     with open(path, 'r') as f:
         return f.read()
 
+@contextmanager
+def scoped_dir(path):
+    """Create directory and clean up afterwards."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        yield path
+    finally:
+        if path.exists():
+            shutil.rmtree(path)

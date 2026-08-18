@@ -20,7 +20,9 @@ import unittest
 
 import base
 
-from base import Config, ENV_ID
+from pathlib import Path
+
+from base import Config, ENV_ID, scoped_dir
 
 
 class TestCore(base.TestBase):
@@ -132,6 +134,64 @@ class TestCore(base.TestBase):
         result = self.drop_run('ls', config=config)
         self.assertNotEqual(0, result.returncode)
         self.assertIn('command not found', result.stderr)
+
+    def test_command_not_found(self):
+        self.drop_init()
+        cmd_dir = Path.home() / 'drop-test-data'
+        with scoped_dir(cmd_dir):
+            cmd_path = cmd_dir / 'drop-test-cmd'
+            base.write('#!/bin/sh\necho hello\n', cmd_path)
+            os.chmod(cmd_path, 0o755)
+
+            path='PATH=/usr/bin:/bin'
+            path_with_cmd = f'{path}:{cmd_dir}'
+            exposed = Config(mounts=[str(cmd_dir)], environ_set_vars=[path])
+
+            # An absolute path.
+            result = self.drop_run(cmd_path, config=exposed)
+            self.assertSuccess(result)
+            self.assertEqual('hello', result.stdout.strip())
+
+            not_exposed = Config(environ_set_vars=[path])
+            result = self.drop_run(cmd_path, config=not_exposed)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('command not found', result.stderr)
+
+            # A name in a dir that PATH points to.
+            exposed_on_path = Config(
+                mounts=[str(cmd_dir)], environ_set_vars=[path_with_cmd])
+            result = self.drop_run(
+                'drop-test-cmd', config=exposed_on_path)
+            self.assertSuccess(result)
+            self.assertEqual('hello', result.stdout.strip())
+
+            # cmd exposed, but not on PATH
+            result = self.drop_run('drop-test-cmd', config=exposed)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('command not found', result.stderr)
+
+            # A name relative to the cwd.
+            result = self.drop_run(
+                './drop-test-cmd', config=exposed, cwd=cmd_dir)
+            self.assertSuccess(result)
+            self.assertEqual('hello', result.stdout.strip())
+
+            # cmd name without ./ should not search the cwd.
+            result = self.drop_run(
+                'drop-test-cmd', config=exposed, cwd=cmd_dir)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('command not found', result.stderr)
+
+            # Relative PATH entries that expose CWD, which by Unix
+            # convention work, do not work with gVisor and are also
+            # skipped with Drop.
+            path_with_cwd = f'{path}:'
+            exposed_on_cwd = Config(
+                mounts=[str(cmd_dir)], environ_set_vars=[path_with_cwd])
+            result = self.drop_run(
+                'drop-test-cmd', config=exposed_on_cwd, cwd=cmd_dir)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('command not found', result.stderr)
 
     def test_drop_env_set(self):
         """Test that DROP_ENV is set correctly"""

@@ -416,20 +416,11 @@ func RunChild() error {
 	filteredEnv := env.Filter(os.Environ(), cfg.Environ.ExposedVars)
 	envVars := env.SetVars(filteredEnv, cfg.Environ.SetVars, envId)
 	path, _ := env.Lookup(envVars, "PATH")
-	// Drop config can set or remove PATH, so use the changed value for
-	// LookPath. This is not very elegant, would be better to have a
-	// version of LookPath that takes envVars or PATH as an argument
-	// instead of using PATH from environ.
-	if err := os.Setenv("PATH", path); err != nil {
-		return fmt.Errorf("set PATH environment variable: %v", err)
-	}
 
 	sandboxedProg := execArgs[0]
 
-	// Searches PATH. We do it instead of relying on env, because if
-	// PATH is empty, env uses some default for the PATH.
-	if _, err := exec.LookPath(sandboxedProg); err != nil {
-		return fmt.Errorf("command not found: %v", err)
+	if err := osutil.FindExecutable(sandboxedProg, path, fsRoot, cwdInSandbox); err != nil {
+		return err
 	}
 
 	// Do not execute the sandboxed binary directly, but let

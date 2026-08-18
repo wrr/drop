@@ -46,7 +46,7 @@ func CwdInSandbox(fsRoot string, cwdCandidates []string) (string, error) {
 // canChdir tells if dir can be used as the working directory by a
 // process that has rootFd as its root directory.
 func canChdir(rootFd int, dir string) bool {
-	name := strings.TrimPrefix(dir, "/") // openat2 wants a root-relative name
+	name := strings.TrimPrefix(dir, "/") // openat2 needs a root-relative name
 	if name == "" {
 		name = "."
 	}
@@ -57,10 +57,7 @@ func canChdir(rootFd int, dir string) bool {
 	name += "/."
 
 	how := unix.OpenHow{
-		Flags: unix.O_PATH | unix.O_CLOEXEC,
-		// RESOLVE_IN_ROOT resolves the path the way a process that has
-		// rootFd as its root directory would: absolute symlinks are
-		// followed within the root, and ".." never escapes.
+		Flags:   unix.O_PATH | unix.O_CLOEXEC,
 		Resolve: unix.RESOLVE_IN_ROOT | unix.RESOLVE_NO_MAGICLINKS,
 	}
 	fd, err := unix.Openat2(rootFd, name, &how)

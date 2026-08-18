@@ -23,7 +23,7 @@ from pathlib import Path
 
 import base
 
-from base import TestBase, Config, ENV_ID
+from base import TestBase, Config, ENV_ID, scoped_dir
 
 
 HOME_DIR = Path.home()
@@ -522,16 +522,6 @@ class TestFS(TestBase):
         result = self.drop_run('touch /foo')
         self.assertEqual(1, result.returncode)
         self.assertIn('Read-only file system', result.stderr)
-
-@contextmanager
-def scoped_dir(path):
-    """Create directory and clean up afterwards."""
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-        yield path
-    finally:
-        if path.exists():
-            shutil.rmtree(path)
 
 @contextmanager
 def scoped_empty_file(path):
