@@ -16,8 +16,9 @@ package jailfs
 
 import (
 	"fmt"
-	"os"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 // CwdInSandbox returns the working directory of the sandboxed process:
@@ -27,22 +28,45 @@ import (
 // CwdInSandbox must be called only after ArrangeFilesystem has
 // assembled fsRoot and capabilities have been dropped.
 func CwdInSandbox(fsRoot string, cwdCandidates []string) (string, error) {
-	root, err := os.OpenRoot(fsRoot)
+	rootFd, err := unix.Open(
+		fsRoot, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return "", fmt.Errorf("open sandbox root %s: %v", fsRoot, err)
 	}
-	defer root.Close()
+	defer unix.Close(rootFd)
 
 	for _, dir := range cwdCandidates {
-		name := strings.TrimPrefix(dir, "/") // Root wants a root-relative name
-		if name == "" {
-			name = "."
-		}
-		// The trailing "." makes the stat fail if the candidate is not
-		// a directory or cannot be entered.
-		if _, err := root.Stat(name + "/."); err == nil {
+		if canChdir(rootFd, dir) {
 			return dir, nil
 		}
 	}
 	return "", fmt.Errorf("failed to obtain CWD for the sandbox root %s", fsRoot)
+}
+
+// canChdir tells if dir can be used as the working directory by a
+// process that has rootFd as its root directory.
+func canChdir(rootFd int, dir string) bool {
+	name := strings.TrimPrefix(dir, "/") // openat2 wants a root-relative name
+	if name == "" {
+		name = "."
+	}
+	// The trailing "." makes the open fail if the candidate is not a
+	// directory or cannot be entered. Without it a directory mounted
+	// with no permissions would be selected, because O_PATH does not
+	// check the permissions of the last path component.
+	name += "/."
+
+	how := unix.OpenHow{
+		Flags: unix.O_PATH | unix.O_CLOEXEC,
+		// RESOLVE_IN_ROOT resolves the path the way a process that has
+		// rootFd as its root directory would: absolute symlinks are
+		// followed within the root, and ".." never escapes.
+		Resolve: unix.RESOLVE_IN_ROOT | unix.RESOLVE_NO_MAGICLINKS,
+	}
+	fd, err := unix.Openat2(rootFd, name, &how)
+	if err != nil {
+		return false
+	}
+	unix.Close(fd)
+	return true
 }

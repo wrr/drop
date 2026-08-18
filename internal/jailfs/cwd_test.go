@@ -38,6 +38,17 @@ func TestCwdInSandbox(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(fsRoot, "home", "al", "blocked"), 0000); err != nil {
 		t.Fatal(err)
 	}
+	// Absolute symlink to a directory that exists within the sandbox
+	// root and should be resolved relative to the sandbox root.
+	if err := os.Symlink("/home/al/src", filepath.Join(fsRoot, "home", "al", "abs-link")); err != nil {
+		t.Fatal(err)
+	}
+	// Absolute symlink to a directory that exists on the host, but
+	// not within the sandbox root. Resolving it relative to the
+	// sandbox root must not reach the host directory.
+	if err := os.Symlink("/etc", filepath.Join(fsRoot, "home", "al", "escape-link")); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, tc := range []struct {
 		name       string
@@ -73,6 +84,16 @@ func TestCwdInSandbox(t *testing.T) {
 		{
 			name:       "child of a dir with no permissions not returned as cwd",
 			candidates: []string{"/home/al/blocked/src", "/home/al", "/"},
+			want:       "/home/al",
+		},
+		{
+			name:       "dir behind an absolute symlink returned as cwd",
+			candidates: []string{"/home/al/abs-link", "/home/al", "/"},
+			want:       "/home/al/abs-link",
+		},
+		{
+			name:       "dir behind a symlink escaping the sandbox root not returned as cwd",
+			candidates: []string{"/home/al/escape-link", "/home/al", "/"},
 			want:       "/home/al",
 		},
 		{
