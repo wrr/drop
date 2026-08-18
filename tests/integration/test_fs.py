@@ -125,6 +125,24 @@ class TestFS(TestBase):
             self.assertSuccess(result)
             self.assertEqual(f'{HOME_DIR}\n', result.stdout)
 
+    def test_cwd_blocked_falls_back_to_homedir(self):
+        self.drop_init()
+        # When Drop is run from a directory which is exposed to the
+        # sandbox, but blocked, the directory cannot be entered, so
+        # the cwd should be changed to the sandboxed home dir.
+        exposed_dname = 'drop-test-data'
+        blocked_dname = 'blocked'
+        home_sub_path = HOME_DIR / exposed_dname
+        blocked_path = home_sub_path / blocked_dname
+        with scoped_dir(home_sub_path):
+            os.mkdir(blocked_path)
+            config = Config(
+                mounts=[f'~/{exposed_dname}'],
+                blocked_paths=[f'~/{exposed_dname}/{blocked_dname}'])
+            result = self.drop_run('pwd', config=config, cwd=blocked_path)
+            self.assertSuccess(result)
+            self.assertEqual(f'{HOME_DIR}\n', result.stdout)
+
     def test_mounts_from_root_dir(self):
         self.drop_init()
         # Expose a path outside of the home dir, normally not

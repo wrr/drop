@@ -352,23 +352,6 @@ func RunChild() error {
 		return err
 	}
 
-	// Change working directory to what it should be on the new
-	// filesystem root.
-	//
-	// gVisor applies the CWD on its own (it couldn't be done here
-	// anyway, because with gVisor fs root is not pivoted by Drop).
-	if !cfg.IsGvisorRuntime() {
-		var chdirErr error
-		for _, p := range paths.CwdCandidates() {
-			if chdirErr = unix.Chdir(p); chdirErr == nil {
-				break
-			}
-		}
-		if chdirErr != nil {
-			return fmt.Errorf("chdir to /: %v", chdirErr)
-		}
-	}
-
 	if ptySender != nil {
 		parentPty, childPty, err := pty.NewPty()
 		if err != nil {
@@ -398,6 +381,28 @@ func RunChild() error {
 	// access the original directories (home dir, proc etc.)
 	if err := dropAllCaps(); err != nil {
 		return err
+	}
+
+	var fsRoot string
+	if cfg.IsGvisorRuntime() {
+		fsRoot = paths.FsRoot
+	} else {
+		// Root is already pivoted.
+		fsRoot = "/"
+	}
+	cwdInSandbox, err := jailfs.CwdInSandbox(fsRoot, paths.CwdCandidates())
+	if err != nil {
+		return err
+	}
+
+	// Change working directory to what it should be on the new
+	// filesystem root.
+	//
+	// gVisor applies the CWD on its own.
+	if !cfg.IsGvisorRuntime() {
+		if err := unix.Chdir(cwdInSandbox); err != nil {
+			return fmt.Errorf("chdir to %s: %v", cwdInSandbox, err)
+		}
 	}
 
 	if len(execArgs) == 0 {
@@ -494,7 +499,7 @@ func RunChild() error {
 		// blocking is still done, but by gVisor. The sandboxed process
 		// that gVisor spawns is configured in the JSON spec to have
 		// noCaps and NoNewPrivileges.
-		if err := gvisor.Exec(execArgs, envVars, gVisorPtyAllocate, paths); err != nil {
+		if err := gvisor.Exec(execArgs, envVars, gVisorPtyAllocate, paths, cwdInSandbox); err != nil {
 			return fmt.Errorf("gvisor exec %s: %v", sandboxedProg, err)
 		}
 	} else {
