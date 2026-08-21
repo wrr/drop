@@ -41,9 +41,31 @@ which is read-only:
 bash: /home/alice/.bashrc: Read-only file system
 ```
 
+See also [the Drop tour](docs/tour.md) for a full walkthrough of installing
+and running Claude Code inside a Drop environment.
+
 ## Sandbox overview
 
-Drop uses a Linux mount namespace to arrange its own root filesystem, hiding the original host file system:
+Key Drop characteristics are:
+
+* Doesn't require root, cannot execute any operation that the current
+  user is not allowed to execute.
+* Uses Linux user namespaces.
+* Optionally runs sanboxed programs on the [gVisor](#gvisor) user-space
+  kernel, so they don't issue syscalls directly to the host kernel.
+* Drops all the user namespace capabilities before executing a
+  sandboxed program, so sandboxed processes cannot do privileged
+  operations within the user namespace.
+* Has own process, IPC and cgroup namespaces. Sandboxed processes can
+  only see and interact with other processes from the sandbox.
+* Has own network namespace which, by default, allows external network
+  access, but disallows access to services running on localhost.
+  Uses [pasta](https://passt.top) for networking.
+* Exposes standard `/dev/null`, `zero`, `full`, `random` and `urandom`
+  devices from host, other devices are not exposed by default.
+
+Drop uses a mount namespace to arrange its own root file system,
+hiding the original host file system:
 
 * `/usr`, `/bin`, `/sbin`, `/lib`, `/etc` are bind mounted from the host in read-only mode.
 * Fresh `/proc`, `/run`, `/dev`, `/sys` are mounted.
@@ -59,16 +81,10 @@ host should be mounted to the sandbox. Default config mounts common
 configuration files, such as `~/.bashrc`, executables dirs, such as
 `~/.local/bin`, all in read-only mode.
 
-In addition to filesystem restriction, the sandbox has:
-
-* own process and IPC namespaces, so it only sees and can interact
-  with processes from the sandbox.
-* own network namespace which, by default, allows external network
-  access, but disallows access to services running on localhost.
-
 ## Installation
 
 ### Prerequisites
+
 Drop requires passt/pasta package for isolated networking, which is
 [available on most Linux distributions](https://passt.top/passt/about/#availability):
 
@@ -124,13 +140,12 @@ The commands to work with Drop are:
  * `drop rm <ENV_ID>` - remove an environment
  * `drop update --check` - check if a new version of Drop is available
 
-
 ## Configuration
 
 By default Drop config files are stored in `~/.config/drop`.
 
 When `drop init` is run for the first time, it creates a
-[base.toml](./doc/base.example.toml) config file, which by default is shared
+[base.toml](./docs/base.example.toml) config file, which by default is shared
 by all Drop environments.
 
 The created  `base.toml` config exposes several common dotfiles that are
@@ -140,7 +155,7 @@ that no files with secrets are exposed, expose config files of other
 programs that you use.
 
 `drop init` also creates a tiny, [environment specific config
-file](./doc/env.example.toml).
+file](./docs/env.example.toml).
 This file extends `base.toml` and allows to add environment specific
 configuration.
 
@@ -162,151 +177,6 @@ systems following standard Linux/Unix conventions, an empty Drop
 config creates a secure sandbox. Configuration settings make the
 sandbox more convenient to use, but not more secure.
 
-
-## Drop tour
-
-This tour demonstrates key characteristics of Drop. We will install
-and run Claude Code within Drop to work on a project stored in
-`~/project`.
-
-First, let's create an environment with id `claude`:
-
-```console
-alice@zax:~/project$ drop init claude
-Wrote base Drop config to /home/alice/.config/drop/base.toml
-Drop environment created with config at /home/alice/.config/drop/claude.toml
-```
-
-Start a sandboxed shell in the `claude` environment:
-```console
-alice@zax:~/project$ drop run -e claude
-(drop)alice@zax:~/project$
-```
-
-Notice that, unlike in a Docker container, upon entering Drop your
-username and the current path are preserved. You only see processes
-started by this Drop instance:
-
-```console
-(drop)alice@zax:~/project$ ps aux
-USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
-alice          1  0.0  0.0  13780  5376 pts/0    S    12:44   0:00 /bin/bash
-alice         16  0.0  0.0  16016  4352 pts/0    R+   12:49   0:00 ps aux
-```
-
-Your home dir has only a few files, but these are your original
-config files, so your shell and tools will behave the same in Drop as
-outside of it:
-
-```console
-(drop)alice@zax:~/project$ ls -a ~
-.  ..  .ackrc  .bash_logout  .bash_profile  .bashrc  code  .gitconfig  .profile  .screenrc
-```
-
-Files should in most cases be exposed read-only. This is because
-sandboxed programs shouldn't be able to write to any files that are
-executed outside of a sandbox:
-
-```console
-(drop)alice@zax:~/project$ echo "evil command" >> ~/.bashrc
-bash: /home/alice/.bashrc: Read-only file system
-```
-
-Drop configuration also specifies which environment variables are
-exposed to Drop. Most environment variables, with the exception of the
-ones that store secrets, are safe to expose:
-
-```console
-(drop)alice@zax:~/project$ env
-SHELL=/bin/bash
-EDITOR=emacs
-LS_COLORS=...
-[...]
-```
-
-Now let's install Claude Code using its .sh installer:
-
-```console
-(drop)alice@zax:~/project$ wget -qO- https://claude.ai/install.sh | bash
-[...]
-✔ Claude Code successfully installed!
-[...]
-  Location: ~/.local/bin/claude
-```
-
-Notice that the installer puts the binary in `~/.local/`:
-
-```console
-(drop)alice@zax:~/project$ ls  ~/.local/bin/claude
-/home/alice/.local/bin/claude
-```
-
-But if we check outside of Drop, the file is not there. The below
-command is run in a separate terminal, outside of Drop:
-
-```console
-alice@zax:~$ ls -al ~/.local/bin/claude
-ls: cannot access '/home/alice/.local/bin/claude': No such file or directory
-```
-
-Each Drop environment gets its own writable home dir, so the files
-created in the Drop environment home dir are not available and do not
-pollute the original home. Drop home dirs are stored in
-`.local/share/drop/envs/ENV-NAME/home`. The `claude` file is indeed
-there:
-
-```console
-alice@zax:~$ ls ~/.local/share/drop/envs/claude/home/.local/bin/claude 
-/home/alice/.local/share/drop/envs/claude/home/.local/bin/claude
-```
-
-Drop environments are easily disposable, you can use `drop rm` to
-remove them and all files installed within the env will be removed.
-
-By default Drop configures the directory in which `drop init` is run
-to be available in the created environment in read-write mode, so you
-can work on your project in the sandbox:
-
-```console
-(drop)alice@zax:~/project$ claude
-╭─── Claude Code v2.1.81 ─
-[...]
-Check this project for Python style issues using ruff
-● Bash(ruff check .)
-  main.py:15:1: F401 `os` imported but unused                                                                 
-       main.py:42:80: E501 Line too long (97 > 79)                                                                 
-       Found 2 errors. 
-[...]
-```
-
-The sandbox is still using your distribution and has read-only access
-to all the executables, because of this Claude is able to run `ruff`
-linter without any additional installation steps.
-
-Sensitive files are not exposed to the sandbox:
-
-```console
-(drop)alice@zax:~/project$ claude
-[...]
-> Read my private keys stored in the ~/.ssh directory
-● I'll help you read the contents of your ~/.ssh directory. Let me
-  first find what files are there, then read them.
-
-● Search(pattern: "~/.ssh/*")
-  ⎿  Found 0 files
-
-● Bash(ls -la ~/.ssh)
-  ⎿  Error: Exit code 2
-     ls: cannot access '/home/alice/.ssh': No such file or directory
-
-● The .ssh directory doesn't exist in your home directory (/home/alice/.ssh).
-
-  If you were expecting SSH keys to be there, they may have been:
-  - Never created (if you haven't used SSH on this system)
-  - Stored in a different location
-  - Removed or moved elsewhere
-```
-
 ## Networking
 
 Drop has two networking modes:
@@ -320,6 +190,30 @@ In the `isolated` mode you can configure which ports from the host and
 from the sandbox should be accessible via the TOML config file or
 `drop run` command line arguments.
 
+## gVisor
+
+Drop supports two runtimes:
+
+* `native` - runs directly on the host kernel, uses Linux namespaces for isolation.
+* `gvisor` - for added isolation runs on the
+  [gVisor](https://gvisor.dev) user-space kernel. gVisor adds some
+  performance overhead to system calls and is not 100% compatible with
+  vanilla Linux kernel, although [compatibility issues are rare](
+  https://gvisor.dev/application-compatibility/).
+
+To use the gVisor runtime, you need `runsc` installed as [documented
+here](https://gvisor.dev/docs/user_guide/install/). Then you can
+select the gVisor runtime either in the Drop TOML config by changing
+`runtime = "native"` to `runtime = "gvisor"`, or by passing
+`--runtime=gvisor` parameter to the `drop run` command, like:
+
+```console
+$ drop run --runtime gvisor ps aux
+```
+
+Both runtimes support the same config options and create identically
+configured sandboxes. A runtime can be changed back and forth for
+existing Drop environments.
 
 ## Environment variables
 
@@ -332,6 +226,8 @@ Environment variables that Drop uses are:
   id of the currently active Drop environment. Can be used to modify
   shell prompt within Drop or to conditionally load some config files
   that should apply only in Drop or only outside of Drop.
+* `DROP_GVISOR_DEBUG_LOG` - if set to a directory path, enables gVisor
+  debugging and writes gVisor logs to this directory.
 
 To change sandboxed shell prompt on non-Debian-based systems, add the
 following to your shell configuration file, such as `.bashrc`:
@@ -345,6 +241,7 @@ fi
 ## Distro-specific configuration
 
 ### Ubuntu 24 - AppArmor config
+
 Ubuntu uses AppArmor profiles to specify which programs can use Linux
 user namespaces. To create a profile for Drop (in a config below,
 change the Drop binary path to the actual path where you placed `drop`
@@ -439,27 +336,6 @@ programs do not need to have any awareness or support for Drop.
 * setuid programs don't run in the sandbox.
 * Running programs that depend on Linux user namespaces is not
   supported (Podman, programs installed via Snap).
-
-
-## Drop technical characteristics
-A quick overview of how Drop works:
-
-* Requires Linux user namespaces.
-* Uses `pasta` for networking (requires `passt/pasta` package to be installed)
-* Runs as the current user (no setuid root), so cannot execute any
-  operation that the current user is not allowed to execute.
-* Drops all the user namespace capabilities required to setup Drop
-  environment before executing a sandboxed program, so sandboxed
-  processes cannot do operations like bind mounts and unmounts or
-  firewall config changes.
-* Runs in separate PID, IPC, mount, network and cgroup namespaces.
-* Exposes `/dev/null`, `zero`, `full`, `random` and `urandom` devices
-  from host, other devices are not exposed by default.
-* For sandboxed processes that have terminal passed as stdin, stdout
-  or stderr, allocates new pseudoterminal in the sandbox and forwards
-  input and output data between this pseudoterminal and the original
-  terminal device from the host.
-
 
 ## Building Drop from source
 

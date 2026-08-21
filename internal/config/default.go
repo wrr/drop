@@ -64,12 +64,8 @@ func WriteBase(path string, homeDir string) error {
 ################################################################
 
 # Sandboxing runtime:
-# "native" - run directly on the host kernel, isolated by
-#            Linux namespaces and capability dropping. Maximum
-#            compatibility and native speed.
-# "gvisor" - for added isolation run inside a gVisor userspace kernel,
-#            which shrinks the host-kernel attack surface. Best-effort
-#            compatible (gVisor implements a subset of Linux).
+# "native" - run directly on the host kernel.
+# "gvisor" - for added isolation run on the gVisor user-space kernel.
 runtime = "native"
 
 # Directories and files exposed to Drop.
