@@ -15,6 +15,7 @@
 package jailfs
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -428,5 +429,68 @@ func TestCwdCandidates(t *testing.T) {
 	got := paths.CwdCandidates()
 	if !slices.Equal(got, want) {
 		t.Errorf("CwdCandidates() = %v, want %v", got, want)
+	}
+}
+
+func TestEnvIdToPrefix(t *testing.T) {
+	tests := []struct {
+		envId string
+		want  string
+	}{
+		{
+			envId: "envidwith32chars0123456789012345",
+			want:  "envidwith32chars0123456789012345",
+		},
+		{
+			envId: "envidwith33chars01234567890123456",
+			want:  "envidwith33chars0123456789012345",
+		},
+		{
+			envId: "home-alice-projects-superlongprojectname01234567",
+			want:  "superlongprojectname01234567",
+		},
+		{
+			envId: "home-alice-projects-superextralongprojectname01234567",
+			want:  "superextralongprojectname0123456",
+		},
+		{
+			envId: "home-alice-projects-shorterprojectnamebar",
+			want:  "projects-shorterprojectnamebar",
+		},
+		{
+			envId: "home-alice-projects-superlongprojectname01234567-subproject",
+			want:  "subproject",
+		},
+		// A '.' at the front of the result is removed, so that the
+		// directory is not hidden.
+		{
+			envId: "home-alice-projects-.longhiddendirectoryname1234",
+			want:  "longhiddendirectoryname1234",
+		},
+		// A '-' at the front of the result is removed, so that the
+		// directory name is not interpreted as a command flag.
+		{
+			envId: "home-verylongdirname1--myprojectsubdirname",
+			want:  "myprojectsubdirname",
+		},
+		// Nothing informative is left after the removal, the beginning of
+		// the envId is used.
+		{
+			envId: "a" + strings.Repeat("-", 64),
+			want:  "a" + strings.Repeat("-", 31),
+		},
+		{
+			envId: "a" + strings.Repeat("-", 64) + "b",
+			want:  "b",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("envId=%q", tt.envId), func(t *testing.T) {
+			got := envIdToPrefix(tt.envId)
+			if got != tt.want {
+				t.Errorf("envIdToPrefix(%q) = %q, want %q", tt.envId, got, tt.want)
+			}
+		})
 	}
 }

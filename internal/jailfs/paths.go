@@ -224,6 +224,53 @@ func runDirsPath(dropHome string) string {
 	return filepath.Join(dropHome, "internal", "run")
 }
 
+// envIdToPrefix constructs a non-unique directory name prefix based
+// on an envId. The prefix has at most maxLen characters and, like a
+// valid envId, never starts with '-' or '.'. Because long env ids are
+// commonly a result of long directory trees from which default env
+// ids are constructed, the function takes last elements of such ids,
+// as these contain the most informative directory names. If possible
+// the function tries to select only complete entries.
+//
+// envId passed to this function must be valid (IsEnvIdValid(envId) == true).
+//
+// Some examples:
+//
+// home-alice-projects-shortname -> home-alice-projects-shortname
+// home-alice-projects-superlongprojectname01234567 -> superlongprojectname01234567
+// home-alice-projects-superextralongprojectname01234567 -> superextralongprojectname0123456
+// home-alice-projects-shorterprojectnamebar -> projects-shorterprojectnamebar
+// home-alice-projects-superlongprojectname01234567-subproject -> subproject
+// home-alice-projects-.longhiddendirectoryname1234 -> longhiddendirectoryname1234
+func envIdToPrefix(envId string) string {
+	const maxLen = 32
+	if len(envId) <= maxLen {
+		return envId
+	}
+	parts := strings.Split(envId, "-")
+	result := parts[len(parts)-1]
+	for i := len(parts) - 2; i >= 0; i-- {
+		p := parts[i]
+		total := len(p) + len(result) + 1
+		if total > maxLen {
+			break
+		}
+		result = p + "-" + result
+	}
+	// Entries separated by several '-' and entries that start with '.'
+	// leave such characters at the front of the result.
+	result = strings.TrimLeft(result, "-.")
+	if len(result) == 0 {
+		// Trimming left nothing, as fallback use the beginning of envId,
+		// which starts with an allowed character.
+		result = envId
+	}
+	if len(result) > maxLen {
+		result = result[0:maxLen]
+	}
+	return result
+}
+
 // newRunDir creates a directory to store this jail instance runtime
 // files and dirs (for example, the main root file system mount
 // point). The directory can be removed when this jail instance
