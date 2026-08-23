@@ -58,7 +58,8 @@ class TestInit(TestBase):
     def test_env_id_from_cwd(self):
         # If env id is not passed, it should be constructed from
         # current working dir.
-        cwd = tempfile.mkdtemp(prefix='drop-tests')
+        cwd = self.enterContext(
+            tempfile.TemporaryDirectory(prefix='drop-e2e-tests'))
         env_id = str(cwd).replace('/', '-').strip('-')
         env_dir_from_cwd = self.env_dir(env_id)
 

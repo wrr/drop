@@ -74,7 +74,12 @@ class TestBase(unittest.TestCase):
     runtime = 'native'
 
     def setUp(self):
-        self.drop_home = tempfile.mkdtemp(prefix='drop-tests')
+        self.drop_home = tempfile.mkdtemp(prefix='drop-e2e-tests-home-')
+        # Drop puts env tmp dirs and run dirs of each instance in
+        # $TMPDIR. Redirecting it lets tearDown remove them all
+        # without the need of properly removing drop environments with
+        # 'drop rm'
+        self.tmp_dir = tempfile.mkdtemp(prefix='drop-e2e-tests-tmp-')
 
         self.background_processes = []
         self.created_homes = set()
@@ -86,7 +91,8 @@ class TestBase(unittest.TestCase):
                 process.kill()
 
         for drop_home in self.created_homes:
-            rm_drop_home(drop_home)
+            rm_tree(drop_home)
+        rm_tree(self.tmp_dir)
 
     def env_dir(self, env_id=ENV_ID, drop_home=None):
         if not drop_home:
@@ -142,6 +148,7 @@ class TestBase(unittest.TestCase):
         else:
             drop_home = self.drop_home
         env['DROP_HOME'] = drop_home
+        env['TMPDIR'] = self.tmp_dir
         subprocess_kwargs['env'] = env
 
         command = f'{os.getcwd()}/drop {command}'
@@ -239,11 +246,11 @@ def grant_permissions(path, perms):
     if (current & perms) != perms:
         os.chmod(path, current | perms)
 
-def rm_drop_home(drop_home):
+def rm_tree(path):
     # Change permissions of directories with 000 permissions
     # (emptyd).
-    ensure_can_delete_tree(drop_home)
-    shutil.rmtree(drop_home)
+    ensure_can_delete_tree(path)
+    shutil.rmtree(path)
 
 def write(content, path: str) -> None:
     """Write content to a file, ensure parent dir exists"""
