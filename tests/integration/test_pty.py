@@ -15,7 +15,6 @@
 import functools
 import os
 import select
-import sys
 import unittest
 
 from base import TestBase
@@ -189,6 +188,16 @@ class TestPty(TestBase):
             os.close(stdin_r)
         self.assertEqual(0, result.returncode)
         self.assertEqual('hello', pty.read().strip())
+
+    @allocate_pty
+    def test_long_env_id(self, pty):
+        # A regression test, long env id used to cause problems
+        # because of a console socket path being longer than allowed
+        # 107 characters.
+        env_id = 'x' * 120
+        self.drop_init(env_id)
+        result = self.drop_run('true', env_id=env_id, stdin=pty.child)
+        self.assertSuccess(result)
 
 
 class TestPtyGvisor(TestPty):

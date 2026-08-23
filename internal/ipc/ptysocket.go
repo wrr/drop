@@ -22,6 +22,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const unixSocketPathLimit = 107
+
 // PtyReceiver is created by the parent process to receive parent's
 // descriptor of a sandboxed pseudoterminal. Parent process uses this
 // descriptor to stream input and output between the sandboxed and the
@@ -53,6 +55,10 @@ type PtySender struct {
 // to connect to the socket and send the descriptor before the parent
 // calls RecvPty.
 func NewPtyReceiver(path string) (*PtyReceiver, error) {
+	if len(path) > unixSocketPathLimit {
+		return nil, fmt.Errorf("unix socket path longer than %d characters: %q", unixSocketPathLimit, path)
+	}
+
 	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
 		return nil, fmt.Errorf("create pty socket: %v", err)

@@ -194,7 +194,6 @@ class TestCore(base.TestBase):
             self.assertIn('command not found', result.stderr)
 
     def test_drop_env_set(self):
-        """Test that DROP_ENV is set correctly"""
         self.drop_init()
         result = self.drop_run('bash -c "echo $DROP_ENV"')
         self.assertSuccess(result)
@@ -239,7 +238,6 @@ class TestCore(base.TestBase):
                          f'Drop env should not exist in {default_env_dir}')
 
     def test_list_environments(self):
-        """Test listing Drop environments with -ls flag"""
         drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
         result = self.drop('ls', drop_home=drop_home)
         self.assertSuccess(result)
@@ -258,7 +256,6 @@ class TestCore(base.TestBase):
         self.assertCountEqual(env_ids, listed_envs)
 
     def test_list_environments_rejects_args(self):
-        """Test that 'drop ls' rejects trailing arguments"""
         result = self.drop('ls foo')
         self.assertNotEqual(0, result.returncode)
         self.assertIn('usage: drop ls', result.stderr)
@@ -297,7 +294,6 @@ class TestCore(base.TestBase):
         self.assertEqual(original_content, actual_content)
 
     def test_remove_environment(self):
-        """Test removing Drop environments with rm subcommand"""
         drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
 
         env_ids = ['env1', 'env2', 'env3']

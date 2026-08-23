@@ -222,7 +222,12 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 	// Start pasta to provide network connectivity to the jailed process
 	// in isolated network mode
 	if cfg.Net.Mode == "isolated" {
-		cleanPasta, err := netns.StartPasta(cmd.Process.Pid, cfg.Net, paths.Run)
+		// Store Pasta pid and log files in tmp run dir, not in the main
+		// paths.Run, because the default AppArmor policy shipped with pasta
+		// and used on AppArmor-enabled Debian and openSUSE, as well as
+		// SELinux policy on Fedora, allow write access to /tmp but do not
+		// allow access to the user home.
+		cleanPasta, err := netns.StartPasta(cmd.Process.Pid, cfg.Net, paths.RunInTmp)
 		if err != nil {
 			return err
 		}

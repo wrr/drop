@@ -57,8 +57,20 @@ type Paths struct {
 	// subdir of the host $TMPDIR to allow standard cleanup mechanisms.
 	Tmp string
 	// Run holds temporary files and dirs for the current jail instance.
-	// It can be safely remove once the jailed process terminates.
+	// It can be safely removed once the jailed process terminates.
+	// Run is located within Paths.DropHome.
 	Run string
+	// Like Run dir, but located in /tmp/drop-{username}/run/.
+	//
+	// Stores pasta runtime files (pid and log). This ensures no
+	// extra configuration is needed on systems where SELinux
+	// or AppArmor configs allow pasta to write files only to /tmp.
+	//
+	// Stores PtySocket. Has a limited total path length (unlike
+	// Paths.Run) to mitigate problems with unix socket path length
+	// limit (although these can still be hit with custom TMPDIR or very
+	// long username).
+	RunInTmp string
 	// PtySocket is a path to a named socket that the child uses to send
 	// pty to the parent.
 	PtySocket string
@@ -92,9 +104,15 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 		return nil, nil, err
 	}
 
+	userName := filepath.Base(hostHome)
+	tmpRoot, err := createTmpRootDir(userName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create root temporary directory: %v", err)
+	}
+
 	env := EnvPath(dropHome, envId)
 	internal := filepath.Join(dropHome, "internal")
-	runDir, cleanRunDir, err := newRunDir(dropHome, envId)
+	runDir, runInTmp, cleanRunDir, err := newRunDir(dropHome, envId, tmpRoot)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -115,7 +133,8 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 		Etc:       filepath.Join(env, "etc"),
 		Var:       filepath.Join(env, "var"),
 		Run:       runDir,
-		PtySocket: filepath.Join(runDir, "pty.sock"),
+		RunInTmp:  runInTmp,
+		PtySocket: filepath.Join(runInTmp, "pty.sock"),
 		EmptyDir:  filepath.Join(internal, "emptyd"),
 		EmptyFile: filepath.Join(internal, "empty"),
 	}
@@ -134,7 +153,7 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 		return nil, nil, err
 	}
 
-	tmp, err := initEnvTmpDir(envId, &paths)
+	tmp, err := initEnvTmpDir(envId, tmpRoot, paths.Env)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -271,28 +290,61 @@ func envIdToPrefix(envId string) string {
 	return result
 }
 
-// newRunDir creates a directory to store this jail instance runtime
-// files and dirs (for example, the main root file system mount
-// point). The directory can be removed when this jail instance
-// terminates.
-//
-// We don't use XDG_RUNTIME_DIR, because it is commonly tmpfs and
-// overlayfs mount points cannot be placed on it.
-func newRunDir(dropHome string, envId string) (string, func(), error) {
-	parent := runDirsPath(dropHome)
+const runLockFname string = "lock"
+const runInTmpSymlinkName string = "run-in-tmp"
 
-	if err := osutil.MkdirAll(parent); err != nil {
-		return "", nil, err
+// newRunDir creates Paths.Run and Paths.RunInTmp directories to store
+// this jail instance runtime files and dirs. The two directories can
+// be removed when this jail instance terminates.
+//
+// The main runDir is located below dropHome. It is used to store, for
+// example, the assembled root file system for this drop instance. We
+// don't use XDG_RUNTIME_DIR, because it is commonly tmpfs and
+// overlayfs mount points cannot be placed on it.
+//
+// The tmpRunDir is located below tmpRoot. Because it is expected to be
+// on tmpfs, it cannot keep root file system and replace runDir.
+//
+// The total path length of tmpRunDir is limited, to prevent problems
+// with Unix domain socket paths length limits.
+func newRunDir(dropHome, envId, tmpRoot string) (string, string, func(), error) {
+	parent := runDirsPath(dropHome)
+	runInTmpParent := filepath.Join(tmpRoot, "run")
+	toMkdir := []string{parent, runInTmpParent}
+	for _, dir := range toMkdir {
+		if err := osutil.MkdirAll(dir); err != nil {
+			return "", "", nil, err
+		}
 	}
-	runDir, err := os.MkdirTemp(parent, fmt.Sprintf("%s-", envId))
+
+	// We use full envId, not shorter version, as we do for runInTmp
+	// below. This is because there is no path length limit for things
+	// stored in runDir, and hasRunningDropInstances() needs run dir to
+	// use full envId.
+	runDir, err := os.MkdirTemp(parent, envId+"-")
 	if err != nil {
-		return "", nil, fmt.Errorf("create run sub-directory: %v", err)
+		return "", "", nil, fmt.Errorf("create run sub-directory in drop home: %v", err)
 	}
 
 	lockFile, err := lockRunDir(runDir)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
+
+	// Shorten long env ids to make runInTmp paths shorter.
+	runInTmp, err := os.MkdirTemp(runInTmpParent, envIdToPrefix(envId)+"-")
+	if err != nil {
+		return "", "", nil, fmt.Errorf("create run sub-directory in tmp: %v", err)
+	}
+
+	// Link from the runDir to runDirInTmp, so it can be easily located
+	// and cleaned.
+	runInTmpSymlink := filepath.Join(runDir, runInTmpSymlinkName)
+	if err := os.Symlink(runInTmp, runInTmpSymlink); err != nil {
+		os.Remove(runInTmp)
+		return "", "", nil, fmt.Errorf("create symlink: %v", err)
+	}
+
 	// cleanRunDir removes runtime files no longer needed when Drop
 	// terminates.
 	cleanRunDir := func() {
@@ -300,17 +352,25 @@ func newRunDir(dropHome string, envId string) (string, func(), error) {
 		// also does it).
 		lockFile.Close()
 		// Remove the current instance run dir
-		if err := os.RemoveAll(runDir); err != nil {
+		if err := removeRunDir(runDir); err != nil {
 			log.Info("failed to clean run dir: %v", err)
 		}
 		if err := removeOrphanedRunDirs(filepath.Dir(runDir)); err != nil {
 			log.Info("failed to remove orphaned run dirs: %v", err)
 		}
 	}
-	return runDir, cleanRunDir, nil
+	return runDir, runInTmp, cleanRunDir, nil
 }
 
-const runLockFname string = "lock"
+func removeRunDir(runDir string) error {
+	runInTmpSymlink := filepath.Join(runDir, runInTmpSymlinkName)
+	if runInTmp, err := os.Readlink(runInTmpSymlink); err == nil {
+		// No error - remove also run directory in tmp (best-effort).
+		os.RemoveAll(runInTmp)
+	}
+
+	return os.RemoveAll(runDir)
+}
 
 // removeOrphanedRunDirs checks if run dirs orphaned by other Drop
 // instances exist (orphaned dirs are created when Drop is killed
@@ -342,7 +402,7 @@ func removeOrphanedRunDirs(runDirsPath string) error {
 			return err
 		}
 		if info.ModTime().Before(orphanedRemoveTime) {
-			if err := os.RemoveAll(runDir); err != nil {
+			if err := removeRunDir(runDir); err != nil {
 				return err
 			}
 		}
@@ -485,7 +545,7 @@ func ensureEmptyFile(path string) error {
 // permissions. If this is not the case, it creates a new such
 // directory in tmp.
 //
-// Subdirs are created in /tmp/drop-username[-suffix]/ parent dir,
+// Subdirs are created in /tmp/drop-username[-suffix]/tmp/,
 // which is readable only by the current user. This is to avoid
 // polluting /tmp with a separate dir for each drop environment and to
 // avoid exposing environment ids via /tmp.
@@ -494,8 +554,8 @@ func ensureEmptyFile(path string) error {
 // link in the env directory is created that points to it.
 //
 // The function returns a path to the tmp subdirectory.
-func initEnvTmpDir(envId string, paths *Paths) (string, error) {
-	tmpSymlink := filepath.Join(paths.Env, "tmp")
+func initEnvTmpDir(envId, tmpRootDir, envDir string) (string, error) {
+	tmpSymlink := filepath.Join(envDir, "tmp")
 
 	if target, err := os.Readlink(tmpSymlink); err == nil {
 		// No error - symlink exists
@@ -506,13 +566,11 @@ func initEnvTmpDir(envId string, paths *Paths) (string, error) {
 		// create a new tmp sub dir.
 		os.Remove(tmpSymlink)
 	}
-	userName := filepath.Base(paths.HostHome)
-	parentPath, err := createTmpParentDir(userName)
-	if err != nil {
-		return "", fmt.Errorf("create parent temporary directory: %v", err)
+	tmpEnvsDir := filepath.Join(tmpRootDir, "tmp")
+	if err := osutil.MkdirAll(tmpEnvsDir); err != nil {
+		return "", err
 	}
-
-	tmpSubDir, err := os.MkdirTemp(parentPath, envId+"-")
+	tmpSubDir, err := os.MkdirTemp(tmpEnvsDir, envId+"-")
 	if err != nil {
 		return "", fmt.Errorf("create temporary directory: %v", err)
 	}
@@ -524,12 +582,12 @@ func initEnvTmpDir(envId string, paths *Paths) (string, error) {
 	return tmpSubDir, nil
 }
 
-// createTmpParentDir tries to create /tmp/drop-{USERNAME} dir. If
+// createTmpRootDir tries to create /tmp/drop-{USERNAME} dir. If
 // such dir already exists, the function checks if it is owned by the
 // current user and has permissions 0700. If yes, this directory path
 // is returned. Otherwise, a directory
 // /tmp/drop-{USERNAME}-{random-suffix} is created and returned.
-func createTmpParentDir(userName string) (string, error) {
+func createTmpRootDir(userName string) (string, error) {
 	parentName := fmt.Sprintf("drop-%s", userName)
 
 	// In most cases the parent dir without a random suffix will be

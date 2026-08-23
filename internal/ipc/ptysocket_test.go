@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -116,5 +117,16 @@ func TestPtySocketPermissions(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o700 {
 		t.Errorf("socket permissions = %#o, want %#o", got, 0o700)
+	}
+}
+
+func TestPtySocketPathTooLong(t *testing.T) {
+	receiver, err := NewPtyReceiver("/tmp/" + strings.Repeat("x", 103))
+	if err == nil {
+		receiver.Close()
+		t.Fatalf("NewPtyReceiver did not fail with long path")
+	}
+	if !strings.HasPrefix(err.Error(), "unix socket path longer than 107") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }

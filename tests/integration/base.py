@@ -74,12 +74,12 @@ class TestBase(unittest.TestCase):
     runtime = 'native'
 
     def setUp(self):
-        self.drop_home = tempfile.mkdtemp(prefix='drop-e2e-tests-home-')
+        self.drop_home = tempfile.mkdtemp(prefix='drop-e2e-home-')
         # Drop puts env tmp dirs and run dirs of each instance in
         # $TMPDIR. Redirecting it lets tearDown remove them all
         # without the need of properly removing drop environments with
         # 'drop rm'
-        self.tmp_dir = tempfile.mkdtemp(prefix='drop-e2e-tests-tmp-')
+        self.tmp_dir = tempfile.mkdtemp(prefix='drop-e2e-tmp-')
 
         self.background_processes = []
         self.created_homes = set()

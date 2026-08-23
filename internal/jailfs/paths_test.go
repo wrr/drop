@@ -349,21 +349,21 @@ func TestTmpDirExistsWithRightPerms(t *testing.T) {
 	}
 }
 
-func TestCreateTmpParentDir(t *testing.T) {
+func TestCreateTmpRootDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	origTmpDir := os.Getenv("TMPDIR")
 	os.Setenv("TMPDIR", tmpDir)
 	defer os.Setenv("TMPDIR", origTmpDir)
 
-	path, err := createTmpParentDir("alice")
+	path, err := createTmpRootDir("alice")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	expected := filepath.Join(tmpDir, "drop-alice")
 	if path != expected {
-		t.Fatalf("createTmpParentDir returned %q, want %q", path, expected)
+		t.Fatalf("createTmpRootDir returned %q, want %q", path, expected)
 	}
 	stat, err := os.Stat(path)
 	if err != nil {
@@ -384,7 +384,7 @@ func TestCreateTmpParentDir(t *testing.T) {
 	}
 
 	// Should reuse the same path
-	path2, err := createTmpParentDir("alice")
+	path2, err := createTmpRootDir("alice")
 	if err != nil {
 		t.Fatalf("first call failed: %v", err)
 	}
@@ -392,12 +392,12 @@ func TestCreateTmpParentDir(t *testing.T) {
 		t.Fatalf("expected path to be reused, got %q want %q", path, expected)
 	}
 
-	// Change permission so the original parent dir is no longer usable
-	// as the parent dir.
+	// Change permission so the original root dir is no longer usable
+	// as the root dir.
 	if err := os.Chmod(path, 0755); err != nil {
 		t.Fatalf("chmod failed: %v", err)
 	}
-	path3, err := createTmpParentDir("alice")
+	path3, err := createTmpRootDir("alice")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -492,5 +492,50 @@ func TestEnvIdToPrefix(t *testing.T) {
 				t.Errorf("envIdToPrefix(%q) = %q, want %q", tt.envId, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNewRunDir(t *testing.T) {
+	dropHome := t.TempDir()
+	tmpRoot := t.TempDir()
+	envId := "home-alice-projects-superlongprojectname01234567"
+
+	runDir, runInTmp, cleanRunDir, err := newRunDir(dropHome, envId, tmpRoot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	runDirRoot := filepath.Dir(runDir)
+	if runDirRoot != runDirsPath(dropHome) {
+		t.Errorf("invalid runDir root %q", runDirRoot)
+	}
+	runDirName := filepath.Base(runDir)
+	if !strings.HasPrefix(runDirName, envId+"-") {
+		t.Errorf("invalid runDir name prefix %q", runDirName)
+	}
+
+	runInTmpRoot := filepath.Dir(runInTmp)
+	if runInTmpRoot != filepath.Join(tmpRoot, "run") {
+		t.Errorf("invalid runInTmp root %q", runInTmpRoot)
+	}
+	runInTmpName := filepath.Base(runInTmp)
+	if !strings.HasPrefix(runInTmpName, "superlongprojectname01234567") {
+		t.Errorf("invalid runInTmp name prefix %q", runInTmpName)
+	}
+
+	runInTmpFromLink, err := os.Readlink(filepath.Join(runDir, "run-in-tmp"))
+	if err != nil {
+		t.Fatalf("read run-in-tmp link: %v", err)
+	}
+	if runInTmpFromLink != runInTmp {
+		t.Errorf("run-in-tmp points to %q, want %q", runInTmpFromLink, runInTmp)
+	}
+
+	cleanRunDir()
+
+	for _, dir := range []string{runDir, runInTmp} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("%q still exists after cleanup", dir)
+		}
 	}
 }
