@@ -261,16 +261,14 @@ sudo systemctl reload apparmor.service
 
 ### Fedora - SELinux config
 
-Fedora SELinux policy has rules that allow `passta/pasta` operations
+Fedora SELinux policy has rules that allow `passt/pasta` operations
 required by Podman, but the policy does not cover Drop usage. With the
-default policy, starting Drop will result in an error like `failed to
-start pasta: couldn't open log file
-/home/alice/.drop/internal/run/foo-3668310064/pasta.log: Permission
-denied`.
+default policy, starting Drop will result in an error containing
+`netns dir open: Permission denied, exiting`.
 
-Drop requires `pasta` to be able to write pid and log files to the
-user home directory, and to access namespaces files in
-`/proc/$$/ns`. To create such a policy:
+Drop requires `pasta` to be able to access namespace files in
+`/proc/<pid>/ns` that belong to unconfined processes. To create such a
+policy:
 
 ```
 cd $(mktemp -d)
@@ -279,12 +277,9 @@ module pasta_allow_drop 1.0;
 require {
         type pasta_t;
         type unconfined_t;
-        type user_home_t;
-        class file write;
         class dir open;
 }
 allow pasta_t unconfined_t:dir open;
-allow pasta_t user_home_t:file write;
 EOF
 checkmodule -M -m -o pasta_allow_drop.mod pasta_allow_drop.te
 semodule_package -o pasta_allow_drop.pp -m pasta_allow_drop.mod
