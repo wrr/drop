@@ -107,7 +107,7 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 	userName := filepath.Base(hostHome)
 	tmpRoot, err := createTmpRootDir(userName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("create root temporary directory: %v", err)
+		return nil, nil, err
 	}
 
 	env := EnvPath(dropHome, envId)
@@ -582,24 +582,34 @@ func initEnvTmpDir(envId, tmpRootDir, envDir string) (string, error) {
 	return tmpSubDir, nil
 }
 
-// createTmpRootDir tries to create /tmp/drop-{USERNAME} dir. If
-// such dir already exists, the function checks if it is owned by the
-// current user and has permissions 0700. If yes, this directory path
-// is returned. Otherwise, a directory
-// /tmp/drop-{USERNAME}-{random-suffix} is created and returned.
+// createTmpRootDir tries to create drop-{USERNAME} dir in tmp. If
+// such dir was successfully created or already exists with right
+// owner and permissions, the directory path is returned. Otherwise,
+// the function repeats the checks for directories with names
+// drop-{USERNAME}-{numerical suffix 0 to 9}. If all these
+// directories already exist and do not have the right permissions,
+// the function returns an error.
 func createTmpRootDir(userName string) (string, error) {
-	parentName := fmt.Sprintf("drop-%s", userName)
-
-	// In most cases the parent dir without a random suffix will be
-	// created and then re-used. The suffixes are only added as a
-	// fallback for cases where some other user created a tmp dir with
-	// name that drop is using.
-	parentPath := filepath.Join(os.TempDir(), parentName)
-	err := os.Mkdir(parentPath, 0700)
-	if err == nil || (os.IsExist(err) && tmpDirExistsWithRightPerms(parentPath)) {
-		return parentPath, nil
+	dirName := fmt.Sprintf("drop-%s", userName)
+	tmpDir := os.TempDir()
+	// In most cases the parent dir without a suffix is created and then
+	// re-used. The suffix is only added as a fallback for cases where
+	// some other user created a tmp dir with name that drop is using.
+	var err error
+	path := filepath.Join(tmpDir, dirName)
+	defaultPath := path
+	for suffix := 0; suffix <= 10; suffix++ {
+		err = os.Mkdir(path, 0700)
+		if err == nil || (os.IsExist(err) && tmpDirExistsWithRightPerms(path)) {
+			return path, nil
+		}
+		path = filepath.Join(tmpDir, fmt.Sprintf("%s-%d", dirName, suffix))
 	}
-	return os.MkdirTemp("", parentName+"-")
+	hdr := fmt.Sprintf("create root tmp directory %s(-suffix):", defaultPath)
+	if os.IsExist(err) {
+		return "", fmt.Errorf("%s dirs already exist but without the right owner or permissions", hdr)
+	}
+	return "", fmt.Errorf("%s %v", hdr, err)
 }
 
 func tmpDirExistsWithRightPerms(path string) bool {

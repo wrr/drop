@@ -392,31 +392,39 @@ func TestCreateTmpRootDir(t *testing.T) {
 		t.Fatalf("expected path to be reused, got %q want %q", path, expected)
 	}
 
-	// Change permission so the original root dir is no longer usable
-	// as the root dir.
+	for i := 0; i <= 9; i++ {
+		// Change permission so the original root dir is no longer usable
+		// as the root dir.
+		if err := os.Chmod(path, 0755); err != nil {
+			t.Fatalf("chmod failed: %v", err)
+		}
+		path, err = createTmpRootDir("alice")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		dirName := filepath.Base(path)
+		if dirName != fmt.Sprintf("drop-alice-%d", i) {
+			t.Fatalf("invalid dir name %q", dirName)
+		}
+
+		stat, err = os.Stat(path)
+		if err != nil {
+			t.Fatalf("fallback directory not created: %v", err)
+		}
+		if stat.Mode().Perm() != 0700 {
+			t.Fatalf("fallback dir perms are %o, want 0700", stat.Mode().Perm())
+		}
+	}
 	if err := os.Chmod(path, 0755); err != nil {
 		t.Fatalf("chmod failed: %v", err)
 	}
-	path3, err := createTmpRootDir("alice")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err = createTmpRootDir("alice")
+	if err == nil {
+		t.Fatalf("expected error not returned")
 	}
-	if path3 == expected {
-		t.Fatal("expected fallback to random suffix, got same path")
-	}
-
-	expectedPrefix := "drop-alice-"
-	dirName := filepath.Base(path3)
-	if !strings.HasPrefix(dirName, expectedPrefix) {
-		t.Fatalf("path %q doesn't have prefix %q", dirName, expectedPrefix)
-	}
-
-	stat, err = os.Stat(path3)
-	if err != nil {
-		t.Fatalf("fallback directory not created: %v", err)
-	}
-	if stat.Mode().Perm() != 0700 {
-		t.Fatalf("fallback dir perms are %o, want 0700", stat.Mode().Perm())
+	if !strings.Contains(err.Error(), "dirs already exist but without the right owner or permissions") {
+		t.Fatalf("invalid error: %v", err)
 	}
 }
 
