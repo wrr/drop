@@ -9,6 +9,10 @@
 /dist/
 
 
+/website/public/
+/website/resources/
+/website/.hugo_build.lock
+
 # Python related ignores (Python is used to run integration tests for Drop)
 __pycache__/
 # Environments
@@ -29,3 +33,4 @@ CLAUDE.md
 
 # Directory to keep some probably useful things for development
 /labs/
+

@@ -5,7 +5,7 @@ BINDIR ?= $(PREFIX)/bin
 VERSION ?= $(shell git describe --tags --always --dirty | sed 's/^v//')
 LDFLAGS_RELEASE = -ldflags "-s -w -X main.Version=$(VERSION)"
 
-.PHONY: fmt vet get-deps update-deps build install uninstall build-release build-race test test-integration test-select test-race test-all lint cover clean imports vulncheck gen-example-config all
+.PHONY: fmt vet get-deps update-deps build install uninstall build-release build-race test test-integration test-select test-race test-all lint cover clean imports vulncheck gen-example-config serve-website build-website update-website-deps all
 
 fmt:
 	go fmt ./...
@@ -84,6 +84,7 @@ cover:
 
 clean:
 	go clean
+	rm -rf website/public website/resources
 
 # go install golang.org/x/tools/cmd/goimports@latest
 imports: build
@@ -100,6 +101,16 @@ gen-example-config: build
 	cp $$DROP_HOME/config/base.toml docs/base.example.toml && \
 	cp $$DROP_HOME/config/foobar.toml docs/env.example.toml && \
 	rm -rf $$DROP_HOME
+
+serve-website:
+	hugo server -s website --buildDrafts --disableFastRender
+
+build-website:
+	hugo -s website --minify
+
+update-website-deps:
+	hugo mod get -u -s website
+	hugo mod tidy -s website
 
 all: test-race test-integration vulncheck imports lint build
 
