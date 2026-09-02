@@ -1,7 +1,7 @@
 # Drop - productivity-focused sandboxing for Linux
 
 Drop allows you to easily create sandboxed environments that isolate
-executed programs and LLM agents while preserving as many aspects of
+programs and LLM agents while preserving as many aspects of
 your work environment as possible. Drop uses your existing
 distribution, so all the programs you've installed are available in
 the sandbox. Your username is preserved, and selected configuration
