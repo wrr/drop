@@ -1,0 +1,7 @@
+/* The player container is empty until JS runs, without an explicit
+   width it initializes into a zero-width box. */
+.asciinema-player {
+  width: 100%;
+  max-width: 48rem;
+  margin: 1.5rem 0;
+}

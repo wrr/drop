@@ -16,6 +16,8 @@ params:
   footer:
       displayPoweredBy: false
       displayCopyright: true
+  asciinema:
+    base: https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle
 
 menu:
   main:
