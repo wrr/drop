@@ -9,3 +9,25 @@ markup:
 module:
   imports:
     - path: github.com/imfing/hextra
+
+params:
+  navbar:
+    displayLogo: false
+  footer:
+      displayPoweredBy: false
+      displayCopyright: true
+
+menu:
+  main:
+    - name: Documentation
+      pageRef: /docs
+      weight: 1
+    - name: Search
+      weight: 8
+      params:
+        type: search
+    - name: GitHub
+      weight: 9
+      url: "https://github.com/wrr/drop"
+      params:
+        icon: github
