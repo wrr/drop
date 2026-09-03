@@ -1,5 +1,5 @@
 {"version": 2, "width": 90, "height": 24, "timestamp": 1788354191, "idle_time_limit": 1.0, "env": {"SHELL": "/bin/bash", "TERM": "screen"}, "title": "Drop sandbox demo"}
-[0.05432, "o", "\u001b[?2004\u001b[38;5;39malice\u001b[38;5;45m@\u001b[38;5;51mzax:\u001b[38;5;195m~/project\u001b[0m$ "]
+[0.05432, "o", "\u001b[?2004h\u001b[38;5;39malice\u001b[38;5;45m@\u001b[38;5;51mzax:\u001b[38;5;195m~/project\u001b[0m$ "]
 [0.5, "m", "Enter Drop"]
 [1.05426, "o", "d"]
 [1.334188, "o", "r"]
