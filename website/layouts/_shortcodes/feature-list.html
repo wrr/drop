@@ -1,0 +1,5 @@
+{{- $usecases := eq (.Get "usecases") "true" -}}
+
+<ul class="drop-feature-list not-prose{{ if $usecases }} drop-feature-list--usecases{{ end }}">
+  {{- .Inner -}}
+</ul>

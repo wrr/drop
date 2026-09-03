@@ -1,0 +1,7 @@
+{{- $title := .Get "title" -}}
+{{- $color := .Get "color" -}}
+
+<li class="drop-feature"{{ with $color }} style="{{ printf "--drop-feature-color: %s" . | safeCSS }}"{{ end }}>
+  <h3 class="drop-feature-title">{{ $title | markdownify }}</h3>
+  <div class="drop-feature-body">{{ .Inner | markdownify }}</div>
+</li>

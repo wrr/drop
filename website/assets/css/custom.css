@@ -5,3 +5,79 @@
   max-width: 48rem;
   margin: 1.5rem 0;
 }
+
+.drop-feature-list {
+  list-style: none;
+  width: 100%;
+  max-width: 48rem;
+  margin: 2rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.drop-feature-title {
+  margin: 0;
+  font-family: var(--hx-font-mono);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.drop-feature-list--usecases .drop-feature-title::before {
+  content: "$ ";
+  font-weight: 400;
+  color: hsl(var(--primary-hue) 45% 55%);
+}
+
+.dark .drop-feature-list--usecases .drop-feature-title::before {
+  color: hsl(var(--primary-hue) 45% 68%);
+}
+
+.drop-feature-body {
+  margin-top: 0.35rem;
+  line-height: 1.6;
+  color: #4b5563;
+}
+
+.dark .drop-feature-body {
+  color: #9ca3af;
+}
+
+/* Hextra styles inline code only under .content; but the home page's main
+   has id="content", not the class*/
+.drop-feature-body code {
+  padding: 0.125rem 0.25em;
+  border: 1px solid color-mix(in oklab, var(--hx-color-black) 4%, transparent);
+  border-radius: var(--hx-radius-md);
+  background-color: color-mix(in oklab, var(--hx-color-black) 3%, transparent);
+  font-size: 0.9em;
+  overflow-wrap: break-word;
+}
+
+.dark .drop-feature-body code {
+  border-color: color-mix(in oklab, var(--hx-color-white) 10%, transparent);
+  background-color: color-mix(in oklab, var(--hx-color-white) 10%, transparent);
+}
+
+main#content > div:not(.content) > h2 {
+  width: 100%;
+  max-width: 48rem;
+  margin: 3.5rem 0 1rem;
+  font-size: var(--hx-text-3xl);
+  font-weight: var(--hx-font-weight-semibold);
+  letter-spacing: var(--hx-tracking-tight);
+  line-height: 1.2;
+}
+
+main#content h1 {
+  background-image: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--hx-color-gray-900);
+}
+
+.dark main#content h1 {
+  color: var(--hx-color-gray-100);
+}
