@@ -11,6 +11,8 @@ module:
     - path: github.com/imfing/hextra
 
 params:
+  theme:
+    default: light
   navbar:
     displayLogo: false
   footer:
