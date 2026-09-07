@@ -67,3 +67,63 @@ make install BINDIR=$HOME/.local/bin
 {{< /tab >}}
 
 {{< /tabs >}}
+
+## Distro-specific configuration
+
+### Ubuntu 24 - AppArmor config
+
+Ubuntu uses AppArmor profiles to specify which programs can use Linux
+user namespaces. To create a profile for Drop (in a config below,
+change the Drop binary path to the actual path where you placed `drop`
+on your system):
+
+```
+sudo tee /etc/apparmor.d/drop << 'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+profile drop /usr/local/bin/drop flags=(unconfined) {
+  userns,
+}
+EOF
+
+sudo systemctl reload apparmor.service
+```
+
+### Fedora - SELinux config
+
+Fedora SELinux policy has rules that allow `passt/pasta` operations
+required by Podman, but the policy does not cover Drop usage. With the
+default policy, starting Drop will result in an error containing
+`netns dir open: Permission denied, exiting`.
+
+Drop requires `pasta` to be able to access namespace files in
+`/proc/<pid>/ns` that belong to unconfined processes. To create such a
+policy:
+
+```
+cd $(mktemp -d)
+cat > pasta_allow_drop.te << 'EOF'
+module pasta_allow_drop 1.0;
+require {
+        type pasta_t;
+        type unconfined_t;
+        class dir open;
+}
+allow pasta_t unconfined_t:dir open;
+EOF
+checkmodule -M -m -o pasta_allow_drop.mod pasta_allow_drop.te
+semodule_package -o pasta_allow_drop.pp -m pasta_allow_drop.mod
+sudo semodule -i pasta_allow_drop.pp
+```
+
+You can verify that the policy was added by running:
+
+```
+sudo semodule -l | grep pasta
+```
+
+If at any point you would like to remove the policy:
+
+```
+sudo semodule -r pasta_allow_drop
+```
