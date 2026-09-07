@@ -105,7 +105,7 @@ place it in your PATH:
 ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 
 curl -o drop -L https://github.com/wrr/drop/releases/latest/download/drop-linux-$ARCH
-install -m 755 drop ~/.local/bin/
+install drop ~/.local/bin/
 ```
 
 ### Installing with Go
