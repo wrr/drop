@@ -6,15 +6,25 @@
   margin: 1.5rem 0;
 }
 
-.drop-diagram {
+.drop-include {
   max-width: 48rem;
   margin: 1.5rem 0;
 }
 
-.drop-diagram svg {
+.drop-include svg {
   width: 100%;
   height: auto;
   display: block;
+}
+
+.drop-include:has(> table) {
+  overflow-x: auto;
+}
+
+.drop-include table {
+  display: table;
+  width: 100%;
+  margin: 0;
 }
 
 .drop-feature-list {

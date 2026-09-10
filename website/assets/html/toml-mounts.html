@@ -1,0 +1,43 @@
+<table>
+  <tbody>
+    <tr>
+      <td colspan="4" style="text-align: center; font-weight: 600; padding-top: 14px; padding-bottom: 14px; background-color: color-mix(in oklab, currentColor 10%, transparent)">Example TOML configured mounts</td>
+    </tr>
+    <tr>
+      <th>Sandbox path</th>
+      <th>Host source</th>
+      <th>Mount rule</th>
+      <th>Access</th>
+    </tr>
+    <tr>
+      <td><code>~/.bashrc</code></td>
+      <td><code>~/.bashrc</code></td>
+      <td><code>"~/.bashrc"</code></td>
+      <td>read-only</td>
+    </tr>
+    <tr>
+      <td><code>~/.local-host/bin</code></td>
+      <td><code>~/.local/bin</code></td>
+      <td><code>"~/.local/bin:~/.local-host/bin"</code></td>
+      <td>read-only</td>
+    </tr>
+    <tr>
+      <td><code>~/project</code></td>
+      <td><code>~/project</code></td>
+      <td><code>"~/project::rw"</code></td>
+      <td>read-write</td>
+    </tr>
+    <tr>
+      <td><code>~/project/.git</code></td>
+      <td><code>~/project/.git</code></td>
+      <td><code>"~/project/.git"</code></td>
+      <td>read-only</td>
+    </tr>
+    <tr>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+    </tr>
+  </tbody>
+</table>

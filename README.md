@@ -51,16 +51,16 @@ Key Drop characteristics are:
 * Doesn't require root, cannot execute any operation that the current
   user is not allowed to execute.
 * Uses Linux user namespaces.
-* Optionally runs sanboxed programs on the [gVisor](#gvisor) user-space
+* Optionally runs sandboxed programs on the [gVisor](#gvisor) user-space
   kernel, so they don't issue syscalls directly to the host kernel.
 * Drops all the user namespace capabilities before executing a
   sandboxed program, so sandboxed processes cannot do privileged
   operations within the user namespace.
-* Has own process, IPC and cgroup namespaces. Sandboxed processes can
-  only see and interact with other processes from the sandbox.
-* Has own network namespace which, by default, allows external network
-  access, but disallows access to services running on localhost.
-  Uses [pasta](https://passt.top) for networking.
+* Has its own process, IPC and cgroup namespaces. Sandboxed processes
+  can only see and interact with other processes from the sandbox.
+* Has its own network namespace which, by default, allows external
+  network access, but disallows access to services running on
+  localhost.  Uses [pasta](https://passt.top) for networking.
 * Exposes standard `/dev/null`, `zero`, `full`, `random` and `urandom`
   devices from host, other devices are not exposed by default.
 

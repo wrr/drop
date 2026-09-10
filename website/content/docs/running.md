@@ -1,6 +1,6 @@
 ---
 title: Running
-weight: 2
+weight: 3
 ---
 
 Drop's workflow is inspired by Python's virtualenv: create an easily

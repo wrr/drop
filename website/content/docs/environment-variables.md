@@ -1,6 +1,6 @@
 ---
 title: Environment variables
-weight: 5
+weight: 6
 ---
 
 Environment variables that Drop uses are:

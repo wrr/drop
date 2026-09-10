@@ -1,6 +1,6 @@
 ---
 title: gVisor
-weight: 4
+weight: 5
 ---
 
 Drop supports two runtimes:
@@ -10,7 +10,7 @@ Drop supports two runtimes:
   sandboxed programs run on the [gVisor](https://gvisor.dev) user-space
   kernel.
 
-{{< diagram "images/drop-runtimes.svg" >}}
+{{< include "images/drop-runtimes.svg" >}}
 
 To use the gVisor runtime, you need `runsc`
 [installed](https://gvisor.dev/docs/user_guide/install/). Then select

@@ -1,0 +1,6 @@
+{{- $src := .Get 0 -}}
+{{- with resources.Get $src -}}
+<div class="drop-include">{{ .Content | safeHTML }}</div>
+{{- else -}}
+{{- errorf "include shortcode: file not found: %q" $src -}}
+{{- end -}}
