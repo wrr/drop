@@ -221,16 +221,16 @@ Environment variables that Drop uses are:
 
 * `DROP_HOME` - use it to change the location where Drop stores all
   its files: configuration, environment dirs, runtime files. If not
-  set, XDG specification is followed.
+  set, the XDG specification is followed.
 * `DROP_ENV` - set by Drop and available in the sandbox, contains the
   id of the currently active Drop environment. Can be used to modify
-  shell prompt within Drop or to conditionally load some config files
-  that should apply only in Drop or only outside of Drop.
+  the shell prompt within Drop or to conditionally load some config
+  files that should apply only in Drop or only outside of Drop.
 * `DROP_GVISOR_DEBUG_LOG` - if set to a directory path, enables gVisor
   debugging and writes gVisor logs to this directory.
 
-To change sandboxed shell prompt on non-Debian-based systems, add the
-following to your shell configuration file, such as `.bashrc`:
+To change the sandboxed shell prompt on non-Debian-based systems, add
+the following to your shell configuration file, such as `.bashrc`:
 
 ```bash
 if [ -n "$DROP_ENV" ]; then
