@@ -1,0 +1,52 @@
+<svg viewBox="0 0 560 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="drop-runtime-diagram-title drop-runtime-diagram-desc" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif">
+  <title id="drop-runtime-diagram-title">Drop native vs gvisor runtime</title>
+  <desc id="drop-runtime-diagram-desc">In the native runtime, the sandboxed program runs isolated inside Linux namespaces and its syscalls go straight to the host kernel. In the gvisor runtime, the same Linux namespaces wrap both the sandboxed program and the gVisor Sentry, a user-space kernel that implements syscalls itself and forwards only a filtered set of calls to the host kernel.</desc>
+
+  <defs>
+    <marker id="drop-diagram-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" fill-opacity="0.6" />
+    </marker>
+  </defs>
+
+  <line x1="280" y1="20" x2="280" y2="372" stroke="currentColor" stroke-opacity="0.15" stroke-dasharray="4 4" />
+
+  <!-- native -->
+  <text x="138" y="26" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600" fill="currentColor">native</text>
+
+  <rect x="24" y="40" width="228" height="88" rx="10" fill="none" stroke="currentColor" stroke-opacity="0.35" stroke-dasharray="5 4" />
+  <text x="138" y="56" text-anchor="middle" font-size="12" fill="currentColor" fill-opacity="0.8">Linux namespaces</text>
+
+  <rect x="40" y="64" width="196" height="50" rx="8" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-opacity="0.35" />
+  <text x="138" y="94" text-anchor="middle" font-size="13" fill="currentColor">Sandboxed Program</text>
+
+  <line x1="138" y1="114" x2="138" y2="190" stroke="currentColor" stroke-opacity="0.6" />
+  <text x="138" y="216" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">syscalls</text>
+  <line x1="138" y1="235" x2="138" y2="310" stroke="currentColor" stroke-opacity="0.6" marker-end="url(#drop-diagram-arrow)" />
+
+  <rect x="24" y="310" width="228" height="50" rx="8" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-opacity="0.35" />
+  <text x="138" y="340" text-anchor="middle" font-size="13" fill="currentColor">Host Kernel</text>
+
+  <!-- gvisor -->
+  <text x="422" y="26" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600" fill="currentColor">gvisor</text>
+
+  <rect x="308" y="40" width="228" height="211" rx="10" fill="none" stroke="currentColor" stroke-opacity="0.35" stroke-dasharray="5 4" />
+  <text x="422" y="56" text-anchor="middle" font-size="12" fill="currentColor" fill-opacity="0.8">Linux namespaces</text>
+
+  <rect x="324" y="64" width="196" height="50" rx="8" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-opacity="0.35" />
+  <text x="422" y="94" text-anchor="middle" font-size="13" fill="currentColor">Sandboxed Program</text>
+
+  <line x1="422" y1="114" x2="422" y2="137" stroke="currentColor" stroke-opacity="0.6" />
+  <text x="422" y="155" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">syscalls</text>
+  <line x1="422" y1="164" x2="422" y2="187" stroke="currentColor" stroke-opacity="0.6" marker-end="url(#drop-diagram-arrow)" />
+
+  <rect x="324" y="187" width="196" height="50" rx="8" fill="hsl(212 45% 55%)" fill-opacity="0.15" stroke="hsl(212 45% 45%)" stroke-opacity="0.8" />
+  <text x="422" y="207" text-anchor="middle" font-size="13" fill="currentColor">gVisor Sentry</text>
+  <text x="422" y="222" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.7">(user-space kernel)</text>
+
+  <line x1="422" y1="237" x2="422" y2="260" stroke="currentColor" stroke-opacity="0.6" />
+  <text x="422" y="277" text-anchor="middle" font-size="10" fill="currentColor" fill-opacity="0.75">limited syscalls</text>
+  <line x1="422" y1="287" x2="422" y2="310" stroke="currentColor" stroke-opacity="0.6" marker-end="url(#drop-diagram-arrow)" />
+
+  <rect x="308" y="310" width="228" height="50" rx="8" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-opacity="0.35" />
+  <text x="422" y="340" text-anchor="middle" font-size="13" fill="currentColor">Host Kernel</text>
+</svg>

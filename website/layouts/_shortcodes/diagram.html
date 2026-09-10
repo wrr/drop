@@ -1,0 +1,6 @@
+{{- $src := .Get 0 -}}
+{{- with resources.Get $src -}}
+<div class="drop-diagram">{{ .Content | safeHTML }}</div>
+{{- else -}}
+{{- errorf "diagram shortcode: file not found: %q" $src -}}
+{{- end -}}
