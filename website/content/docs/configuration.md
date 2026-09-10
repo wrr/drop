@@ -6,17 +6,18 @@ weight: 3
 ## Configuration files
 
 When `drop init` is run for the first time, it creates a
-[base.toml](./docs/base.example.toml) config file, which by default is shared
+[base.toml](https://github.com/wrr/drop/blob/main/docs/base.example.toml) config file, which by default is shared
 by all Drop environments.
 
-The created  `base.toml` config exposes several common dotfiles that are
-present in your home dir to Drop environments. The config also exposes
-common environment variables. Review the generated defaults, ensure
-that no files with secrets are exposed, expose config files of other
-programs that you use.
+The created `base.toml` has sensible defaults that expose several
+common dotfiles that are present in your home dir to Drop
+environments. The config also exposes common environment
+variables. Review the generated defaults, ensure that no files with
+secrets are exposed, expose config files of other programs that you
+use.
 
 `drop init` also creates a tiny, [environment specific config
-file](./docs/env.example.toml).
+file](https://github.com/wrr/drop/blob/main/docs/env.example.toml).
 This file extends `base.toml` and allows to add environment specific
 configuration.
 
@@ -117,6 +118,9 @@ blocked_paths = [ "~/project/.secrets" ]
 ```
 
 ### `[environ]`
+
+Groups all the settings related to environment variables available
+within the sandbox.
 
 #### `exposed_vars`
 

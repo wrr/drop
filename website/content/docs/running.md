@@ -19,7 +19,7 @@ Drop environment created with config at /home/alice/.config/drop/home-alice-proj
 ```
 
 When `drop init` is run for the first time, it creates a
-[base.toml](./docs/base.example.toml) config file, which by default is shared
+[base.toml](https://github.com/wrr/drop/blob/main/docs/base.example.toml) config file, which by default is shared
 by all Drop environments.
 
 The created  `base.toml` config exposes several common dotfiles that are
@@ -29,7 +29,7 @@ that no files with secrets are exposed, expose config files of other
 programs that you use.
 
 `drop init` also creates a tiny, [environment specific config
-file](./docs/env.example.toml).
+file](https://github.com/wrr/drop/blob/main/docs/env.example.toml).
 This file extends `base.toml` and allows to add environment specific
 configuration.
 

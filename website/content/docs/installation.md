@@ -68,7 +68,7 @@ make install BINDIR=$HOME/.local/bin
 
 {{< /tabs >}}
 
-## Distro-specific configuration
+## Distro-specific setup
 
 ### Ubuntu 24 - AppArmor config
 
