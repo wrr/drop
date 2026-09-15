@@ -67,9 +67,14 @@ hello
 environment and all its files.
 
 With Drop environments you don't need to track what files and dirs
-programs created in your home dir. Because environments have their own
-home, you can just remove an environment and files created within the
-environment are all removed.
+programs create in your home dir. Environments have their own
+home dir, which is removed together with the environment.
+
+## Other commands
+
+* `drop help` - prints usage and available commands
+* `drop COMMAND help` - prints command-specific help, lists options supported by the command
+* `drop update --check` - checks if a new version of Drop is available
 
 ## Sharing the project directory
 
