@@ -14,6 +14,8 @@ $ sudo dnf install passt      # Fedora
 $ sudo pacman -S passt        # Arch
 ```
 
+## Install Drop
+
 {{< tabs >}}
 
 {{< tab name="Install release binary" >}}
