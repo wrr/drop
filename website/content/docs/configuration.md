@@ -6,8 +6,8 @@ weight: 4
 ## Configuration files
 
 When `drop init` is run for the first time, it creates a
-[base.toml](https://github.com/wrr/drop/blob/main/docs/base.example.toml) config file, which by default is shared
-by all Drop environments.
+[base.toml](https://github.com/wrr/drop/blob/main/docs/base.example.toml)
+config file, which by default is shared by all Drop environments.
 
 The created `base.toml` has sensible defaults that expose several
 common dotfiles that are present in your home dir to Drop
@@ -23,8 +23,9 @@ configuration.
 
 ## Config settings
 
-The following sections document all the settings supported by Drop's TOML config. Many of these settings can be
-overwritten or extended by command line arguments.
+The following sections document all the settings supported by Drop's
+TOML config. Many of these settings can be overwritten or extended by
+command line arguments.
 
 ### `runtime`
 
