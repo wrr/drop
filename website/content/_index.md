@@ -1,5 +1,6 @@
 ---
 layout: hextra-home
+description: "Drop: a rootless Linux sandbox for developers. It isolates coding agents and third-party packages while preserving your work environment."
 ---
 
 {{< hextra/hero-headline >}}
@@ -7,7 +8,7 @@ Linux sandboxing that doesn't get in your way
 {{< /hextra/hero-headline >}}
 
 {{< hextra/hero-subtitle >}}
-Isolate programs and LLM agents without leaving your familiar work environment
+Isolate programs and coding agents without leaving your familiar work environment
 {{< /hextra/hero-subtitle >}}
 
 {{< asciinema file="drop-sandbox-demo.cast" speed="1.5" poster="npt:0:11" >}}
