@@ -1,5 +1,6 @@
 ---
 title: gVisor
+description: "Run programs in Drop sandbox for Linux using the gVisor user-space kernel as an extra isolation layer."
 weight: 5
 ---
 

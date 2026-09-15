@@ -1,5 +1,6 @@
 ---
 title: Running
+description: "How to run programs in Drop sandbox: creating, entering and managing sandboxed environments."
 weight: 3
 ---
 

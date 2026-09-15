@@ -1,5 +1,6 @@
 ---
 title: Environment variables
+description: "Environment variables Drop sandbox uses: DROP_HOME, DROP_ENV and DROP_GVISOR_DEBUG_LOG."
 weight: 6
 ---
 

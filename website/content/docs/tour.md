@@ -1,6 +1,7 @@
 ---
 title: "Tour: sandboxing Claude Code"
 linkTitle: "Tour: sandboxing Claude"
+description: "A walkthrough of installing and running Claude Code in Drop sandbox, with an isolated home dir, read-only dotfiles and secrets like ~/.ssh hidden."
 weight: 7
 ---
 

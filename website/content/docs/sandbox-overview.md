@@ -1,5 +1,6 @@
 ---
 title: Sandbox overview
+description: "How Drop sandbox isolates programs: rootless operation, Linux namespaces, isolated networking and the sandboxed filesystem layout."
 weight: 1
 ---
 

@@ -1,5 +1,6 @@
 ---
 title: Configuration
+description: "Drop sandbox TOML config reference: expose files, dirs, environment variables and localhost network services."
 weight: 4
 ---
 

@@ -1,5 +1,6 @@
 ---
 title: Documentation
+description: "Documentation for Drop, a rootless Linux sandbox for developers: installation, running, configuration, gVisor and a Claude Code coding agent tour."
 weight: 1
 ---
 

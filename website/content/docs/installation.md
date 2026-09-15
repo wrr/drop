@@ -1,5 +1,6 @@
 ---
 title: Installation
+description: "Install Drop sandbox on Linux from a release binary or from source, plus AppArmor and SELinux setup for Ubuntu 24 and Fedora."
 weight: 2
 ---
 
