@@ -72,8 +72,7 @@ blocked_paths = []
 # the sandbox. You can use glob patterns to expose all variables with
 # common prefix/suffix.
 #
-# Do not expose variables containing secrets. Expose all
-# other variables needed for convenient work.
+# Do not expose variables containing secrets.
 exposed_vars = [
   "XDG_DATA_HOME",
   "XDG_CONFIG_HOME",
