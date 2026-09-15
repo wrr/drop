@@ -145,8 +145,8 @@ The commands to work with Drop are:
 By default Drop config files are stored in `~/.config/drop`.
 
 When `drop init` is run for the first time, it creates a
-[base.toml](./docs/base.example.toml) config file, which by default is shared
-by all Drop environments.
+[base.toml](./website/assets/configs/base.example.toml) config file,
+which by default is shared by all Drop environments.
 
 The created  `base.toml` config exposes several common dotfiles that are
 present in your home dir to Drop environments. The config also exposes
@@ -155,9 +155,8 @@ that no files with secrets are exposed, expose config files of other
 programs that you use.
 
 `drop init` also creates a tiny, [environment specific config
-file](./docs/env.example.toml).
-This file extends `base.toml` and allows to add environment specific
-configuration.
+file](./website/assets/configs/env.example.toml).  This file extends
+`base.toml` and allows to add environment specific configuration.
 
 `drop init` configures the created environment to have access to the
 directory in which `drop init` was run in read-write mode. If the

@@ -1,0 +1,7 @@
+{{- $src := .Get 0 -}}
+{{- with resources.Get $src -}}
+{{- /* A fenced block, so the theme's code block hook applies. */ -}}
+{{ $.Page.RenderString (dict "display" "block") (printf "```toml\n%s\n```" .Content) }}
+{{- else -}}
+{{- errorf "toml-file shortcode: file not found: %q" $src -}}
+{{- end -}}

@@ -3,6 +3,9 @@ title: Drop
 enableRobotsTXT: true
 locale: en-US
 markup:
+  goldmark:
+    renderer:
+      unsafe: true
   highlight:
     noClasses: false
 

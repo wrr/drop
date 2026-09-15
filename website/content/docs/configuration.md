@@ -8,8 +8,7 @@ weight: 4
 Config files are stored in `~/.config/drop/` by default and can be
 edited at any time.
 
-When `drop init` is run for the first time, it creates a
-[base.toml](https://github.com/wrr/drop/blob/main/docs/base.example.toml)
+When `drop init` is run for the first time, it creates a `base.toml`
 config file, which by default is shared by all Drop environments.
 
 The created `base.toml` has sensible defaults that expose several
@@ -19,10 +18,17 @@ variables. Review the generated defaults, ensure that no files with
 secrets are exposed, expose config files of other programs that you
 use.
 
-`drop init` also creates a tiny, [environment specific config
-file](https://github.com/wrr/drop/blob/main/docs/env.example.toml).
+{{% details title="Generated shared `base.toml`" closed="true" %}}
+{{< toml-file "configs/base.example.toml" >}}
+{{% /details %}}
+
+`drop init` also creates a tiny, environment specific config file.
 This file extends `base.toml` and allows to add environment specific
 configuration.
+
+{{% details title="Generated environment-specific config" closed="true" %}}
+{{< toml-file "configs/env.example.toml" >}}
+{{% /details %}}
 
 ## Config settings
 
