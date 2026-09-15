@@ -5,6 +5,9 @@ weight: 4
 
 ## Configuration files
 
+Config files are stored in `~/.config/drop/` by default and can be
+edited at any time.
+
 When `drop init` is run for the first time, it creates a
 [base.toml](https://github.com/wrr/drop/blob/main/docs/base.example.toml)
 config file, which by default is shared by all Drop environments.
@@ -130,8 +133,7 @@ Drop to the sandbox. You can use glob patterns to expose all variables
 with common prefix/suffix.
 
 {{< callout type="warning" >}}
-Do not expose variables containing secrets. Expose all
-other variables needed for convenient work.
+Do not expose variables containing secrets.
 {{< /callout >}}
 
 Example:
