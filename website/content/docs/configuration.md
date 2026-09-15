@@ -9,12 +9,12 @@ Config files are stored in `~/.config/drop/` by default and can be
 edited at any time.
 
 When `drop init` is run for the first time, it creates a `base.toml`
-config file, which by default is shared by all Drop environments.
+config file, which is shared by all Drop environments.
 
 The created `base.toml` has sensible defaults that expose several
 common dotfiles that are present in your home dir to Drop
 environments. The config also exposes common environment
-variables. Review the generated defaults, ensure that no files with
+variables. Review the generated settings, ensure that no files with
 secrets are exposed, expose config files of other programs that you
 use.
 
