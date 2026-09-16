@@ -16,21 +16,20 @@ Isolate programs and coding agents without leaving your familiar work environmen
 
 ## Use cases
 {{< feature-list usecases="true" >}}
-{{< feature title="Skip coding agent permission prompts">}}
+{{< feature title="Isolate coding agents">}}
 
-Run agents with `--dangerously-skip-permissions` and let Drop
-enforce permissions for you. A hallucinated `rm -rf ~` wipes a
-disposable environment, not your actual home dir. A prompt injection
-targeting `~/.ssh` finds nothing. A connection to services running on
-a localhost is rejected.
+Run agents with `--dangerously-skip-permissions` and let Drop enforce
+permissions at the OS level. A hallucinated `rm -rf ~` doesn't touch
+your actual home dir. A prompt injection targeting `~/.ssh` finds
+nothing. A connection to services running on localhost is rejected.
 
 {{< /feature >}}
 
-{{< feature title="Isolate out-of-distro packages">}}
+{{< feature title="Contain supply chain attacks">}}
 
-Install programs from public package repositories like PyPI, NPM and
-Go Packages, but keep your system protected in case the program is
-compromised or is a victim of a supply chain attack. 
+Install programs from public package repositories like PyPI, npm and
+Go Packages, but keep your system protected in case the program or
+its dependency is compromised.
 
 {{< /feature >}}
 {{< /feature-list >}}
