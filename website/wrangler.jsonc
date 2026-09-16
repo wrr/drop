@@ -1,0 +1,8 @@
+{
+  "name": "drop",
+  "compatibility_date": "2026-09-16",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "404-page"
+  }
+}
