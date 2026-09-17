@@ -12,6 +12,8 @@ Linux sandboxing that doesn't get in your way
 Isolate programs and coding agents without leaving your familiar work environment
 {{< /hextra/hero-subtitle >}}
 
+{{< hextra/hero-button text="Install Drop" link="/docs/installation/" style="margin-top: 1.5rem" >}}
+
 {{< asciinema file="drop-sandbox-demo.cast" speed="1.5" poster="npt:0:11" >}}
 
 
