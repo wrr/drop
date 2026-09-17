@@ -1,4 +1,5 @@
 ---
+title: Drop sandbox for Linux
 layout: hextra-home
 description: "Drop: a rootless Linux sandbox for developers. It isolates coding agents and third-party packages while preserving your work environment."
 ---
