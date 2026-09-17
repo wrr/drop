@@ -35,7 +35,7 @@ install drop ~/.local/bin/
 
 {{< tab name="Install with Go" >}}
 An alternative to downloading the release binaries is to use the [Go
-compiler](https://go.dev/doc/install) (1.24+) to build and install
+compiler](https://go.dev/doc/install) (1.25+) to build and install
 Drop with a single command:
 
 ```
@@ -50,7 +50,7 @@ require a C compiler, but is not strictly required.
 If you would like to build Drop from a cloned git repo (requires the [Go compiler](https://go.dev/doc/install)):
 
 ```
-git clone git@github.com:wrr/drop.git
+git clone https://github.com/wrr/drop.git
 cd drop
 make get-deps
 make build
@@ -76,15 +76,14 @@ make install BINDIR=$HOME/.local/bin
 ### Ubuntu 24 - AppArmor config
 
 Ubuntu uses AppArmor profiles to specify which programs can use Linux
-user namespaces. To create a profile for Drop (in the config below,
-change the Drop binary path to the actual path where you placed `drop`
-on your system):
+user namespaces. To create a profile for the `drop` binary found in
+your PATH:
 
 ```
-sudo tee /etc/apparmor.d/drop << 'EOF'
+DROP_BIN=$(which drop) && sudo tee /etc/apparmor.d/drop << EOF
 abi <abi/4.0>,
 include <tunables/global>
-profile drop /usr/local/bin/drop flags=(unconfined) {
+profile drop $DROP_BIN flags=(unconfined) {
   userns,
 }
 EOF
