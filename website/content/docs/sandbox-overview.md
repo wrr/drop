@@ -6,15 +6,15 @@ weight: 1
 
  
 
-* Drop doesn't require root, can't execute any operation that the current
+* Drop doesn't require root and can't execute any operation that the current
   user is not allowed to execute.
 * Uses Linux namespaces (user, mount, PID, IPC, cgroup and network)
   to isolate sandboxed programs from the host.
 * Sandboxed processes can only see and interact with other processes
   from the sandbox.
-* By default disalows network access to services running on localhost. 
-  Uses [pasta](https://passt.top) for networking.
-* Exposes only configured environment variables to the sandbox.
+* By default disallows network access to services running on
+  localhost. Uses [pasta](https://passt.top) for networking.
+* Exposes only allowlisted environment variables to the sandbox.
 * Drops all the capabilities before starting a sandboxed program, so
   sandboxed processes can't do privileged operations, such as bind
   mounts, within the user namespace.
@@ -42,7 +42,7 @@ By default, new Drop environments are configured to mount the
 directory in which `drop init` was run as writable,
 with the exception of the `.git` subdirectory, which is read-only.
 
-The table below shows some examples of TOML configured mounts:
+The table below shows some examples of TOML-configured mounts:
 
 {{< include "html/toml-mounts.html" >}}
 
@@ -51,7 +51,7 @@ The table below shows some examples of TOML configured mounts:
 * Terminal only. GUI programs will not run in the sandbox with the
   default config. While it is possible to expose X socket files to the
   sandbox in a way that allows GUI programs to run, doing so grants
-  too broad privileges to sandboxed processes.
+  overly broad privileges to sandboxed processes.
 * Only a small set of basic devices is available in the sandbox,
   so it is not possible to, for example, play or record sound.
 * setuid programs don't run in the sandbox.

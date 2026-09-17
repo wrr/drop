@@ -1,6 +1,6 @@
 ---
 title: Running
-description: "How to run programs in Drop sandbox: creating, entering and managing sandboxed environments."
+description: "How to run programs in the Drop sandbox: creating, entering and managing sandboxed environments."
 weight: 3
 ---
 
@@ -8,9 +8,9 @@ Drop's workflow is inspired by Python's virtualenv: create an easily
 disposable environment, enter it, work normally - but with enforced
 sandboxing.
 
-## Create a new drop environment
+## Create a new Drop environment
 
-`drop init [ENV_ID]` creates a new drop environment. If ENV_ID is
+`drop init [ENV_ID]` creates a new Drop environment. If ENV_ID is
 missing, Drop derives the id from your current working
 directory path. For example:
 
@@ -20,7 +20,7 @@ Drop environment created with config at /home/alice/.config/drop/home-alice-proj
 ```
 
 The environment gets read-write access to the directory in which `drop
-init` was run, see [Sharing the project
+init` was run; see [Sharing the project
 directory](#sharing-the-project-directory).
 
 ## Run a sandboxed program
@@ -56,7 +56,7 @@ For example, create a `new_file` within an environment `webapp`:
 $ drop run -e webapp bash -c 'echo hello > ~/new_file'
 ```
 
-Subsequent `drop run` within the same environment still sees the
+A subsequent `drop run` within the same environment still sees the
 created file:
 
 ```console
@@ -64,11 +64,11 @@ $ drop run -e webapp cat ~/new_file
 hello
 ```
 
-`drop ls` lists all the created environments, `drop rm` removes an
+`drop ls` lists all the created environments; `drop rm` removes an
 environment and all its files.
 
 With Drop environments you don't need to track what files and dirs
-programs create in your home dir. Environments have their own
+programs create in your home dir. Each environment has its own
 home dir, which is removed together with the environment.
 
 ## Other commands
@@ -91,10 +91,9 @@ only if the current working directory is not your home dir or a parent
 of it, to avoid exposing the whole home dir to the sandbox.
 
 {{< callout type="warning" >}}
-
-A sandboxed program can modify build scripts, tests and other project
-executables, so run them only inside the sandbox.
-
+A sandboxed program can modify any file it has write access to, so
+don't run such scripts, Makefiles, tests or binaries outside the
+sandbox.
 {{< /callout >}}
 
 If you don't want to expose the current directory to the created

@@ -29,7 +29,7 @@ nothing. A connection to services running on localhost is rejected.
 
 Install programs from public package repositories like PyPI, npm and
 Go Packages, but keep your system protected in case the program or
-its dependency is compromised.
+one of its dependencies is compromised.
 
 {{< /feature >}}
 {{< /feature-list >}}
@@ -65,7 +65,7 @@ then create new environments without any configuration work.
 {{< feature title="Rootless">}}
 
 Drop doesn't require root to run. It runs within a Linux user
-namespace, with own processes, mount, network, IPC and cgroup
+namespace, with its own process, mount, network, IPC and cgroup
 namespaces. Drop drops all the user namespace capabilities before
 executing a sandboxed program, so the program cannot do privileged
 operations within the user namespace, like bind mounts.
@@ -77,7 +77,7 @@ operations within the user namespace, like bind mounts.
 As an option, Drop supports running programs on the gVisor user-space
 kernel. This is an additional isolation layer that prevents programs
 from accessing the host kernel directly, significantly reducing
-potential to exploit kernel vulnerabilities.
+the potential to exploit kernel vulnerabilities.
 
 {{< /feature >}}
 

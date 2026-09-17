@@ -51,7 +51,7 @@ func WriteBase(path string, homeDir string) error {
 		{"~/.zprofile", ""},
 		{"~/.zlogout", ""},
 		{"~/.zshrc", ""},
-		{"~/.local/bin:~/.local-host/bin", "Rename .local/bin from host, so sandbox has own, writeable .local/bin"},
+		{"~/.local/bin:~/.local-host/bin", "Rename .local/bin from host, so the sandbox has its own writable .local/bin"},
 		{"~/.local/include:~/.local-host/include", ""},
 		{"~/.local/lib:~/.local-host/lib", ""},
 	}
@@ -72,20 +72,20 @@ runtime = "native"
 #
 # Entries can have a compact string syntax, like:
 #
-# "~/bin" - expose ~/bin directory as read-only. Directories are
-#           exposed with all content, including sub-directories.
-# "~/bin:~/bin-host" - expose ~/bin directory as read-only ~/bin-host.
-# "~/plan::rw" - expose ~/plan file as writable.
-# "~/plan:~/plan-host:rw" - expose ~/plan file as writable ~/plan-host.
+# "~/bin" - expose the ~/bin directory as read-only. Directories are
+#           exposed with all content, including subdirectories.
+# "~/bin:~/bin-host" - expose the ~/bin dir as read-only ~/bin-host.
+# "~/plan::rw" - expose the ~/plan file as writable.
+# "~/plan:~/plan-host:rw" - expose the ~/plan as writable ~/plan-host.
 #
 # Alternatively, a verbose dictionary syntax can be used; it allows
 # handling paths with ':' characters. Equivalents of the examples
 # above with the verbose syntax are:
 #
 # {source="~/bin"}
-# {source="~/bin", target="~/host-bin"}
+# {source="~/bin", target="~/bin-host"}
 # {source="~/plan", rw=true}
-# {source="~/plan", target="~/host-plan", rw=true}
+# {source="~/plan", target="~/plan-host", rw=true}
 #
 # All paths must be normalized and either start with / or ~/.
 #
@@ -99,7 +99,7 @@ runtime = "native"
 # commands that run outside the sandbox. Read-only is safe.
 # Similarly, entries from ~/.bash_history can be executed, so it is
 # best not to expose history, but allow shells in Drop environments
-# to create isolated history files, one per each environment.
+# to create isolated history files, one per environment.
 mounts = %s
 
 # Paths to dirs or files to block access to.
@@ -114,7 +114,7 @@ blocked_paths = []
 [environ]
 # Environment variables to expose from the process starting Drop to
 # the sandbox. You can use glob patterns to expose all variables with
-# common prefix/suffix.
+# a common prefix/suffix.
 #
 # Do not expose variables containing secrets.
 exposed_vars = [
@@ -144,7 +144,7 @@ exposed_vars = [
 ]
 
 # New environment variables passed to the sandboxed process.
-# Values can include existing vars as ${VAR_NAME}
+# Values can include existing vars as ${VAR_NAME}.
 set_vars = [
   "debian_chroot=drop", # Add '(drop)' prefix to shell prompts on Debian-based systems
   "PATH=${PATH}:${HOME}/.local-host/bin", # Add .local/bin from host (mounted as .local-host/bin) to PATH.
@@ -152,7 +152,7 @@ set_vars = [
 
 [net]
 # Network mode:
-# "off"      - programs in the sandbox cannot access remote and local
+# "off"      - programs in the sandbox cannot access remote or local
 #              network services. Ports opened by the programs are not
 #              accessible from the host.
 # "isolated" - programs in the sandbox can access remote services.
@@ -167,7 +167,7 @@ mode = "isolated"
 # Entries have the form: [host_ip/][HOST_PORT:]DROP_PORT
 # If host_ip is not specified, it defaults to 127.0.0.1.
 # If HOST_PORT is not specified, it defaults to DROP_PORT.
-# Empty list means no ports are exposed.
+# An empty list means no ports are exposed.
 # Example valid list items:
 # "8080" - publish port 8080 from the sandbox as 127.0.0.1:8080 on the host
 # "8080:8000" - publish port 8000 from the sandbox as 127.0.0.1:8080
@@ -185,8 +185,8 @@ mode = "isolated"
 #                    newer.
 # "auto" - all ports open in the sandbox are automatically published
 #          and bound to ALL the host's IP addresses. This is
-#          convenient, but must be used with care, make sure the host
-#          has firewall configured to filter outside traffic.
+#          convenient, but must be used with care; make sure the host
+#          has a firewall configured to filter outside traffic.
 tcp_published_ports = []
 # UDP ports published from the sandbox.
 udp_published_ports = []
@@ -221,7 +221,7 @@ func WriteDefaultForEnv(path string, mounts []DefaultMount, homeDir string) erro
 
 # Use all the settings from the base.toml file. All the list settings
 # set in this file are appended to the settings from the base.toml.
-# The runtime and net.mode, if set in this file, overwrite the
+# The runtime and net.mode, if set in this file, override the
 # settings from the base.toml.
 extends = "./base.toml"
 

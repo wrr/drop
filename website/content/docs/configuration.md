@@ -13,19 +13,18 @@ When `drop init` is run for the first time, it creates a `base.toml`
 config file, which is shared by all Drop environments.
 
 The created `base.toml` has sensible defaults that expose several
-common dotfiles that are present in your home dir to Drop
-environments. The config also exposes common environment
-variables. Review the generated settings, ensure that no files with
-secrets are exposed, expose config files of other programs that you
-use.
+common dotfiles that are present in your home dir. The config also
+exposes common environment variables. Review the generated settings,
+ensure that no files with secrets are exposed, and expose config
+files of other programs that you use.
 
 {{% details title="Generated shared `base.toml`" closed="true" %}}
 {{< toml-file "configs/base.example.toml" >}}
 {{% /details %}}
 
-`drop init` also creates a tiny, environment specific config file.
-This file extends `base.toml` and allows to add environment specific
-configuration.
+`drop init` also creates a tiny, environment-specific config file.
+This file extends `base.toml` and allows you to add settings that
+apply only to this environment.
 
 {{% details title="Generated environment-specific config" closed="true" %}}
 {{< toml-file "configs/env.example.toml" >}}
@@ -34,8 +33,8 @@ configuration.
 ## Config settings
 
 The following sections document all the settings supported by Drop's
-TOML config. Many of these settings can be overwritten or extended by
-command line arguments.
+TOML config. Many of these settings can be overridden or extended by
+command-line arguments.
 
 ### `runtime`
 
@@ -44,7 +43,7 @@ Sandboxing runtime:
 - `runtime = "native"` - run directly on the host kernel.
 - `runtime = "gvisor"` - for added isolation run on the gVisor user-space kernel.
 
-Command line overwrite `--runtime`, takes priority over the TOML setting:
+The command-line override `--runtime` takes priority over the TOML setting:
 ```
 drop run --runtime gvisor
 ```
@@ -52,14 +51,14 @@ drop run --runtime gvisor
 ### `mounts`
 
 A list of directories and files exposed to Drop. Directories are
-exposed with all content, including sub-directories.
+exposed with all content, including subdirectories.
 
 The list entries can have a compact string syntax, like:
 
-- `"~/bin"` - expose `~/bin` directory as read-only.
-- `"~/bin:~/bin-host"` - expose `~/bin` directory as read-only `~/bin-host`.
-- `"~/plan::rw"` - expose `~/plan` file as writable.
-- `"~/plan:~/plan-host:rw"` - expose `~/plan` file as writable `~/plan-host`.
+- `"~/bin"` - expose the `~/bin` directory as read-only.
+- `"~/bin:~/bin-host"` - expose the `~/bin` directory as read-only `~/bin-host`.
+- `"~/plan::rw"` - expose the `~/plan` file as writable.
+- `"~/plan:~/plan-host:rw"` - expose the `~/plan` file as writable `~/plan-host`.
 
 Alternatively, a verbose dictionary syntax can be used; it allows
 handling paths with `:` characters. Equivalents of the examples
@@ -67,9 +66,9 @@ above with the verbose syntax are:
 
 ```
 {source="~/bin"}
-{source="~/bin", target="~/host-bin"}
+{source="~/bin", target="~/bin-host"}
 {source="~/plan", rw=true}
-{source="~/plan", target="~/host-plan", rw=true}
+{source="~/plan", target="~/plan-host", rw=true}
 ```
 
 All paths must be normalized and either start with / or ~/.
@@ -85,7 +84,7 @@ exposing them as read-write would let sandboxed programs inject
 commands that run outside the sandbox. Read-only is safe.
 Similarly, entries from ~/.bash_history can be executed, so it is
 best not to expose history, but allow shells in Drop environments
-to create isolated history files, one per each environment.
+to create isolated history files, one per environment.
 {{< /callout >}}
 
 Example:
@@ -105,7 +104,7 @@ mounts = [
 ]
 ```
 
-Command line modifier `-m, --mount`, adds mounts for this run only,
+The command-line modifier `-m, --mount` adds mounts for this run only,
 without changing the TOML file:
 
 ```
@@ -118,7 +117,7 @@ Paths to dirs or files to block access to.
 
 Host filesystem access restrictions still apply in Drop, so you
 don't need to block files your current user already can't access
-(for example /etc/shadow). Drop also mounts almost
+(for example `/etc/shadow`). Drop also mounts almost
 all dirs read-only, so you don't need to include files just to block
 writing to them.
 
@@ -137,7 +136,7 @@ within the sandbox.
 
 A list of environment variables to expose from the process starting
 Drop to the sandbox. You can use glob patterns to expose all variables
-with common prefix/suffix.
+with a common prefix/suffix.
 
 {{< callout type="warning" >}}
 Do not expose variables containing secrets.
@@ -175,7 +174,7 @@ exposed_vars = [
 #### `set_vars`
 
 A list of new environment variables passed to the sandboxed process.
-Values can include existing vars as `${VAR_NAME}`
+Values can include existing vars as `${VAR_NAME}`.
 
 Example:
 
@@ -194,10 +193,10 @@ Groups all the settings related to networking.
 
 Network mode:
 
-- `mode = "off"` - programs in the sandbox cannot access remote and local network services. Ports opened by the programs are not accessible from the host.
+- `mode = "off"` - programs in the sandbox cannot access remote or local network services. Ports opened by the programs are not accessible from the host.
 - `mode = "isolated"` - programs in the sandbox can access remote services. Port mapping settings below determine which services running in the sandbox can be accessed from the host and which services running on the host can be accessed from the sandbox.
 
-Command line overwrite `-n, --net`, takes priority over the TOML setting:
+The command-line override `-n, --net` takes priority over the TOML setting:
 ```
 drop run --net off
 ```
@@ -206,17 +205,17 @@ drop run --net off
 
 A list of TCP ports published from the sandbox.
 
-Entries have the form: `[host_ip/][HOST_PORT:]DROP_PORT`
+Entries have the form: `[host_ip/][HOST_PORT:]DROP_PORT`.
 If host_ip is not specified, it defaults to 127.0.0.1.
 If HOST_PORT is not specified, it defaults to DROP_PORT.
-Empty list means no ports are exposed.
+An empty list means no ports are exposed.
 Example valid list items:
 
 - `"8080"` - publish port 8080 from the sandbox as 127.0.0.1:8080 on the host
 - `"8080:8000"` - publish port 8000 from the sandbox as 127.0.0.1:8080 on the host
 - `"0.0.0.0/8080:8000"` - publish port 8000 from the sandbox as 8080 on the host, bind it to all the host's IP addresses. This makes the port externally accessible if the host has no firewall rules to block outside traffic to this port
 - `"127.0.0.1/auto"` - all ports open in the sandbox are automatically published and bound to the host's localhost address. This is preferable to the plain "auto" option below when external exposure is not needed, but requires pasta version 2026_05_07.1afd4ed or newer.
-- `"auto"` - all ports open in the sandbox are automatically published and bound to ALL the host's IP addresses. This is convenient, but must be used with care, make sure the host has firewall configured to filter outside traffic.
+- `"auto"` - all ports open in the sandbox are automatically published and bound to ALL the host's IP addresses. This is convenient, but must be used with care; make sure the host has a firewall configured to filter outside traffic.
 
 Example:
 ```
@@ -226,7 +225,7 @@ tcp_published_ports = [
 ]
 ```
 
-Command line modifier `-t, --tcp-publish`, adds published TCP ports
+The command-line modifier `-t, --tcp-publish` adds published TCP ports
 for this run only:
 ```
 drop run --tcp-publish auto
@@ -243,7 +242,7 @@ udp_published_ports = [
 ]
 ```
 
-Command line modifier `-u, --udp-publish`, adds published UDP ports
+The command-line modifier `-u, --udp-publish` adds published UDP ports
 for this run only:
 ```
 drop run --udp-publish auto
@@ -251,10 +250,11 @@ drop run --udp-publish auto
 
 #### `tcp_host_ports`
 
-A list of localhost TCP ports open on the host that the sandbox can access.
-Entries have the form
-`HOST_PORT[:DROP_PORT]`
-If DROP_PORT is not specified, it defaults to HOST_PORT
+A list of localhost TCP ports open on the host that the sandbox can
+access.
+
+Entries have the form `HOST_PORT[:DROP_PORT]`. If DROP_PORT is not
+specified, it defaults to HOST_PORT.
 
 ```
 tcp_host_ports = [
@@ -263,7 +263,7 @@ tcp_host_ports = [
 ]
 ```
 
-Command line modifier `-T, --tcp-host`, adds to the list for this run
+The command-line modifier `-T, --tcp-host` adds to the list for this run
 only:
 
 ```
@@ -279,7 +279,7 @@ access (see [tcp_host_ports](#tcp_host_ports)).
 udp_host_ports = ["37"]
 ```
 
-Command line modifier `-U, --udp-host`, adds to the list for this run only:
+The command-line modifier `-U, --udp-host` adds to the list for this run only:
 
 ```
 drop run --udp-host 111
@@ -287,12 +287,12 @@ drop run --udp-host 111
 
 ### `extends`
 
-To allow configuration reuse, Drop config file can extend another Drop
+To allow configuration reuse, a Drop config file can extend another Drop
 config file.
 
 All the list settings set in the child config file are appended to the
 equivalent list settings from the parent config. The `runtime` and
-`net.mode`, if set in the child file, overwrite the settings from the
+`net.mode`, if set in the child file, override the settings from the
 parent.
 
 Example:

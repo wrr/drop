@@ -1,7 +1,7 @@
 ---
 title: "Tour: sandboxing Claude Code"
 linkTitle: "Tour: sandboxing Claude"
-description: "A walkthrough of installing and running Claude Code in Drop sandbox, with an isolated home dir, read-only dotfiles and secrets like ~/.ssh hidden."
+description: "A walkthrough of installing and running Claude Code in the Drop sandbox, with an isolated home dir, read-only dotfiles and secrets like ~/.ssh hidden."
 weight: 7
 ---
 
@@ -40,7 +40,7 @@ outside of it:
 
 ```console
 (drop)alice@zax:~/project$ ls -a ~
-.  ..  .ackrc  .bash_profile  .bashrc .gitconfig  .profile  project
+.  ..  .ackrc  .bash_profile  .bashrc  .gitconfig  .profile  project
 ```
 
 Files should in most cases be exposed read-only. This is because
@@ -77,7 +77,7 @@ Now let's install Claude Code using its .sh installer:
 Notice that the installer puts the binary in `~/.local/`:
 
 ```console
-(drop)alice@zax:~/project$ ls  ~/.local/bin/claude
+(drop)alice@zax:~/project$ ls ~/.local/bin/claude
 /home/alice/.local/bin/claude
 ```
 
@@ -117,7 +117,7 @@ can work on your project in the sandbox.
 ```
 
 The sandbox is still using your distribution and has read-only access
-to all the executables, because of this Claude is able to run the
+to all the executables. Because of this, Claude is able to run the
 `ruff` linter without any additional installation steps.
 
 Sensitive files are not exposed to the sandbox:
@@ -144,7 +144,7 @@ Sensitive files are not exposed to the sandbox:
   - Removed or moved elsewhere
 ```
 
-Drop environments are easily disposable, you can use `drop rm` to
+Drop environments are easily disposable: you can use `drop rm` to
 remove them together with all the files installed within the env:
 
 ```console

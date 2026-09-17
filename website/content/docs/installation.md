@@ -6,7 +6,7 @@ weight: 2
 
 ## Prerequisites
 
-Drop requires passt/pasta package for isolated networking, which is
+Drop requires the passt/pasta package for isolated networking, which is
 [available on most Linux distributions](https://passt.top/passt/about/#availability):
 
 ```console
@@ -47,10 +47,10 @@ require a C compiler, but is not strictly required.
 {{< /tab >}}
 
 {{< tab name="Clone and build" >}}
-If you would like to build Drop from a cloned git repo (Requires [Go compiler](https://go.dev/doc/install)):
+If you would like to build Drop from a cloned git repo (requires the [Go compiler](https://go.dev/doc/install)):
 
 ```
-git clone git@github.com:wrr/drop.git;
+git clone git@github.com:wrr/drop.git
 cd drop
 make get-deps
 make build
@@ -62,7 +62,7 @@ To install to `/usr/local/bin`:
 sudo make install
 ```
 
-To install to other directory pass the `BINDIR` var:
+To install to another directory, pass the `BINDIR` var:
 
 ```
 make install BINDIR=$HOME/.local/bin
@@ -76,7 +76,7 @@ make install BINDIR=$HOME/.local/bin
 ### Ubuntu 24 - AppArmor config
 
 Ubuntu uses AppArmor profiles to specify which programs can use Linux
-user namespaces. To create a profile for Drop (in a config below,
+user namespaces. To create a profile for Drop (in the config below,
 change the Drop binary path to the actual path where you placed `drop`
 on your system):
 
@@ -94,7 +94,7 @@ sudo systemctl reload apparmor.service
 
 ### Fedora - SELinux config
 
-Fedora SELinux policy has rules that allow `passt/pasta` operations
+Fedora's SELinux policy has rules that allow `passt/pasta` operations
 required by Podman, but the policy does not cover Drop usage. With the
 default policy, starting Drop will result in an error containing
 `netns dir open: Permission denied, exiting`.
