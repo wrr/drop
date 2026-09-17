@@ -9,6 +9,12 @@ weight: 4
 Config files are stored in `~/.config/drop/` by default and can be
 edited at any time.
 
+Drop is a high-level sandboxing tool with minimal configuration. On
+systems following standard Linux/Unix conventions, an empty Drop
+config creates a secure sandbox. Configuration settings make the
+sandbox more convenient to use by exposing additional files,
+environment variables and network services.
+
 When `drop init` is run for the first time, it creates a `base.toml`
 config file, which is shared by all Drop environments.
 
@@ -18,7 +24,7 @@ exposes common environment variables. Review the generated settings,
 ensure that no files with secrets are exposed, and expose config
 files of other programs that you use.
 
-{{% details title="Generated shared `base.toml`" closed="true" %}}
+{{% details title="Shared `base.toml`" closed="true" %}}
 {{< toml-file "configs/base.example.toml" >}}
 {{% /details %}}
 
@@ -26,7 +32,7 @@ files of other programs that you use.
 This file extends `base.toml` and allows you to add settings that
 apply only to this environment.
 
-{{% details title="Generated environment-specific config" closed="true" %}}
+{{% details title="Environment-specific config" closed="true" %}}
 {{< toml-file "configs/env.example.toml" >}}
 {{% /details %}}
 
@@ -194,7 +200,7 @@ Groups all the settings related to networking.
 Network mode:
 
 - `mode = "off"` - programs in the sandbox cannot access remote or local network services. Ports opened by the programs are not accessible from the host.
-- `mode = "isolated"` - programs in the sandbox can access remote services. Port mapping settings below determine which services running in the sandbox can be accessed from the host and which services running on the host can be accessed from the sandbox.
+- `mode = "isolated"` (default) - programs in the sandbox can access remote services. Port mapping settings below determine which services running in the sandbox can be accessed from the host and which services running on the host can be accessed from the sandbox.
 
 The command-line override `-n, --net` takes priority over the TOML setting:
 ```

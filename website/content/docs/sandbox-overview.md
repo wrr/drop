@@ -4,8 +4,6 @@ description: "How Drop sandbox isolates programs: rootless operation, Linux name
 weight: 1
 ---
 
- 
-
 * Drop doesn't require root and can't execute any operation that the current
   user is not allowed to execute.
 * Uses Linux namespaces (user, mount, PID, IPC, cgroup and network)
