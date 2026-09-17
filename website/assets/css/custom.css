@@ -102,3 +102,7 @@ main#content h1 {
 .dark main#content h1 {
   color: var(--hx-color-gray-100);
 }
+
+.hextra-card > div {
+  margin-top: 0;
+}
