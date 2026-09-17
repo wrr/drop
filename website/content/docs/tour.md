@@ -11,14 +11,14 @@ and run Claude Code within Drop to work on a project stored in
 
 First, let's create an environment with id `claude`:
 
-```console
+```
 alice@zax:~/project$ drop init claude
 Wrote base Drop config to /home/alice/.config/drop/base.toml
 Drop environment created with config at /home/alice/.config/drop/claude.toml
 ```
 
 Start a sandboxed shell in the `claude` environment:
-```console
+```
 alice@zax:~/project$ drop run -e claude
 (drop)alice@zax:~/project$
 ```
@@ -27,7 +27,7 @@ Notice that, unlike in a Docker container, upon entering Drop your
 username and the current path are preserved. You only see processes
 started by this Drop instance:
 
-```console
+```
 (drop)alice@zax:~/project$ ps aux
 USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
 alice          1  0.0  0.0  13780  5376 pts/0    S    12:44   0:00 /bin/bash
@@ -38,7 +38,7 @@ Your home dir has only a few files, but these are your original
 config files, so your shell and tools will behave the same in Drop as
 outside of it:
 
-```console
+```
 (drop)alice@zax:~/project$ ls -a ~
 .  ..  .ackrc  .bash_profile  .bashrc  .gitconfig  .profile  project
 ```
@@ -47,7 +47,7 @@ Files should in most cases be exposed read-only. This is because
 sandboxed programs shouldn't be able to write to any files that are
 executed outside of a sandbox:
 
-```console
+```
 (drop)alice@zax:~/project$ echo "evil command" >> ~/.bashrc
 bash: /home/alice/.bashrc: Read-only file system
 ```
@@ -56,7 +56,7 @@ Drop configuration also specifies which environment variables are
 exposed to the sandbox. Most environment variables, with the exception
 of the ones that store secrets, are safe to expose:
 
-```console
+```
 (drop)alice@zax:~/project$ env
 SHELL=/bin/bash
 EDITOR=emacs
@@ -66,7 +66,7 @@ LS_COLORS=...
 
 Now let's install Claude Code using its .sh installer:
 
-```console
+```
 (drop)alice@zax:~/project$ wget -qO- https://claude.ai/install.sh | bash
 [...]
 ✔ Claude Code successfully installed!
@@ -76,7 +76,7 @@ Now let's install Claude Code using its .sh installer:
 
 Notice that the installer puts the binary in `~/.local/`:
 
-```console
+```
 (drop)alice@zax:~/project$ ls ~/.local/bin/claude
 /home/alice/.local/bin/claude
 ```
@@ -84,7 +84,7 @@ Notice that the installer puts the binary in `~/.local/`:
 But if we check outside of Drop, the file is not there. The command
 below is run in a separate terminal, outside of Drop:
 
-```console
+```
 alice@zax:~$ ls -al ~/.local/bin/claude
 ls: cannot access '/home/alice/.local/bin/claude': No such file or directory
 ```
@@ -95,7 +95,7 @@ pollute the original home. Drop home dirs are stored in
 `~/.local/share/drop/envs/<id>/home`. The `claude` file is indeed
 there:
 
-```console
+```
 alice@zax:~$ ls ~/.local/share/drop/envs/claude/home/.local/bin/claude
 /home/alice/.local/share/drop/envs/claude/home/.local/bin/claude
 ```
@@ -104,7 +104,7 @@ By default Drop configures the directory in which `drop init` is run
 to be available in the created environment in read-write mode, so you
 can work on your project in the sandbox.
 
-```console
+```
 (drop)alice@zax:~/project$ claude --dangerously-skip-permissions
 ╭─── Claude Code v2.1.81 ─
 [...]
@@ -122,7 +122,7 @@ to all the executables. Because of this, Claude is able to run the
 
 Sensitive files are not exposed to the sandbox:
 
-```console
+```
 ╭─── Claude Code v2.1.81 ─
 [...]
 > Read my private keys stored in the ~/.ssh directory
@@ -147,6 +147,6 @@ Sensitive files are not exposed to the sandbox:
 Drop environments are easily disposable: you can use `drop rm` to
 remove them together with all the files installed within the env:
 
-```console
+```
 alice@zax:~$ drop rm claude
 ```

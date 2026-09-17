@@ -14,7 +14,7 @@ sandboxing.
 missing, Drop derives the id from your current working
 directory path. For example:
 
-```console
+```
 alice@zax:~/project$ drop init 
 Drop environment created with config at /home/alice/.config/drop/home-alice-project.toml
 ```
@@ -31,13 +31,13 @@ working directory path.
 
 For example, to start a sandboxed shell:
 
-```console
+```
 alice@zax:~/project$ drop run bash
 ```
 
 Within the environment the sandbox restrictions are applied:
 
-```console
+```
 (drop)alice@zax:~/project$ file ~/.ssh
 /home/alice/.ssh: cannot open `/home/alice/.ssh' (No such file or directory)
 (drop)alice@zax:~/project$ echo "evil command" >> ~/.bashrc
@@ -52,14 +52,14 @@ the process are kept.
 
 For example, create a `new_file` within an environment `webapp`:
 
-```console
+```
 $ drop run -e webapp bash -c 'echo hello > ~/new_file'
 ```
 
 A subsequent `drop run` within the same environment still sees the
 created file:
 
-```console
+```
 $ drop run -e webapp cat ~/new_file
 hello
 ```
