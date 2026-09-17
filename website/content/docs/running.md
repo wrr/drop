@@ -29,10 +29,11 @@ directory](#sharing-the-project-directory).
 If `[-e ENV_ID]` is not passed, Drop derives the id from your current
 working directory path.
 
-For example, to start a sandboxed shell:
+If `[command]` is not passed, it defaults to `$SHELL`, so to start a
+sandboxed shell you can simply use:
 
 ```
-alice@zax:~/project$ drop run bash
+alice@zax:~/project$ drop run
 ```
 
 Within the environment the sandbox restrictions are applied:
