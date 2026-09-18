@@ -1,6 +1,7 @@
-# Drop - Linux sandboxing that doesn't get in your way
+# Drop 
+**Linux sandboxing that doesn't get in your way**
 
-**[droprun.sh](https://droprun.sh)** · [Install](https://droprun.sh/docs/installation/) · [Documentation](https://droprun.sh/docs/) · [Tour](https://droprun.sh/docs/tour/)
+**[droprun.sh](https://droprun.sh)** | [Documentation](https://droprun.sh/docs/)
 
 Drop allows you to easily create sandboxed environments that isolate
 programs and coding agents while preserving as many aspects of
@@ -62,8 +63,8 @@ environment.
   mounts, within the user namespace.
 
 Drop uses a mount namespace to arrange its own root filesystem, hiding
-the original host filesystem. See the [filesystem
-layout](https://droprun.sh/docs/sandbox-overview/#filesystem-layout).
+the original host filesystem. See the [Filesystem
+layout](https://droprun.sh/docs/sandbox-overview/#filesystem-layout) doc.
 
 ## Installation
 
@@ -111,7 +112,7 @@ The commands to work with Drop are:
  * `drop rm <ENV_ID>` - remove an environment
  * `drop update --check` - check if a new version of Drop is available
 
-See also the [running doc](https://droprun.sh/docs/running/).
+See also the [Running](https://droprun.sh/docs/running/) doc.
 
 ## Configuration
 
@@ -124,8 +125,7 @@ Review the generated `~/.config/drop/base.toml` and make sure no files
 containing secrets are exposed.
 
 The comments in the generated files explain each of the settings. You
-can also refer to the [configuration
-doc](https://droprun.sh/docs/configuration/).
+can also refer to the [Configuration](https://droprun.sh/docs/configuration/) doc.
 
 ## Drop compared to other tools
 
