@@ -28,11 +28,12 @@ nothing. A connection to services running on localhost is rejected.
 
 {{< /feature >}}
 
-{{< feature title="Contain supply chain attacks">}}
+{{< feature title="Isolate third-party programs">}}
 
-Install programs from public package repositories like PyPI, npm and
-Go Packages, but keep your system protected in case the program or
-one of its dependencies is compromised.
+Install programs from PyPI, npm or any other source without giving
+them full access to your user account. If an installed program is
+malicious or compromised in a supply chain attack, the damage is
+contained within the sandbox.
 
 {{< /feature >}}
 {{< /feature-list >}}
