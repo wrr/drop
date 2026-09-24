@@ -59,6 +59,7 @@ func TestWriteBase(t *testing.T) {
 	expectedSetVars := []EnvVar{
 		{Name: "debian_chroot", Value: "drop"},
 		{Name: "PATH", Value: "${PATH}:${HOME}/.local-host/bin"},
+		{Name: "GOBIN", Value: "${HOME}/.local/bin"},
 		{Name: "UV_TOOL_DIR", Value: "${HOME}/.local/share/uv-drop/tools"},
 		{Name: "UV_PYTHON_INSTALL_DIR", Value: "${HOME}/.local/share/uv-drop/python"},
 		{Name: "UV_TOOL_BIN_DIR", Value: "${HOME}/.local/bin"},

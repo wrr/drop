@@ -40,7 +40,6 @@ func WriteBase(path string, homeDir string) error {
 		{"~/.emacs", ""},
 		{"~/.profile", ""},
 		{"~/.gitconfig", "Remove if you keep secrets in .gitconfig"},
-		{"~/go", ""},
 		{"~/.nvm", ""},
 		{"~/.screenrc", ""},
 		{"~/.bashrc", "Ensure there are no secrets in your shell config files"},
@@ -51,6 +50,7 @@ func WriteBase(path string, homeDir string) error {
 		{"~/.zprofile", ""},
 		{"~/.zlogout", ""},
 		{"~/.zshrc", ""},
+		{"~/go/bin", "Commands installed by go install"},
 		{"~/.local/bin:~/.local-host/bin", "Rename .local/bin from host, so the sandbox has its own writable .local/bin"},
 		{"~/.local/include:~/.local-host/include", ""},
 		{"~/.local/lib:~/.local-host/lib", ""},
@@ -59,7 +59,7 @@ func WriteBase(path string, homeDir string) error {
 		// .local/share/xxx
 		//
 		// These are also read-only, but env vars below instruct uv and
-		// pipx to install packaged within the sandbox to
+		// pipx to install packages within the sandbox to
 		// .local/share/(uv|pipx)-drop
 		{"~/.local/share/uv", "Packages installed by uv"},
 		{"~/.local/pipx", "Packages installed by pipx (old location)"},
@@ -159,13 +159,15 @@ set_vars = [
   "debian_chroot=drop", # Add '(drop)' prefix to shell prompts on Debian-based systems
   "PATH=${PATH}:${HOME}/.local-host/bin", # Add .local/bin from host (mounted as .local-host/bin) to PATH.
 
-  # Writable dirs for uv to install sandbox-only packages, python versions
+  "GOBIN=${HOME}/.local/bin", # Install go commands to writable ~/.local/bin (~/go/bin is read-only)
+
+  # Dirs for uv to install sandbox-only packages, python versions
   # and executables:
   "UV_TOOL_DIR=${HOME}/.local/share/uv-drop/tools",
   "UV_PYTHON_INSTALL_DIR=${HOME}/.local/share/uv-drop/python",
   "UV_TOOL_BIN_DIR=${HOME}/.local/bin",
 
-  # A writable dir for pipx to install sandbox-only packages.
+  # A dir for pipx to install sandbox-only packages.
   "PIPX_HOME=${HOME}/.local/share/pipx-drop",
 ]
 
