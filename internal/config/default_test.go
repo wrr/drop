@@ -135,6 +135,7 @@ func TestWriteDefaultForEnv(t *testing.T) {
 
 func TestFilterExistingEntries(t *testing.T) {
 	entries := []DefaultMount{
+		header("comment foo"),
 		{Entry: "~/foo"},
 		{Entry: "~/bar"},
 		{Entry: "~/baz:~/baz-host"},
@@ -149,12 +150,9 @@ func TestFilterExistingEntries(t *testing.T) {
 
 	filtered := keepExistingEntries(entries, homeDir)
 
-	if len(filtered) != 1 {
-		t.Fatalf("Expected 1 filtered entry, got %d", len(filtered))
-	}
-
-	if filtered[0].Entry != "~/bar" {
-		t.Errorf("Invalid filtered entry '%s'", filtered[0].Entry)
+	expected := []DefaultMount{header("comment foo"), {Entry: "~/bar"}}
+	if !slices.Equal(filtered, expected) {
+		t.Errorf("Expected filtered entries %+v, got %+v", expected, filtered)
 	}
 }
 
@@ -197,6 +195,40 @@ func TestMountEntriesToToml(t *testing.T) {
   "~/.bashrc:~/.bashrc-host",
   "~/.gitconfig", # comment bar
 ]`,
+		},
+		{
+			name: "header followed by entries",
+			entries: []DefaultMount{
+				{Entry: "~/.bashrc"},
+				header("comment foo"),
+				{Entry: "~/.gitconfig", Comment: "comment bar"},
+			},
+			expected: `[
+  "~/.bashrc",
+
+  # comment foo
+  "~/.gitconfig", # comment bar
+]`,
+		},
+		{
+			name: "headers not followed by entries",
+			entries: []DefaultMount{
+				header("comment foo"),
+				header("comment bar"),
+				{Entry: "~/.bashrc"},
+				header("comment baz"),
+			},
+			expected: `[
+  # comment bar
+  "~/.bashrc",
+]`,
+		},
+		{
+			name: "headers only",
+			entries: []DefaultMount{
+				header("comment foo"),
+			},
+			expected: "[]",
 		},
 	}
 

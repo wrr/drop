@@ -30,6 +30,17 @@ type DefaultMount struct {
 	Comment string
 }
 
+func (d DefaultMount) IsHeader() bool {
+	return d.Entry == ""
+}
+
+func header(comment string) DefaultMount {
+	return DefaultMount{
+		Entry:   "",
+		Comment: comment,
+	}
+}
+
 // WriteBase writes a default base config file to path.
 func WriteBase(path string, homeDir string) error {
 	// mounts contains files to expose from home dir, these
@@ -40,7 +51,6 @@ func WriteBase(path string, homeDir string) error {
 		{"~/.emacs", ""},
 		{"~/.profile", ""},
 		{"~/.gitconfig", "Remove if you keep secrets in .gitconfig"},
-		{"~/.nvm", ""},
 		{"~/.screenrc", ""},
 		{"~/.bashrc", "Ensure there are no secrets in your shell config files"},
 		{"~/.bash_logout", ""},
@@ -50,9 +60,11 @@ func WriteBase(path string, homeDir string) error {
 		{"~/.zprofile", ""},
 		{"~/.zlogout", ""},
 		{"~/.zshrc", ""},
-		{"~/.local/bin:~/.local-host/bin", "Rename .local/bin from host, so the sandbox has its own writable .local/bin"},
+		header("Rename .local/ dirs from host, so the sandbox has its own writable versions"),
+		{"~/.local/bin:~/.local-host/bin", ""},
 		{"~/.local/include:~/.local-host/include", ""},
 		{"~/.local/lib:~/.local-host/lib", ""},
+		header("Third-party package managers"),
 		{"~/go/bin", "Commands installed by go install"},
 		// These need to be mounted in .local, not .local-host, because uv
 		// and pipx put absolute path symlinks in .local/bin that point to
@@ -64,13 +76,13 @@ func WriteBase(path string, homeDir string) error {
 		{"~/.local/share/uv", "Packages installed by uv"},
 		{"~/.local/pipx", "Packages installed by pipx (old location)"},
 		{"~/.local/share/pipx", "Packages installed by pipx"},
-
-		{"~/.cargo/bin", "Commands installed by cargo install, and rustup"},
+		{"~/.cargo/bin", "Commands installed by cargo install and rustup"},
 		{"~/.cargo/env", "Sourced by shell config files"},
 		{"~/.cargo/env.fish", ""},
 		{"~/.cargo/env.nu", ""},
 		{"~/.cargo/config.toml", "Remove if you keep secrets in cargo config"},
 		{"~/.rustup", "Rust toolchains"},
+		{"~/.nvm", "Node Version Manager"},
 	}
 
 	mounts = keepExistingEntries(mounts, homeDir)
@@ -290,9 +302,17 @@ udp_host_ports = []
 func keepExistingEntries(entries []DefaultMount, homeDir string) []DefaultMount {
 	var existing []DefaultMount
 	for _, e := range entries {
-		src := strings.SplitN(e.Entry, ":", 2)[0]
-		path := osutil.TildeToHomeDir(src, homeDir)
-		if osutil.CanStat(path) {
+		keep := false
+		if e.IsHeader() {
+			keep = true
+		} else {
+			src := strings.SplitN(e.Entry, ":", 2)[0]
+			path := osutil.TildeToHomeDir(src, homeDir)
+			if osutil.CanStat(path) {
+				keep = true
+			}
+		}
+		if keep {
 			existing = append(existing, e)
 		}
 	}
@@ -300,17 +320,34 @@ func keepExistingEntries(entries []DefaultMount, homeDir string) []DefaultMount 
 }
 
 func mountEntriesToToml(entries []DefaultMount) string {
-	if len(entries) == 0 {
-		return "[]"
-	}
 	lines := []string{"["}
+	hdr := ""
 	for _, e := range entries {
-		if e.Comment != "" {
-			lines = append(lines, fmt.Sprintf("  %q, # %s", e.Entry, e.Comment))
+		if e.IsHeader() {
+			// Keep the header to output it later if there is at least one
+			// non-filtered entry to which the header should apply.
+			hdr = fmt.Sprintf("  # %s", e.Comment)
 		} else {
-			lines = append(lines, fmt.Sprintf("  %q,", e.Entry))
+			if hdr != "" {
+				if len(lines) != 1 {
+					// Add a new line before the header except if it is placed
+					// just after the list opening.
+					lines = append(lines, "")
+				}
+				lines = append(lines, hdr)
+				hdr = ""
+			}
+			if e.Comment != "" {
+				lines = append(lines, fmt.Sprintf("  %q, # %s", e.Entry, e.Comment))
+			} else {
+				lines = append(lines, fmt.Sprintf("  %q,", e.Entry))
+			}
 		}
 	}
+	if len(lines) == 1 {
+		return "[]"
+	}
+
 	lines = append(lines, "]")
 	return strings.Join(lines, "\n")
 }

@@ -45,22 +45,26 @@ mounts = [
   "~/.emacs",
   "~/.profile",
   "~/.gitconfig", # Remove if you keep secrets in .gitconfig
-  "~/.nvm",
   "~/.screenrc",
   "~/.bashrc", # Ensure there are no secrets in your shell config files
   "~/.bash_logout",
   "~/.bash_profile",
   "~/.zlogin",
   "~/.zshrc",
-  "~/.local/bin:~/.local-host/bin", # Rename .local/bin from host, so the sandbox has its own writable .local/bin
+
+  # Rename .local/ dirs from host, so the sandbox has its own writable versions
+  "~/.local/bin:~/.local-host/bin",
   "~/.local/include:~/.local-host/include",
   "~/.local/lib:~/.local-host/lib",
+
+  # Third-party package managers
   "~/go/bin", # Commands installed by go install
   "~/.local/share/uv", # Packages installed by uv
   "~/.local/share/pipx", # Packages installed by pipx
-  "~/.cargo/bin", # Commands installed by cargo install, and rustup
+  "~/.cargo/bin", # Commands installed by cargo install and rustup
   "~/.cargo/env", # Sourced by shell config files
   "~/.rustup", # Rust toolchains
+  "~/.nvm", # Node Version Manager
 ]
 
 # Paths to dirs or files to block access to.
