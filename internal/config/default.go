@@ -50,10 +50,10 @@ func WriteBase(path string, homeDir string) error {
 		{"~/.zprofile", ""},
 		{"~/.zlogout", ""},
 		{"~/.zshrc", ""},
-		{"~/go/bin", "Commands installed by go install"},
 		{"~/.local/bin:~/.local-host/bin", "Rename .local/bin from host, so the sandbox has its own writable .local/bin"},
 		{"~/.local/include:~/.local-host/include", ""},
 		{"~/.local/lib:~/.local-host/lib", ""},
+		{"~/go/bin", "Commands installed by go install"},
 		// These need to be mounted in .local, not .local-host, because uv
 		// and pipx put absolute path symlinks in .local/bin that point to
 		// .local/share/xxx
@@ -64,6 +64,13 @@ func WriteBase(path string, homeDir string) error {
 		{"~/.local/share/uv", "Packages installed by uv"},
 		{"~/.local/pipx", "Packages installed by pipx (old location)"},
 		{"~/.local/share/pipx", "Packages installed by pipx"},
+
+		{"~/.cargo/bin", "Commands installed by cargo install, and rustup"},
+		{"~/.cargo/env", "Sourced by shell config files"},
+		{"~/.cargo/env.fish", ""},
+		{"~/.cargo/env.nu", ""},
+		{"~/.cargo/config.toml", "Remove if you keep secrets in cargo config"},
+		{"~/.rustup", "Rust toolchains"},
 	}
 
 	mounts = keepExistingEntries(mounts, homeDir)
@@ -159,16 +166,19 @@ set_vars = [
   "debian_chroot=drop", # Add '(drop)' prefix to shell prompts on Debian-based systems
   "PATH=${PATH}:${HOME}/.local-host/bin", # Add .local/bin from host (mounted as .local-host/bin) to PATH.
 
-  "GOBIN=${HOME}/.local/bin", # Install go commands to writable ~/.local/bin (~/go/bin is read-only)
+  # Config vars for third-party package managers. These are used
+  # together with mount rules above to achieve the following:
+  # * Sandbox can execute host-installed packages.
+  # * Sandbox can install and execute sandbox-only packages.
+  # * Sandbox can't install or modify any host-visible packages.
 
-  # Dirs for uv to install sandbox-only packages, python versions
-  # and executables:
+  "GOBIN=${HOME}/.local/bin", # sanbox-only go commands
+  "CARGO_INSTALL_ROOT=${HOME}/.local", # cargo commands
+  # uv installed packages, Python versions and executables:
   "UV_TOOL_DIR=${HOME}/.local/share/uv-drop/tools",
   "UV_PYTHON_INSTALL_DIR=${HOME}/.local/share/uv-drop/python",
   "UV_TOOL_BIN_DIR=${HOME}/.local/bin",
-
-  # A dir for pipx to install sandbox-only packages.
-  "PIPX_HOME=${HOME}/.local/share/pipx-drop",
+  "PIPX_HOME=${HOME}/.local/share/pipx-drop", # pipx packages
 ]
 
 [net]
