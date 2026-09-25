@@ -74,8 +74,8 @@ func WriteBase(path string, homeDir string) error {
 		// pipx to install packages within the sandbox to
 		// .local/share/(uv|pipx)-drop
 		{"~/.local/share/uv", "Packages installed by uv"},
-		{"~/.local/pipx", "Packages installed by pipx (old location)"},
 		{"~/.local/share/pipx", "Packages installed by pipx"},
+		{"~/.local/pipx", "Packages installed by pipx (old location)"},
 		{"~/.cargo/bin", "Commands installed by cargo install and rustup"},
 		{"~/.cargo/env", "Sourced by shell config files"},
 		{"~/.cargo/env.fish", ""},
