@@ -42,6 +42,7 @@ type RunFlags struct {
 	TcpHostPorts      []string
 	UdpPublishedPorts []string
 	UdpHostPorts      []string
+	AllowedDomains    []string
 
 	// Remaining command line arguments (the command to execute)
 	Args []string
@@ -143,7 +144,7 @@ The -m, -t, -T, -u, -U options are appended to options from the TOML config file
 					&cli.StringFlag{
 						Name:        "net",
 						Aliases:     []string{"n"},
-						Usage:       "Network mode: off or isolated",
+						Usage:       "Network mode: off, isolated or filtered",
 						Destination: &flags.NetworkMode,
 					},
 					&cli.StringSliceFlag{
@@ -169,6 +170,11 @@ The -m, -t, -T, -u, -U options are appended to options from the TOML config file
 						Aliases:     []string{"U"},
 						Usage:       "Make a UDP port from the host available in the sandbox (format: hostPort[:sandboxPort])",
 						Destination: &flags.UdpHostPorts,
+					},
+					&cli.StringSliceFlag{
+						Name:        "allow-domain",
+						Usage:       "Allow access to a domain in filtered network mode (format: [*.]domain[:port])",
+						Destination: &flags.AllowedDomains,
 					},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -294,6 +300,7 @@ func FlagsToConfig(cfg *config.Config, flags *RunFlags) error {
 		}
 		cfg.Net.UDPHostPorts = append(cfg.Net.UDPHostPorts, p...)
 	}
+	cfg.Net.AllowedDomains = append(cfg.Net.AllowedDomains, flags.AllowedDomains...)
 	// Validate config again, all errors detected should be related to
 	// entries modified by this function, because cfg read from a file
 	// and passed to this function was already validated during reading.

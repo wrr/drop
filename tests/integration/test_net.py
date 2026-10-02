@@ -15,6 +15,7 @@
 import os
 import select
 import socket
+import time
 
 from base import TestBase, Config
 
@@ -178,6 +179,122 @@ class TestNet(TestBase):
                 self.assertNotEqual(0, result.returncode,
                                    f"Expected failure for {tc['args']}")
                 self.assertIn(tc['expected'], result.stderr)
+
+    def test_filtered_networking(self):
+        self.drop_init()
+        http_server = self.start_host_http_server(20116)
+        config = Config(allowed_domains=['127.0.0.1:20116', 'example.com'])
+
+        # Allowed IP address
+        result = self.drop_run(
+            '-n filtered curl -sS -o /dev/null -w %{http_code} '
+            'http://127.0.0.1:20116/', config=config)
+        self.assertSuccess(result)
+        self.assertEqual('200', result.stdout)
+
+        # Allowed domain
+        result = self.drop_run(
+            '-n filtered curl -sS -o /dev/null https://example.com/',
+            config=config)
+        self.assertSuccess(result)
+
+        # Not allowed domains don't resolve
+        result = self.drop_run(
+            '-n filtered curl -sS https://example.org/', config=config)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('Could not resolve host', result.stderr)
+
+        # Connections to addresses of not allowed domains are reset
+        result = self.drop_run(
+            '-n filtered curl -sS https://1.1.1.1/', config=config)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('reset', result.stderr)
+
+        # Not allowed ports are closed
+        result = self.drop_run('-n filtered nc -zv -w 1 1.1.1.1 81',
+                               config=config)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Connection refused', result.stderr)
+
+        # No IPv6 connectivity
+        result = self.drop_run(
+            '-n filtered nc -6 -zv -w 1 2606:4700:4700::1111 443',
+            config=config)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Network is unreachable', result.stderr)
+
+        # Connections and DNS queries are logged
+        log = (self.env_dir() / 'proxy.log').read_text()
+        self.assertIn('allowed TCP 127.0.0.1 (127.0.0.1:20116)', log)
+        self.assertIn('allowed TCP example.com', log)
+        self.assertIn('denied DNS example.org', log)
+        self.assertIn('denied TCP 1.1.1.1:443', log)
+        self.kill_process(http_server)
+
+    def test_filtered_localhost(self):
+        self.drop_init()
+        http_server = self.start_host_http_server(20117)
+        # localhost resolves via /etc/hosts to the sandbox loopback
+        # address, not via Drop DNS. The connection is intercepted, but
+        # no allowed domain resolved to this address, so it is rejected
+        # and the host localhost port is not accessible.
+        result = self.drop_run(
+            '--net filtered --allow-domain localhost:20117 '
+            'curl -sS http://localhost:20117/')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('reset', result.stderr)
+        self.kill_process(http_server)
+
+    def test_filtered_flags_validation(self):
+        self.drop_init()
+        result = self.drop_run('--net filtered --allow-domain https://a.com ls')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('invalid allowed_domains entry', result.stderr)
+
+        result = self.drop_run('--net filtered -t 8080 ls')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('only tcp_host_ports port forwarding is supported '
+                      'with filtered network mode', result.stderr)
+
+        result = self.drop_run('--net filtered -T 53 ls')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('sandbox port 53 is already used', result.stderr)
+
+    def test_filtered_port_forwarding_from_host(self):
+        self.drop_init()
+        # Expose host localhost TCP port 20118 as sandbox port 5037
+        # (like adb server)
+        tcp_server = self.run_background(
+            'bash -c "echo -n hello | nc -4 -v -l -p 20118"'
+        )
+        self.wait_port_bound(tcp_server, 20118)
+        result = self.drop_run(
+            '--net filtered -T 20118:5037 '
+            'bash -c "nc -4 -w 1 127.0.0.1 5037"')
+        self.assertSuccess(result)
+        self.assertEqual('hello', result.stdout)
+        self.kill_process(tcp_server)
+
+        # The port is not exposed on other addresses
+        result = self.drop_run(
+            '--net filtered -T 20118:5037 nc -4 -zv -w 1 10.0.0.1 5037')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Connection refused', result.stderr)
+
+    def start_host_http_server(self, port):
+        """Start HTTP server on the host localhost and wait until it
+        accepts connections."""
+        server = self.run_background(
+            f'python3 -m http.server --bind 127.0.0.1 {port}')
+        deadline = time.time() + 3.0
+        while True:
+            try:
+                socket.create_connection(('127.0.0.1', port), 0.1).close()
+                return server
+            except OSError:
+                if time.time() > deadline:
+                    raise TimeoutError(f'HTTP server on {port} not started')
+                time.sleep(0.05)
 
     def wait_port_bound(self, process, port):
         """Wait for netcat to bind to a port by checking its stderr

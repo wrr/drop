@@ -203,7 +203,30 @@ set_vars = [
 #              running in the sandbox can be accessed from the host and
 #              which services running on the host can be accessed from
 #              the sandbox.
+# "filtered" - programs in the sandbox can access only the domains
+#              listed in allowed_domains. All the connections and DNS
+#              queries are handled by Drop outside of the sandbox,
+#              programs don't need any configuration. Only TCP over
+#              IPv4 is supported. Of the port mapping settings below,
+#              only tcp_host_ports is supported.
 mode = "isolated"
+
+# Domains that programs in the sandbox can access in the "filtered"
+# network mode.
+#
+# Entries have the form: [*.]DOMAIN[:PORT]
+# If PORT is not specified, ports 80 and 443 are allowed.
+# Domains that resolve to loopback or link-local IP addresses are
+# blocked, such addresses can be allowed only by listing them
+# explicitly. Private (local network) addresses are allowed only for
+# domains listed without a wildcard, like "nas.home.lan".
+# Requests are logged to proxy.log in the environment dir.
+# Example valid list items:
+# "github.com" - github.com only, without subdomains
+# "*.githubusercontent.com" - all subdomains of githubusercontent.com
+# "example.com:8443" - example.com on port 8443 only
+# "192.168.1.10:8080" - an IP address
+allowed_domains = []
 
 # TCP ports published from the sandbox.
 #
@@ -238,6 +261,8 @@ udp_published_ports = []
 # Entries have the form
 # HOST_PORT[:DROP_PORT]
 # If DROP_PORT is not specified, it defaults to HOST_PORT
+# Example: "5037" allows adb in the sandbox to connect to the adb
+# server running on the host.
 tcp_host_ports = []
 # Localhost UDP ports open on the host that the sandbox can access.
 udp_host_ports = []
@@ -281,7 +306,10 @@ set_vars = []
 [net]
 # Uncomment to disable network access for this environment:
 # mode = "off"
+# Uncomment to allow access only to the allowed_domains:
+# mode = "filtered"
 
+allowed_domains = []
 tcp_published_ports = []
 udp_published_ports = []
 tcp_host_ports = []

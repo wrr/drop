@@ -202,6 +202,7 @@ Network mode:
 
 - `mode = "off"` - programs in the sandbox cannot access remote or local network services. Ports opened by the programs are not accessible from the host.
 - `mode = "isolated"` (default) - programs in the sandbox can access remote services. Port mapping settings below determine which services running in the sandbox can be accessed from the host and which services running on the host can be accessed from the sandbox.
+- `mode = "filtered"` - programs in the sandbox can access only the domains listed in [allowed_domains](#allowed_domains). Of the port mapping settings below, only [tcp_host_ports](#tcp_host_ports) is supported.
 
 The command-line override `-n, --net` takes priority over the TOML setting:
 ```
@@ -258,10 +259,14 @@ drop run --udp-publish auto
 #### `tcp_host_ports`
 
 A list of localhost TCP ports open on the host that the sandbox can
-access.
+access. Supported in the `isolated` and `filtered` network modes. For
+example, `"5037"` allows `adb` in the sandbox to connect to the adb
+server running on the host.
 
 Entries have the form `HOST_PORT[:DROP_PORT]`. If DROP_PORT is not
-specified, it defaults to HOST_PORT.
+specified, it defaults to HOST_PORT. In the `filtered` mode, the
+`"auto"` entry is not supported and DROP_PORT can't be 53 or a port
+allowed by `allowed_domains`.
 
 ```
 tcp_host_ports = [
@@ -290,6 +295,79 @@ The command-line modifier `-U, --udp-host` adds to the list for this run only:
 
 ```
 drop run --udp-host 111
+```
+
+#### `allowed_domains`
+
+A list of domains that programs in the sandbox can access in the
+`filtered` network mode.
+
+In the `filtered` mode, the sandbox network namespace has only a
+loopback interface, there is no route out of the sandbox. All IPv4
+addresses are local within the sandbox, so DNS queries and
+connections to any address are delivered to sockets served by Drop
+outside of the sandbox:
+
+- DNS queries are answered only for the allowed domains, other names
+  don't resolve. The allowed domains are resolved on the host.
+- A TCP connection is allowed if its destination address was returned
+  by DNS for a domain allowed on the destination port (or if the
+  address itself is allowed). Drop then makes the connection on behalf
+  of the sandboxed program. This works for any protocol over TCP, for
+  example `"github.com:22"` allows git over SSH.
+- Other connections are rejected. UDP (other than DNS) and IPv6 are
+  not supported.
+
+Programs don't need any configuration.
+
+Names that resolve without DNS, for example via `/etc/hosts`, can't
+be matched to allowed domains. Connections to them work only if their
+IP address is allowed.
+
+Entries have the form: `[*.]DOMAIN[:PORT]`. If PORT is not specified,
+ports 80 and 443 are allowed. Example valid list items:
+
+- `"github.com"` - github.com only, without subdomains
+- `"*.githubusercontent.com"` - all subdomains of githubusercontent.com
+- `"example.com:8443"` - example.com on port 8443 only
+- `"192.168.1.10:8080"` - an IP address
+
+Domains that resolve to loopback or link-local IP addresses are
+blocked, to prevent sandboxed programs from accessing host services
+via DNS. Such addresses can be allowed only by listing them
+explicitly.
+
+Private (local network) IP addresses are allowed only for domains
+listed exactly, without a wildcard. This way a local network service,
+for example `"nas.home.lan"`, can be allowed by its domain name, while
+`"*.example.com"` can't be used to reach the local network.
+
+Each connection and DNS query is logged to `proxy.log` in the
+environment directory (for example
+`~/.local/share/drop/envs/<ENV_ID>/proxy.log`), which helps to find
+domains that need to be allowed.
+
+Note that connections are filtered by the destination address and
+the traffic isn't inspected. A server that hosts many domains on the
+same address (for example a CDN) can be instructed by the client to
+serve a different domain than the one allowed.
+
+```
+[net]
+mode = "filtered"
+allowed_domains = [
+    "github.com",
+    "*.githubusercontent.com",
+    "pypi.org",
+    "files.pythonhosted.org",
+]
+```
+
+The command-line modifier `--allow-domain` adds to the list for this
+run only:
+
+```
+drop run --net filtered --allow-domain example.com
 ```
 
 ### `extends`

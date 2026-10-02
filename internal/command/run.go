@@ -23,6 +23,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"runtime/coverage"
 	"syscall"
@@ -66,11 +67,14 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 	}
 
 	if (len(flags.TcpPublishedPorts) > 0 ||
-		len(flags.TcpHostPorts) > 0 ||
 		len(flags.UdpPublishedPorts) > 0 ||
 		len(flags.UdpHostPorts) > 0) &&
 		cfg.Net.Mode != "isolated" {
 		return fmt.Errorf("port forwarding is only supported with isolated network mode (--net isolated)")
+	}
+	if len(flags.TcpHostPorts) > 0 &&
+		cfg.Net.Mode != "isolated" && cfg.Net.Mode != "filtered" {
+		return fmt.Errorf("--tcp-host is only supported with isolated or filtered network mode")
 	}
 
 	// Socket pair for communicating with the child process.
@@ -152,6 +156,18 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 		containerGID = os.Getgid()
 	}
 
+	ambientCaps := []uintptr{
+		unix.CAP_SYS_ADMIN,
+		unix.CAP_DAC_OVERRIDE,
+		unix.CAP_FOWNER,
+		unix.CAP_NET_ADMIN,
+	}
+	if cfg.Net.Mode == "filtered" {
+		// Needed to listen on DNS and other privileged ports allowed by
+		// allowed_domains (like 80 and 443).
+		ambientCaps = append(ambientCaps, unix.CAP_NET_BIND_SERVICE)
+	}
+
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: cloneFlags,
 		// Code running in a user namespace just after clone() and before
@@ -173,12 +189,7 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 		// CAP_DAC_OVERRIDE and CAP_FOWNER are needed to mount overlayfs
 		//
 		// CAP_NET_ADMIN is needed to setup firewall
-		AmbientCaps: []uintptr{
-			unix.CAP_SYS_ADMIN,
-			unix.CAP_DAC_OVERRIDE,
-			unix.CAP_FOWNER,
-			unix.CAP_NET_ADMIN,
-		},
+		AmbientCaps: ambientCaps,
 		UidMappings: []syscall.SysProcIDMap{
 			{
 				ContainerID: containerUID,
@@ -252,6 +263,16 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 	// This must be run after network setup has finished.
 	if err := parentEnd.SendChildArgs(childArgs); err != nil {
 		return err
+	}
+
+	// In filtered network mode the child creates the proxy sockets in
+	// the sandbox network namespace and sends them back.
+	if cfg.Net.Mode == "filtered" {
+		cleanProxy, err := startFilteringProxy(parentEnd, cfg.Net, paths)
+		if err != nil {
+			return err
+		}
+		defer cleanProxy()
 	}
 	parentEnd.Close()
 
@@ -334,6 +355,26 @@ func RunChild() error {
 
 	if err := ensureCapSysAdmin(); err != nil {
 		return err
+	}
+
+	if cfg.Net.Mode == "filtered" {
+		// Must be done before capabilities are dropped (requires
+		// CAP_NET_ADMIN and CAP_NET_BIND_SERVICE).
+		sockets, err := netns.ListenFiltered(cfg.Net)
+		if err != nil {
+			return err
+		}
+		// Sandboxed processes must not have access to the proxy
+		// sockets, after sending only the parent keeps them.
+		for _, socket := range sockets {
+			if err == nil {
+				err = childEnd.SendFile(socket)
+			}
+			socket.Close()
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	ptyNeeded := pty.PtyNeeded()
@@ -518,6 +559,37 @@ func RunChild() error {
 
 	// Should never be reached
 	return fmt.Errorf("exec did not replace the drop process")
+}
+
+// startFilteringProxy receives the proxy sockets from the child and
+// starts the proxy. Returns a cleanup function that should be called
+// when program exits.
+func startFilteringProxy(parentEnd *ipc.ParentEnd, netConfig config.Net,
+	paths *jailfs.Paths) (func(), error) {
+	count, err := netns.FilteredSocketCount(netConfig)
+	if err != nil {
+		return nil, err
+	}
+	var sockets []*os.File
+	for range count {
+		socket, err := parentEnd.RecvFile()
+		if errors.Is(err, io.EOF) {
+			// The child terminated before sending the sockets, the child
+			// exit status is handled by the caller.
+			for _, s := range sockets {
+				s.Close()
+			}
+			return func() {}, nil
+		}
+		if err != nil {
+			for _, s := range sockets {
+				s.Close()
+			}
+			return nil, err
+		}
+		sockets = append(sockets, socket)
+	}
+	return netns.StartProxy(sockets, netConfig, filepath.Join(paths.Env, "proxy.log"))
 }
 
 // ensureCapSysAdmin returns an error if process doesn't have

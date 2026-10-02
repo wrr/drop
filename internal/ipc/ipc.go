@@ -20,6 +20,7 @@ package ipc
 import (
 	"encoding/gob"
 	"fmt"
+	"io"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -89,6 +90,39 @@ func (p *ParentEnd) SendChildArgs(args ChildArgs) error {
 	return nil
 }
 
+// RecvFile receives a file descriptor sent by the child with
+// SendFile. The function blocks until the descriptor is available.
+// Returns io.EOF if the child terminated without sending the
+// descriptor.
+func (p *ParentEnd) RecvFile() (*os.File, error) {
+	buf := make([]byte, 1)
+	oob := make([]byte, unix.CmsgSpace(4))
+	n, oobn, _, _, err := unix.Recvmsg(int(p.socket.Fd()), buf, oob, 0)
+	if err != nil {
+		return nil, fmt.Errorf("receive file from child: %v", err)
+	}
+	// Recvmsg doesn't propagate EOF, detect it manually.
+	// https://github.com/golang/go/issues/58898
+	if n == 0 && oobn == 0 {
+		return nil, io.EOF
+	}
+	scms, err := unix.ParseSocketControlMessage(oob[:oobn])
+	if err != nil {
+		return nil, fmt.Errorf("receive file from child: parse socket control message: %v", err)
+	}
+	if len(scms) != 1 {
+		return nil, fmt.Errorf("receive file from child: expected 1 socket control message, got %d", len(scms))
+	}
+	fds, err := unix.ParseUnixRights(&scms[0])
+	if err != nil {
+		return nil, fmt.Errorf("receive file from child: parse unix rights: %v", err)
+	}
+	if len(fds) != 1 {
+		return nil, fmt.Errorf("receive file from child: expected 1 fd, got %d", len(fds))
+	}
+	return os.NewFile(uintptr(fds[0]), "child-file"), nil
+}
+
 func (p *ParentEnd) Close() error {
 	if p.socket != nil {
 		err := p.socket.Close()
@@ -106,6 +140,15 @@ func (c *ChildEnd) RecvChildArgs() (*ChildArgs, error) {
 		return nil, fmt.Errorf("receive arguments from parent: %v", err)
 	}
 	return &childArgs, nil
+}
+
+// SendFile sends a file descriptor to the parent.
+func (c *ChildEnd) SendFile(f *os.File) error {
+	rights := unix.UnixRights(int(f.Fd()))
+	if err := unix.Sendmsg(int(c.Socket.Fd()), []byte{0}, rights, nil, 0); err != nil {
+		return fmt.Errorf("send file to parent: %v", err)
+	}
+	return nil
 }
 
 func (c *ChildEnd) Close() error {

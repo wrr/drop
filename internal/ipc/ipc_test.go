@@ -2,6 +2,7 @@ package ipc
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"testing"
@@ -87,5 +88,47 @@ func TestParentChildCommunication(t *testing.T) {
 
 	if err := <-done; err != nil {
 		t.Fatalf("child goroutine: %v", err)
+	}
+}
+
+func TestSendRecvFile(t *testing.T) {
+	parentEnd, childEnd, err := NewParentChildSocket()
+	if err != nil {
+		t.Fatalf("NewParentChildSocket: %v", err)
+	}
+	defer parentEnd.Close()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	defer r.Close()
+
+	if err := childEnd.SendFile(w); err != nil {
+		t.Fatalf("SendFile: %v", err)
+	}
+	w.Close()
+
+	received, err := parentEnd.RecvFile()
+	if err != nil {
+		t.Fatalf("RecvFile: %v", err)
+	}
+	if _, err := received.WriteString("hello"); err != nil {
+		t.Fatalf("write to received file: %v", err)
+	}
+	received.Close()
+
+	content, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(content) != "hello" {
+		t.Errorf("expected 'hello', got %q", content)
+	}
+
+	// Child terminated without sending a file.
+	childEnd.Close()
+	if _, err := parentEnd.RecvFile(); err != io.EOF {
+		t.Errorf("expected io.EOF, got %v", err)
 	}
 }

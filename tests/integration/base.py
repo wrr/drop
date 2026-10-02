@@ -35,7 +35,8 @@ class Config:
                  tcp_published_ports: List[str] = None,
                  tcp_host_ports: List[str] = None,
                  udp_published_ports: List[str] = None,
-                 udp_host_ports: List[str] = None):
+                 udp_host_ports: List[str] = None,
+                 allowed_domains: List[str] = None):
         self.mounts = mounts or []
         # Always expose the directory where test coverage data is
         # stored, to ensure all tests can write coverage data.
@@ -48,6 +49,7 @@ class Config:
         self.tcp_host_ports = tcp_host_ports or []
         self.udp_published_ports = udp_published_ports or []
         self.udp_host_ports = udp_host_ports or []
+        self.allowed_domains = allowed_domains or []
 
     def toml(self) -> str:
         """Return configuration as TOML string"""
@@ -61,7 +63,8 @@ class Config:
             f'tcp_published_ports = {str(self.tcp_published_ports)}',
             f'tcp_host_ports = {str(self.tcp_host_ports)}',
             f'udp_published_ports = {str(self.udp_published_ports)}',
-            f'udp_host_ports = {str(self.udp_host_ports)}'
+            f'udp_host_ports = {str(self.udp_host_ports)}',
+            f'allowed_domains = {str(self.allowed_domains)}'
         ]
         return '\n'.join(toml_lines)
 

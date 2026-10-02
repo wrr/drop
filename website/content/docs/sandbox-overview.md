@@ -12,6 +12,8 @@ weight: 1
   from the sandbox.
 * By default disallows network access to services running on
   localhost. Uses [pasta](https://passt.top) for networking.
+* Optionally allows network access only to selected domains, via a
+  filtering proxy that runs outside of the sandbox.
 * Exposes only allowlisted environment variables to the sandbox.
 * Drops all the capabilities before starting a sandboxed program, so
   sandboxed processes can't do privileged operations, such as bind

@@ -164,6 +164,7 @@ tcp_published_ports = ["9000"]
 tcp_host_ports = ["9001"]
 udp_published_ports = ["9002"]
 udp_host_ports = ["9003"]
+allowed_domains = ["entry.example.com"]
 `,
 				"/config/base.toml": `
 mounts = ["~/base-mount"]
@@ -176,6 +177,7 @@ tcp_published_ports = ["8000"]
 tcp_host_ports = ["8001"]
 udp_published_ports = ["8002"]
 udp_host_ports = ["8003"]
+allowed_domains = ["base.example.com"]
 `,
 			},
 			expected: Config{
@@ -211,6 +213,7 @@ udp_host_ports = ["8003"]
 						{HostPort: 8003, GuestPort: 8003},
 						{HostPort: 9003, GuestPort: 9003},
 					},
+					AllowedDomains: []string{"base.example.com", "entry.example.com"},
 				},
 			},
 		},

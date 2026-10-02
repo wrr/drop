@@ -58,6 +58,8 @@ environment.
   kernel, so they don't issue syscalls directly to the host kernel.
 * By default disallows network access to services running on
   localhost. Uses [pasta](https://passt.top) for networking.
+* Optionally allows network access only to selected domains, via a
+  filtering proxy that runs outside of the sandbox.
 * Drops all the capabilities before starting a sandboxed program, so
   sandboxed processes can't do privileged operations, such as bind
   mounts, within the user namespace.
