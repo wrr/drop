@@ -1,9 +1,11 @@
 # Goals
  
-* Support filtering outgoing traffic with firewall rules
+* Support filtering outgoing traffic with firewall rules.
 * Filter not allowed requests before DNS query is sent out to limit
   DNS exfiltration.
 * IP-level filtering, with domain name as the main user-visible target.
+* Explicitly protect local network, do not allow allowed domains to
+  point to local net services unless explicitly allowed by the user.
 * It should be possible to include firewall rules in Drop TOML via
   external files. Multiple such files should be supported.
 * Support interactive mode in which user is prompted to make an
@@ -14,13 +16,14 @@
 
 # Non-goals
 
-* Strict domain filtering: allowed domain, means requests are allowed
-  to IP addresses associated with this domain. If IP address also
-  serves other domains, for example, via HTTP/SNI, requests to such
-  domains are also implicitly allowed. Stronger guarantee would
-  require application level filtering, such as could be provided by a
-  SNI proxy for HTTP requests. This is out of scope of the Drop
-  firewall proposed in this document.
+* Application-layer filtering: allowed domain, means the domain is
+  trusted, and requests are allowed to all IP addresses returned by
+  the domain admin. If IP address also serves other domains, for
+  example, via HTTP/SNI, requests to such domains are also implicitly
+  allowed. Stronger guarantee would require application level
+  filtering, such as could be provided by a SNI proxy for HTTP
+  requests. This is out of scope of the Drop firewall proposed in this
+  document.
 
 * Incoming traffic filtering. `tcp_published_ports` and
   `udp_published_ports` (by default empty) remain the only mechanism
@@ -28,7 +31,6 @@
   possible to allow requests to a TCP port open in Drop, but only from
   specific IP addresses (host firewall rules of course are still used
   and can be used for more sophisticated incoming traffic filtering).
-
 
 # Configuration
 
@@ -146,13 +148,25 @@ namespace, as it is already the case.
 
 ## Firewall component
 
-* Created by Drop parent process.
+Firewall process to be able to install rules that apply to the
+sandbox, must be able to join or must run in the sandbox's network
+namespace. Process to join a network namespace requires CAP_SYS_ADMIN
+capability both in its own user namespace and in the user namespace
+that owns the target namespace. Because Drop doesn't run as root
+(doesn't have CAP_SYS_ADMIN), it needs to create a user namespace
+where firewall will have CAP_SYS_ADMIN. From such user namespace
+firewall process is able to join sandbox's namespace.
+
+An alternative for joining the network namespace would be for firewall
+to run wihin the sandbox. But this would expose firewall process to
+the sandbox, so is rejected.
+
 * Installs firewall rules before Drop child process receives a message to run a sandboxed program.
 * Uses google/nftables bindings
 * Uses nfqueue (florianl/go-nfqueue ?) to make filtering decisions.
   Both libraries can be pointed to the sandbox user namespace, so firewall rules apply to the namespace.
 * On systems without nftables support, fails Drop execution with actionable message
-* Receives domain->ipaddresses mapping from DNS goroutine
+* Receives domain->ipaddresses mapping from DNS
 * Blocks DNS (TCP/UDP 53) and DoT (853) to anything except the DNS
   proxy. DoH runs on 443 and can't be blocked by port, but a DoH
   client still needs to reach its server: by name (goes through the
@@ -166,12 +180,15 @@ namespace, as it is already the case.
 * if a connection attempt is made to an IP address for which domain
   name was not resolved, the IP address is shown in the prompt and any
   added rule applies to the raw IP address.
-* Exposes a high level API to be used by DNS goroutine
+* Exposes a high level API to be used by DNS
 
 ## DNS proxy component
 
-* Started by Drop parent process
-* Listens on an ephemeral local port, the only port exposed to a sandbox for DNS resolution purposes (passed to the sandbox via /etc/resolv.conf)
+DNS process can either run in the host namespace listening on an ephemeral local port (the port will be exposed to the sandbox by pasta).
+
+Alternatively, DNS process can listen on a 53 port in the sandbox namespace (but the process should not run in the sandbox pid namespace)
+
+
 * Upon receiving a query, passes the domain to Firewall above for resolution. If Firewall returns:
   * Deny: returns NXDOMAIN
   * Allow: runs the query.
