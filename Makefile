@@ -46,8 +46,9 @@ test-race:
 	go test -fullpath -race ./...
 
 # go install honnef.co/go/tools/cmd/staticcheck@latest
+# TODO: remove GOTOOLCHAIN after staticcheck supports go 1.27
 lint: build
-	staticcheck ./...
+	GOTOOLCHAIN=go1.26.9 staticcheck ./...
 
 test-integration: build
 	mkdir -p cover
