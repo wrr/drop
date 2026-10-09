@@ -13,7 +13,6 @@
   should be automatically saved by Drop in a firewall rules files
   selected by the user.
 
-
 # Non-goals
 
 * Application-layer filtering: allowed domain, means the domain is
@@ -38,39 +37,55 @@ When `net.mode` is `isolated` `[net]` gets a new firewall setting. If
 it is present, firewall is enabled in the isolated mode.
 
 ```
+# Outgoing connection filtering, applied only when net.mode = "isolated".
 [net.firewall]
 
-# What to do if no rule matches
-default = "ask"
-# What to do if the prompt cannot be shown (for example no terminal available). Allowed values: "deny", "allow"
+# Allows to disable firewall without removing its config, default true.
+enabled=true
+
+# What to do if no rule matches. default 'ask'
+default_action = "ask"
+
+# What to do if the prompt cannot be shown (for example no terminal
+available). Allowed values: "deny", "allow", default "deny".
 ask_fallback = "deny"
-ask_store_file = "user.rules"
 
-
-rules = [
+# Rule files, applied in the order listed: a rule from a later file
+# wins over an equally specific rule from an earlier one.
+# rules from saved_rules_file are applied last and then inline rules.
+rule_files = [
  "npm.rules"
- "user.rules"
+ "pip.rules"
 ]
+
+# A file to which "always allow"/"always deny" decisions are
+# written. Automatically appended to rule_files list. 
+# A special value "auto" means the file name is delivered from the
+# current Drop environment id: {environment id}.rules
+saved_rules_file = "auto"
+
+# Rules written inline, same syntax as a rule file line.
+rules = [
+  "allow registry.npmjs.org:443",
+  "deny  telemetry.example.com",
+]
+
 ```
 
 Extending and changing the defaults with per environment settings is
 possible with the same extension logic as for other settings.
 
-TODO(wrr): current config makes it impossible to disable firewall per
-environment if it is enabled in base.toml, or to reset rules per
-environment.
-maybe:
-```
-net.firewall.disable = true
-net.firewall.clear_extended_rules = true
-```
-?
-
-TODO(wrr): logs related config design
-
 The rules files paths are relative to the config file. As with the
 drop config files, sandboxed process must not be able to edit them or
 even better read them. Drop may add checks to check and enforce this.
+
+# After v1:
+
+Logging:
+```
+# What to log: "off", "denied", "all".
+log = "denied-ask"
+```
 
 # Rules format
 
