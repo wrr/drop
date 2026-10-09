@@ -104,22 +104,33 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 	}
 
 	cmd := exec.Command(exePath, "-init")
-	// 1) If stdin is a terminal, we pass it as-is to the init process,
-	// so it is also able to detect that stdin is a terminal. The terminal
-	// is then replaced with a new PTY created in the sandbox.
+	// 1) For each stdin|out|err which is a terminal, we pass it as-is
+	// to the init process, so it is also able to detect that fd is a
+	// terminal. The terminal is then replaced with a new PTY created in
+	// the sandbox.
 	//
-	// 2) If stdin is not a terminal, it is wrapped with io.Reader
-	// interface. Such wrapped stdin is no longer os.File and cmd will
-	// replace it with a pipe and create a goroutine to read from the
-	// io.Reader and write to the pipe. This way, the original file is
-	// not passed directly to the sandboxed process, and the sandboxed
-	// process cannot access and modify it via /proc/self/fd/0.
+	// 2) For each stdin|out|err which is not a terminal, a pipe is
+	// created and passed to the sandboxed process and a goroutine is
+	// started to pass data between the original descriptor and this
+	// pipe. This way, the original file is not passed directly to the
+	// sandboxed process, and the sandboxed process cannot access and
+	// modify it via /proc/self/fd/0|1|2.
 	//
-	// We then do equivalent wrapping for stdout and stderr.
+	// For stdout and stderr this is done by wrapping the original file
+	// with the io.Writer interface, which makes cmd replace it with a
+	// pipe and copy from it in a goroutine.
+	//
+	// Stdin is not wrapped this way, instead the copying is done by a
+	// goroutine started by pipeStdin function. The reason is that
+	// cmd.Wait waits for each goroutine it created before returning.
+	// If sandboxed process terminates, we want drop to also terminate,
+	// not to wait for its stdin to be closed first (for stdout|err we
+	// actually need to wait, these descriptors are for sure closed when
+	// program terminates and we want Drop to show any pending output).
 	if term.IsTerminal(0) {
 		cmd.Stdin = os.Stdin
-	} else {
-		cmd.Stdin = struct{ io.Reader }{os.Stdin}
+	} else if err := pipeStdin(cmd, os.Stdin); err != nil {
+		return err
 	}
 	if term.IsTerminal(1) {
 		cmd.Stdout = os.Stdout
@@ -518,6 +529,19 @@ func RunInit() error {
 
 	// Should never be reached
 	return fmt.Errorf("exec did not replace the drop process")
+}
+
+// pipeStdin starts a goroutine that copies src to the started process input.
+func pipeStdin(cmd *exec.Cmd, src io.Reader) error {
+	pipe, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("create stdin pipe: %v", err)
+	}
+	go func() {
+		io.Copy(pipe, src)
+		pipe.Close()
+	}()
+	return nil
 }
 
 // ensureCapSysAdmin returns an error if process doesn't have

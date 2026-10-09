@@ -15,6 +15,7 @@
 import getpass
 import os
 import re
+import subprocess
 import tempfile
 import unittest
 
@@ -292,6 +293,27 @@ class TestCore(base.TestBase):
             actual_content = input_file.read()
 
         self.assertEqual(original_content, actual_content)
+
+    def test_exits_when_stdin_stays_open(self):
+        self.drop_init()
+        # A pipe this process keeps the write end of: nothing is ever
+        # sent, and the sandbox never sees an EOF.
+        stdin_read, stdin_write = os.pipe()
+        try:
+            process = self.drop_run_background(
+                'bash -c "echo program finished"', stdin=stdin_read)
+            self.addCleanup(process.stdout.close)
+            self.addCleanup(process.stderr.close)
+            self.assertEqual('program finished\n', process.stdout.readline())
+            try:
+                process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                self.fail('drop did not exit after the sandboxed program '
+                          'finished, because stdin is still open')
+            self.assertEqual(0, process.returncode)
+        finally:
+            os.close(stdin_read)
+            os.close(stdin_write)
 
     def test_remove_environment(self):
         drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
