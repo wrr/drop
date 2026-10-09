@@ -1,13 +1,13 @@
 module github.com/wrr/drop
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/opencontainers/runtime-spec v1.3.0
-	github.com/urfave/cli/v3 v3.11.0
-	golang.org/x/sys v0.47.0
-	golang.org/x/term v0.45.0
+	github.com/urfave/cli/v3 v3.14.0
+	golang.org/x/sys v0.48.0
+	golang.org/x/term v0.46.0
 	kernel.org/pub/linux/libs/security/libcap/cap v1.2.78
 )
 
