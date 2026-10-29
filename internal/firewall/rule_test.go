@@ -53,8 +53,8 @@ func TestParseRule(t *testing.T) {
 	}{
 		{"deny telemetry.example.com",
 			Rule{action: deny, domain: "telemetry.example.com"}},
-		{"allow registry.npmjs.org:21,443",
-			Rule{action: allow, domain: "registry.npmjs.org", ports: []int{21, 443}}},
+		{"allow registry.npmjs.org:443,21,156",
+			Rule{action: allow, domain: "registry.npmjs.org", ports: []int{21, 156, 443}}},
 		{"allow example.com:65535",
 			Rule{action: allow, domain: "example.com", ports: []int{65535}}},
 		{"allow example.com:8443/udp",
@@ -115,6 +115,104 @@ func TestParseRuleErrors(t *testing.T) {
 			t.Errorf("parseRule(%q): expected an error", c.line)
 		} else if !strings.Contains(err.Error(), c.wantErr) {
 			t.Errorf("parseRule(%q): error %q, want %q", c.line, err, c.wantErr)
+		}
+	}
+}
+
+func TestRuleMatches(t *testing.T) {
+	cases := []struct {
+		rule   string
+		domain string
+		addr   string
+		port   int
+		proto  string
+		want   bool
+	}{
+		{"allow example.com", "example.com", "1.2.3.4", 443, "tcp", true},
+		{"allow example.com", "other.com", "1.2.3.4", 443, "tcp", false},
+		{"allow example.com", "a.example.com", "1.2.3.4", 443, "tcp", false},
+		{"allow example.com", "", "1.2.3.4", 443, "tcp", false},
+		// A protocol other than tcp and udp.
+		{"allow example.com", "example.com", "1.2.3.4", 0, "", true},
+
+		{"allow example.com:80,443", "example.com", "1.2.3.4", 443, "tcp", true},
+		{"allow example.com:80,443", "example.com", "1.2.3.4", 80, "udp", true},
+		{"allow example.com:80,443", "example.com", "1.2.3.4", 8080, "tcp", false},
+
+		{"allow example.com/udp", "example.com", "1.2.3.4", 53, "udp", true},
+		{"allow example.com/udp", "example.com", "1.2.3.4", 53, "tcp", false},
+		{"allow example.com/udp", "example.com", "1.2.3.4", 0, "", false},
+		{"allow example.com:53/udp", "example.com", "1.2.3.4", 53, "udp", true},
+		{"allow example.com:53/udp", "example.com", "1.2.3.4", 54, "udp", false},
+		{"allow example.com:53/udp", "example.com", "1.2.3.4", 53, "tcp", false},
+
+		{"allow 1.2.3.4", "", "1.2.3.4", 443, "tcp", true},
+		// The domain doesn't matter for address rules.
+		{"allow 1.2.3.4", "example.com", "1.2.3.4", 443, "tcp", true},
+		{"allow 1.2.3.4", "", "1.2.3.5", 443, "tcp", false},
+		{"allow 1.2.3.4", "", "::ffff:1.2.3.4", 443, "tcp", false},
+		{"allow [fd00::1]", "", "fd00::1", 443, "tcp", true},
+		{"allow [fd00::1]", "", "fd00::2", 443, "tcp", false},
+
+		{"ask 192.168.0.0/16", "", "192.168.200.1", 443, "tcp", true},
+		{"ask 192.168.0.0/16", "", "192.169.0.1", 443, "tcp", false},
+		{"ask 192.168.0.0/16", "", "fd00::1", 443, "tcp", false},
+		{"allow [fd00::/8]:443", "", "fd12::1", 443, "tcp", true},
+		{"allow [fd00::/8]:443", "", "fd12::1", 80, "tcp", false},
+		{"allow 10.0.0.0/8:443/tcp", "", "10.1.2.3", 443, "udp", false},
+	}
+	for _, c := range cases {
+		r, err := parseRule(c.rule)
+		if err != nil {
+			t.Fatalf("parseRule(%q): %v", c.rule, err)
+		}
+		addr := netip.MustParseAddr(c.addr)
+		if got := r.matches(c.domain, addr, c.port, c.proto); got != c.want {
+			t.Errorf("%q matches(%q, %s, %d, %q) = %v, want %v",
+				c.rule, c.domain, addr, c.port, c.proto, got, c.want)
+		}
+	}
+}
+
+func TestCompareSpecificity(t *testing.T) {
+	cases := []struct {
+		rule, other string
+		want        int
+	}{
+		// The action doesn't matter.
+		{"allow example.com", "deny example.com", 0},
+		// Address rules win over domain rules, even a /0 range over a
+		// domain with ports and protocol.
+		{"allow 1.2.3.4", "deny example.com", 1},
+		{"ask 0.0.0.0/0", "allow example.com:443/tcp", 1},
+		// A longer prefix wins, regardless of ports and protocol.
+		{"allow 1.2.3.4", "deny 1.2.0.0/16:443/tcp", 1},
+		{"deny 1.2.0.0/16", "allow 1.2.3.0/24", -1},
+		{"allow [fd00::1]", "deny [fd00::/8]:443", 1},
+		// Ports win over protocol, which wins over neither.
+		{"allow example.com:443", "deny example.com/tcp", 1},
+		{"allow example.com:443/tcp", "deny example.com:443", 1},
+		{"allow example.com/udp", "deny example.com", 1},
+		{"allow 1.2.3.4:22", "deny 1.2.3.4", 1},
+		// The number and values of ports and the protocol don't matter.
+		{"allow example.com:443", "deny example.com:80,443,8080", 0},
+		{"allow example.com:80", "deny example.com:443", 0},
+		{"allow example.com/tcp", "deny example.com/udp", 0},
+	}
+	for _, c := range cases {
+		r, err := parseRule(c.rule)
+		if err != nil {
+			t.Fatalf("parseRule(%q): %v", c.rule, err)
+		}
+		o, err := parseRule(c.other)
+		if err != nil {
+			t.Fatalf("parseRule(%q): %v", c.other, err)
+		}
+		if got := r.compareSpecificity(&o); got != c.want {
+			t.Errorf("%q compareSpecificity(%q) = %d, want %d", c.rule, c.other, got, c.want)
+		}
+		if got := o.compareSpecificity(&r); got != -c.want {
+			t.Errorf("%q compareSpecificity(%q) = %d, want %d", c.other, c.rule, got, -c.want)
 		}
 	}
 }

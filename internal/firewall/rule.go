@@ -17,14 +17,13 @@ package firewall
 import (
 	"fmt"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 )
 
 type Action int
 
-// The order matters: if the rules are equally specific, the one
-// with the lowest action is used.
 const (
 	deny Action = iota
 	allow
@@ -64,12 +63,58 @@ type Rule struct {
 	domain string
 	// An IP address or address range, invalid if domain is set.
 	addr netip.Prefix
-	// Empty means all the ports.
+	// Sorted ports. Empty means all the ports.
 	ports []int
 	// "tcp" or "udp", empty means both
 	proto string
 	// Where the rule comes from.
 	origin string
+}
+
+func (r *Rule) hasPorts() bool {
+	return len(r.ports) > 0
+}
+
+func (r *Rule) hasProto() bool {
+	return r.proto != ""
+}
+
+// matches returns true if the rule applies to the given connection parameters.
+func (r *Rule) matches(domain string, addr netip.Addr, port int, proto string) bool {
+	if r.proto != "" && r.proto != proto {
+		return false
+	}
+	if len(r.ports) > 0 {
+		if _, hasPort := slices.BinarySearch(r.ports, port); !hasPort {
+			return false
+		}
+	}
+	if r.domain != "" {
+		return r.domain == domain
+	}
+	return r.addr.Contains(addr)
+}
+
+// compareSpecificity returns 1 if r is more specific than o, 0 if
+// they are equally specific, and -1 if o is more specific.
+func (r *Rule) compareSpecificity(o *Rule) int {
+	result := func(b bool) int {
+		if b {
+			return 1
+		}
+		return -1
+	}
+	// Bits is -1 for domain rules, so address rules win over them.
+	if rb, ob := r.addr.Bits(), o.addr.Bits(); rb != ob {
+		return result(rb > ob)
+	}
+	if r.hasPorts() != o.hasPorts() {
+		return result(r.hasPorts())
+	}
+	if r.hasProto() != o.hasProto() {
+		return result(r.hasProto())
+	}
+	return 0
 }
 
 // parseRule parses a firewall rule from a string config line.
@@ -118,6 +163,7 @@ func parseRule(line string) (Rule, error) {
 			}
 			r.ports = append(r.ports, port)
 		}
+		slices.Sort(r.ports)
 		target = target[:i]
 	}
 	target, bracketed, err := removeBrackets(target)
