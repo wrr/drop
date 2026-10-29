@@ -49,30 +49,30 @@ func TestParseRule(t *testing.T) {
 	prefix := netip.MustParsePrefix
 	cases := []struct {
 		line string
-		want rule
+		want Rule
 	}{
 		{"deny telemetry.example.com",
-			rule{action: deny, domain: "telemetry.example.com"}},
+			Rule{action: deny, domain: "telemetry.example.com"}},
 		{"allow registry.npmjs.org:21,443",
-			rule{action: allow, domain: "registry.npmjs.org", ports: []int{21, 443}}},
+			Rule{action: allow, domain: "registry.npmjs.org", ports: []int{21, 443}}},
 		{"allow example.com:65535",
-			rule{action: allow, domain: "example.com", ports: []int{65535}}},
+			Rule{action: allow, domain: "example.com", ports: []int{65535}}},
 		{"allow example.com:8443/udp",
-			rule{action: allow, domain: "example.com", ports: []int{8443}, proto: "udp"}},
+			Rule{action: allow, domain: "example.com", ports: []int{8443}, proto: "udp"}},
 		{"ask google.com/tcp",
-			rule{action: ask, domain: "google.com", proto: "tcp"}},
+			Rule{action: ask, domain: "google.com", proto: "tcp"}},
 		{"allow EXAMPLE.com.",
-			rule{action: allow, domain: "example.com"}},
+			Rule{action: allow, domain: "example.com"}},
 		{"allow 73.23.75.23:45",
-			rule{action: allow, addr: prefix("73.23.75.23/32"), ports: []int{45}}},
+			Rule{action: allow, addr: prefix("73.23.75.23/32"), ports: []int{45}}},
 		{"allow [fd00::1]",
-			rule{action: allow, addr: prefix("fd00::1/128")}},
+			Rule{action: allow, addr: prefix("fd00::1/128")}},
 		{"ask 192.168.0.0/16",
-			rule{action: ask, addr: prefix("192.168.0.0/16")}},
+			Rule{action: ask, addr: prefix("192.168.0.0/16")}},
 		{"allow 10.0.0.0/8:443/udp",
-			rule{action: allow, addr: prefix("10.0.0.0/8"), ports: []int{443}, proto: "udp"}},
+			Rule{action: allow, addr: prefix("10.0.0.0/8"), ports: []int{443}, proto: "udp"}},
 		{"allow [fd00::/8]:443",
-			rule{action: allow, addr: prefix("fd00::/8"), ports: []int{443}}},
+			Rule{action: allow, addr: prefix("fd00::/8"), ports: []int{443}}},
 	}
 	for _, c := range cases {
 		got, err := parseRule(c.line)

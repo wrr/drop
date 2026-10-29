@@ -21,17 +21,17 @@ import (
 	"strings"
 )
 
-type action int
+type Action int
 
 // The order matters: if the rules are equally specific, the one
 // with the lowest action is used.
 const (
-	deny action = iota
+	deny Action = iota
 	allow
 	ask
 )
 
-func (a action) String() string {
+func (a Action) String() string {
 	switch a {
 	case allow:
 		return "allow"
@@ -44,7 +44,7 @@ func (a action) String() string {
 	}
 }
 
-func parseAction(s string) (action, error) {
+func parseAction(s string) (Action, error) {
 	switch s {
 	case "allow":
 		return allow, nil
@@ -56,10 +56,10 @@ func parseAction(s string) (action, error) {
 	return deny, fmt.Errorf("invalid action %q, expected allow, deny or ask", s)
 }
 
-// rule defines an action to take by the firewall and the traffic
+// Rule defines an action to take by the firewall and the traffic
 // destination to which the action applies.
-type rule struct {
-	action action
+type Rule struct {
+	action Action
 	// A lowercase domain name without trailing dot, empty if addr is set.
 	domain string
 	// An IP address or address range, invalid if domain is set.
@@ -82,18 +82,18 @@ type rule struct {
 //	allow  73.23.75.23:45
 //	ask    192.168.0.0/16
 //	allow  192.168.0.0/16:80/tcp
-func parseRule(line string) (rule, error) {
-	var r rule
+func parseRule(line string) (Rule, error) {
+	var r Rule
 	fields := strings.Fields(line)
 	if len(fields) < 2 {
-		return rule{}, fmt.Errorf("expected action and target")
+		return Rule{}, fmt.Errorf("expected action and target")
 	}
 	if len(fields) > 2 {
-		return rule{}, fmt.Errorf("unexpected %q after the target", fields[2])
+		return Rule{}, fmt.Errorf("unexpected %q after the target", fields[2])
 	}
 	action, err := parseAction(fields[0])
 	if err != nil {
-		return rule{}, err
+		return Rule{}, err
 	}
 	r.action = action
 
@@ -103,7 +103,7 @@ func parseRule(line string) (rule, error) {
 	if i := strings.LastIndex(target, "/"); i != -1 && isLetters(target[i+1:]) {
 		proto := target[i+1:]
 		if proto != "tcp" && proto != "udp" {
-			return rule{}, fmt.Errorf("invalid protocol %q, expected tcp or udp", proto)
+			return Rule{}, fmt.Errorf("invalid protocol %q, expected tcp or udp", proto)
 		}
 		target = target[:i]
 		r.proto = proto
@@ -114,7 +114,7 @@ func parseRule(line string) (rule, error) {
 		for _, p := range strings.Split(target[i+1:], ",") {
 			port, err := stringToPort(p)
 			if err != nil {
-				return rule{}, err
+				return Rule{}, err
 			}
 			r.ports = append(r.ports, port)
 		}
@@ -122,39 +122,39 @@ func parseRule(line string) (rule, error) {
 	}
 	target, bracketed, err := removeBrackets(target)
 	if err != nil {
-		return rule{}, err
+		return Rule{}, err
 	}
 
 	if addr, err := netip.ParseAddr(target); err == nil {
 		if addr.Zone() != "" {
-			return rule{}, fmt.Errorf("IPv6 zone in %q is not supported", target)
+			return Rule{}, fmt.Errorf("IPv6 zone in %q is not supported", target)
 		}
 		if addr.Is4In6() {
-			return rule{}, fmt.Errorf("IPv4-mapped address %q is not supported, use %s",
+			return Rule{}, fmt.Errorf("IPv4-mapped address %q is not supported, use %s",
 				target, addr.Unmap())
 		}
 		r.addr = netip.PrefixFrom(addr, addr.BitLen())
 	} else if strings.Contains(target, "/") {
 		prefix, err := netip.ParsePrefix(target)
 		if err != nil {
-			return rule{}, fmt.Errorf("invalid address range %q", target)
+			return Rule{}, fmt.Errorf("invalid address range %q", target)
 		}
 		if prefix.Addr().Is4In6() {
-			return rule{}, fmt.Errorf("IPv4-mapped address range %q is not supported", target)
+			return Rule{}, fmt.Errorf("IPv4-mapped address range %q is not supported", target)
 		}
 		if prefix != prefix.Masked() {
-			return rule{}, fmt.Errorf("address range %q has host bits set, expected %s",
+			return Rule{}, fmt.Errorf("address range %q has host bits set, expected %s",
 				target, prefix.Masked())
 		}
 		r.addr = prefix
 	} else {
 		r.domain = strings.TrimSuffix(target, ".")
 		if !isValidDomain(r.domain) {
-			return rule{}, fmt.Errorf("invalid domain %q", r.domain)
+			return Rule{}, fmt.Errorf("invalid domain %q", r.domain)
 		}
 	}
 	if bracketed && !r.addr.Addr().Is6() {
-		return rule{}, fmt.Errorf("brackets are only for IPv6 addresses: %q", target)
+		return Rule{}, fmt.Errorf("brackets are only for IPv6 addresses: %q", target)
 	}
 	return r, nil
 }
