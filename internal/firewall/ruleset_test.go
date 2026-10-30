@@ -16,12 +16,15 @@ package firewall
 
 import (
 	"net/netip"
+	"strings"
 	"testing"
+
+	"github.com/wrr/drop/internal/config"
 )
 
 func newTestRuleSet(t *testing.T, defaultAction Action, lines []string) *RuleSet {
 	t.Helper()
-	rs := NewRuleSet(defaultAction)
+	rs := newEmptyRuleSet(defaultAction)
 	for _, line := range lines {
 		r, err := parseRule(line)
 		if err != nil {
@@ -30,6 +33,67 @@ func newTestRuleSet(t *testing.T, defaultAction Action, lines []string) *RuleSet
 		rs.Add(r)
 	}
 	return rs
+}
+
+func TestNewRuleSet(t *testing.T) {
+	cases := []struct {
+		defaultAction string
+		rules         []string
+		wantDefault   Action
+		want          Action
+	}{
+		{"allow", nil, Allow, Allow},
+		{"deny", nil, Deny, Deny},
+		{"ask", nil, Ask, Ask},
+		{"deny", []string{"allow example.com"}, Deny, Allow},
+		{"allow", []string{"deny example.com"}, Allow, Deny},
+		// Rules are added in the config order.
+		{"ask", []string{"allow example.com", "deny example.com"}, Ask, Deny},
+		{"ask", []string{"deny example.com", "allow example.com"}, Ask, Allow},
+	}
+	for _, c := range cases {
+		cfg := &config.Firewall{DefaultAction: c.defaultAction, Rules: c.rules}
+		rs, err := NewRuleSet(cfg)
+		if err != nil {
+			t.Fatalf("NewRuleSet(%+v): %v", cfg, err)
+		}
+		if rs.defaultAction != c.wantDefault {
+			t.Errorf("NewRuleSet(%+v): default action %v, want %v", cfg, rs.defaultAction, c.wantDefault)
+		}
+		if got := rs.ResolverAction("example.com"); got != c.want {
+			t.Errorf("NewRuleSet(%+v): ResolverAction(example.com) = %v, want %v", cfg, got, c.want)
+		}
+	}
+}
+
+func TestNewRuleSetAddressRule(t *testing.T) {
+	rs, err := NewRuleSet(&config.Firewall{DefaultAction: "allow", Rules: []string{"deny 1.2.3.4"}})
+	if err != nil {
+		t.Fatalf("NewRuleSet: %v", err)
+	}
+	addr := netip.MustParseAddr("1.2.3.4")
+	if got := rs.ConnectionAction("", addr, 443, "tcp"); got != Deny {
+		t.Errorf("ConnectionAction(%s) = %v, want %v", addr, got, Deny)
+	}
+}
+
+func TestNewRuleSetErrors(t *testing.T) {
+	cases := []struct {
+		cfg     config.Firewall
+		wantErr string
+	}{
+		{config.Firewall{DefaultAction: "maybe"}, `invalid action "maybe"`},
+		{config.Firewall{DefaultAction: "ask", Rules: []string{"allow example.com", "allow example.com:0"}},
+			`firewall rule "allow example.com:0": invalid port "0"`},
+	}
+	for _, c := range cases {
+		_, err := NewRuleSet(&c.cfg)
+		if err == nil {
+			t.Errorf("NewRuleSet(%+v): expected an error", c.cfg)
+		} else if !strings.Contains(err.Error(), c.wantErr) {
+			t.Errorf("NewRuleSet(%+v): error %q, want %q", c.cfg, err, c.wantErr)
+		}
+	}
 }
 
 func TestResolverAction(t *testing.T) {

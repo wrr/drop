@@ -15,7 +15,10 @@
 package firewall
 
 import (
+	"fmt"
 	"net/netip"
+
+	"github.com/wrr/drop/internal/config"
 )
 
 // RuleSet holds indexed firewall rules.
@@ -27,9 +30,27 @@ type RuleSet struct {
 	defaultAction Action
 }
 
-// NewRuleSet returns an empty RuleSet with defaultAction for
+// NewRuleSet creates a RuleSet as configured by the cfg.
+// For now, only inline rules are handled.
+func NewRuleSet(cfg *config.Firewall) (*RuleSet, error) {
+	defaultAction, err := parseAction(cfg.DefaultAction)
+	if err != nil {
+		return nil, err
+	}
+	rules := newEmptyRuleSet(defaultAction)
+	for _, rstr := range cfg.Rules {
+		rule, err := parseRule(rstr)
+		if err != nil {
+			return nil, fmt.Errorf("firewall rule %q: %v", rstr, err)
+		}
+		rules.Add(rule)
+	}
+	return rules, nil
+}
+
+// newEmptyRuleSet returns an empty RuleSet with defaultAction for
 // traffic that no rule matches.
-func NewRuleSet(defaultAction Action) *RuleSet {
+func newEmptyRuleSet(defaultAction Action) *RuleSet {
 	return &RuleSet{
 		addrRules:     make(map[netip.Addr][]Rule),
 		domainRules:   make(map[string]*domainRules),

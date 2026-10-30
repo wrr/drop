@@ -33,7 +33,7 @@ func (s *stubResolver) LookupNetIP(ctx context.Context, network, host string) ([
 
 func TestLookupNetIPPassesValidNameUnchanged(t *testing.T) {
 	resolver := &stubResolver{}
-	rules := NewRuleSet(Allow)
+	rules := newEmptyRuleSet(Allow)
 	fw := &Firewall{rules: rules, resolver: resolver}
 	if _, err := fw.LookupNetIP(context.Background(), "ip4", "example.com."); err != nil {
 		t.Fatalf("unexpected error %v", err)
@@ -45,7 +45,7 @@ func TestLookupNetIPPassesValidNameUnchanged(t *testing.T) {
 
 func TestLookupNetIPRejectsInvalidName(t *testing.T) {
 	resolver := &stubResolver{}
-	rules := NewRuleSet(Allow)
+	rules := newEmptyRuleSet(Allow)
 	fw := &Firewall{rules: rules, resolver: resolver}
 	_, err := fw.LookupNetIP(context.Background(), "ip4", "*.com.")
 	var dnsErr *net.DNSError

@@ -49,6 +49,15 @@ func Main() error {
 		return err
 	}
 
+	// Created before anything is started, so an invalid rule fails early.
+	var rules *firewall.RuleSet
+	if cfg.Net.IsFirewallEnabled() {
+		rules, err = firewall.NewRuleSet(cfg.Net.Firewall)
+		if err != nil {
+			return err
+		}
+	}
+
 	cmd := nsCommand(ProcInit)
 	defer cmd.cleanup()
 
@@ -132,7 +141,6 @@ func Main() error {
 	}
 
 	if cfg.Net.IsFirewallEnabled() {
-		rules := firewall.NewRuleSet(firewall.Ask)
 		fw, err := firewall.New(cmd.pid(), rules, &net.Resolver{PreferGo: true})
 		if err != nil {
 			return err
