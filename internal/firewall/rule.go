@@ -25,18 +25,18 @@ import (
 type Action int
 
 const (
-	deny Action = iota
-	allow
-	ask
+	Deny Action = iota
+	Allow
+	Ask
 )
 
 func (a Action) String() string {
 	switch a {
-	case allow:
+	case Allow:
 		return "allow"
-	case deny:
+	case Deny:
 		return "deny"
-	case ask:
+	case Ask:
 		return "ask"
 	default:
 		return fmt.Sprintf("action(%d)", int(a))
@@ -46,13 +46,13 @@ func (a Action) String() string {
 func parseAction(s string) (Action, error) {
 	switch s {
 	case "allow":
-		return allow, nil
+		return Allow, nil
 	case "deny":
-		return deny, nil
+		return Deny, nil
 	case "ask":
-		return ask, nil
+		return Ask, nil
 	}
-	return deny, fmt.Errorf("invalid action %q, expected allow, deny or ask", s)
+	return Deny, fmt.Errorf("invalid action %q, expected allow, deny or ask", s)
 }
 
 // Rule defines an action to take by the firewall and the traffic

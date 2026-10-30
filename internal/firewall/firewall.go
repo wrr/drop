@@ -37,6 +37,7 @@ import (
 const queueNum = 0
 
 type Firewall struct {
+	rules    *RuleSet
 	resolver dns.Resolver
 	nft      *nftables.Conn
 	stop     func()
@@ -49,7 +50,7 @@ type Firewall struct {
 //
 // The caller should call the Firewall.Stop() function on program
 // termination.
-func New(pid int, resolver dns.Resolver) (*Firewall, error) {
+func New(pid int, rules *RuleSet, resolver dns.Resolver) (*Firewall, error) {
 	nft, queue, err := openNetfilter(pid)
 	if err != nil {
 		return nil, err
@@ -75,7 +76,7 @@ func New(pid int, resolver dns.Resolver) (*Firewall, error) {
 		return nil, err
 	}
 	success = true
-	return &Firewall{resolver: resolver, nft: nft, stop: stop}, nil
+	return &Firewall{rules: rules, resolver: resolver, nft: nft, stop: stop}, nil
 }
 
 // Stop closes Firewall sockets. After stopping the Firewall existing
@@ -90,10 +91,18 @@ func (f *Firewall) LookupNetIP(ctx context.Context, network, domainRooted string
 	// Within the firewall domains are kept without the trailing dot.
 	domain := strings.TrimSuffix(domainRooted, ".")
 	if !isValidDomain(domain) {
-		return nil, &net.DNSError{Err: "invalid domain name", Name: domainRooted, IsNotFound: true}
+		return nil, notFound(domainRooted, "invalid domain name")
+	}
+	action := f.rules.ResolverAction(domain)
+	if action == Deny {
+		return nil, notFound(domainRooted, "firewall deny")
 	}
 	// Resolver should get rooted domain, so it doesn't expand it.
 	return f.resolver.LookupNetIP(ctx, network, domainRooted)
+}
+
+func notFound(domainRooted, reason string) error {
+	return &net.DNSError{Err: reason, Name: domainRooted, IsNotFound: true}
 }
 
 // openNetfilter opens the nftables and nfqueue connections within the

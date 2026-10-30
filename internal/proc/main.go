@@ -132,7 +132,8 @@ func Main() error {
 	}
 
 	if cfg.Net.IsFirewallEnabled() {
-		fw, err := firewall.New(cmd.pid(), &net.Resolver{PreferGo: true})
+		rules := firewall.NewRuleSet(firewall.Ask)
+		fw, err := firewall.New(cmd.pid(), rules, &net.Resolver{PreferGo: true})
 		if err != nil {
 			return err
 		}

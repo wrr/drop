@@ -108,11 +108,11 @@ func (rs *RuleSet) ResolverAction(domain string) Action {
 	}
 	narrowAsk := false
 	for _, r := range dr.narrow {
-		if r.action == allow {
+		if r.action == Allow {
 			// If any narrow rule allows the domain, DNS lookup is allowed.
-			return allow
+			return Allow
 		}
-		if r.action == ask {
+		if r.action == Ask {
 			// If any narrow rule asks, DNS lookup will ask or be allowed.
 			narrowAsk = true
 		}
@@ -121,8 +121,8 @@ func (rs *RuleSet) ResolverAction(domain string) Action {
 	if dr.hasBroad() {
 		base = dr.broad.action
 	}
-	if narrowAsk && base == deny {
-		return ask
+	if narrowAsk && base == Deny {
+		return Ask
 	}
 	return base
 }

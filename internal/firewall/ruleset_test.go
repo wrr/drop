@@ -37,23 +37,23 @@ func TestResolverAction(t *testing.T) {
 		rules []string
 		want  Action
 	}{
-		{nil, ask},
-		{[]string{"allow other.com"}, ask},
-		{[]string{"allow example.com", "deny example.com"}, deny},
-		{[]string{"deny example.com", "allow example.com"}, allow},
-		{[]string{"allow example.com", "deny example.com:80"}, allow},
-		{[]string{"deny example.com", "allow example.com:443"}, allow},
-		{[]string{"deny example.com", "ask example.com:22"}, ask},
-		{[]string{"allow example.com", "ask example.com:22"}, allow},
+		{nil, Ask},
+		{[]string{"allow other.com"}, Ask},
+		{[]string{"allow example.com", "deny example.com"}, Deny},
+		{[]string{"deny example.com", "allow example.com"}, Allow},
+		{[]string{"allow example.com", "deny example.com:80"}, Allow},
+		{[]string{"deny example.com", "allow example.com:443"}, Allow},
+		{[]string{"deny example.com", "ask example.com:22"}, Ask},
+		{[]string{"allow example.com", "ask example.com:22"}, Allow},
 		// A later rule replaces an earlier one it fully covers.
-		{[]string{"deny example.com", "allow example.com:443", "deny example.com:80,443"}, deny},
-		{[]string{"deny example.com", "allow example.com:80,443", "deny example.com:443"}, allow},
-		{[]string{"deny example.com", "allow example.com:443/udp", "deny example.com:443/tcp"}, allow},
-		{[]string{"deny example.com", "allow example.com/udp", "deny example.com:53/udp"}, allow},
-		{[]string{"deny example.com", "allow example.com:443/tcp", "deny example.com:443"}, allow},
+		{[]string{"deny example.com", "allow example.com:443", "deny example.com:80,443"}, Deny},
+		{[]string{"deny example.com", "allow example.com:80,443", "deny example.com:443"}, Allow},
+		{[]string{"deny example.com", "allow example.com:443/udp", "deny example.com:443/tcp"}, Allow},
+		{[]string{"deny example.com", "allow example.com/udp", "deny example.com:53/udp"}, Allow},
+		{[]string{"deny example.com", "allow example.com:443/tcp", "deny example.com:443"}, Allow},
 	}
 	for _, c := range cases {
-		rs := newTestRuleSet(t, ask, c.rules)
+		rs := newTestRuleSet(t, Ask, c.rules)
 		if got := rs.ResolverAction("example.com"); got != c.want {
 			t.Errorf("rules %q: ResolverAction(example.com) = %v, want %v", c.rules, got, c.want)
 		}
@@ -68,30 +68,30 @@ func TestConnectionAction(t *testing.T) {
 		port   int
 		want   Action
 	}{
-		{nil, "example.com", "1.2.3.4", 443, ask},
-		{[]string{"allow example.com"}, "other.com", "1.2.3.4", 443, ask},
-		{[]string{"allow example.com"}, "example.com", "1.2.3.4", 443, allow},
+		{nil, "example.com", "1.2.3.4", 443, Ask},
+		{[]string{"allow example.com"}, "other.com", "1.2.3.4", 443, Ask},
+		{[]string{"allow example.com"}, "example.com", "1.2.3.4", 443, Allow},
 		// Address rules win over domain rules.
-		{[]string{"deny 1.2.3.4", "allow example.com:443"}, "example.com", "1.2.3.4", 443, deny},
-		{[]string{"ask 1.0.0.0/8", "allow example.com:443"}, "example.com", "1.2.3.4", 443, ask},
+		{[]string{"deny 1.2.3.4", "allow example.com:443"}, "example.com", "1.2.3.4", 443, Deny},
+		{[]string{"ask 1.0.0.0/8", "allow example.com:443"}, "example.com", "1.2.3.4", 443, Ask},
 		// A longer prefix wins over a shorter one.
-		{[]string{"allow 1.2.3.4", "deny 1.0.0.0/8:443"}, "", "1.2.3.4", 443, allow},
-		{[]string{"allow 1.2.0.0/16", "deny 1.0.0.0/8"}, "", "1.2.3.4", 443, allow},
-		{[]string{"deny 1.0.0.0/8", "allow 1.2.0.0/16"}, "", "1.2.3.4", 443, allow},
+		{[]string{"allow 1.2.3.4", "deny 1.0.0.0/8:443"}, "", "1.2.3.4", 443, Allow},
+		{[]string{"allow 1.2.0.0/16", "deny 1.0.0.0/8"}, "", "1.2.3.4", 443, Allow},
+		{[]string{"deny 1.0.0.0/8", "allow 1.2.0.0/16"}, "", "1.2.3.4", 443, Allow},
 		// Ports win over protocol, which wins over neither.
-		{[]string{"allow example.com:443", "deny example.com"}, "example.com", "1.2.3.4", 443, allow},
-		{[]string{"allow example.com:443", "deny example.com"}, "example.com", "1.2.3.4", 80, deny},
-		{[]string{"allow example.com:443", "deny example.com/tcp"}, "example.com", "1.2.3.4", 443, allow},
-		{[]string{"allow 1.2.3.4/tcp", "deny 1.2.3.4"}, "", "1.2.3.4", 443, allow},
+		{[]string{"allow example.com:443", "deny example.com"}, "example.com", "1.2.3.4", 443, Allow},
+		{[]string{"allow example.com:443", "deny example.com"}, "example.com", "1.2.3.4", 80, Deny},
+		{[]string{"allow example.com:443", "deny example.com/tcp"}, "example.com", "1.2.3.4", 443, Allow},
+		{[]string{"allow 1.2.3.4/tcp", "deny 1.2.3.4"}, "", "1.2.3.4", 443, Allow},
 		// Of equally specific rules, the later wins.
-		{[]string{"allow 1.2.3.4:443", "deny 1.2.3.4:80,443"}, "", "1.2.3.4", 443, deny},
-		{[]string{"allow example.com:80,443", "deny example.com:443"}, "example.com", "1.2.3.4", 80, allow},
-		{[]string{"allow example.com:80,443", "deny example.com:443"}, "example.com", "1.2.3.4", 443, deny},
+		{[]string{"allow 1.2.3.4:443", "deny 1.2.3.4:80,443"}, "", "1.2.3.4", 443, Deny},
+		{[]string{"allow example.com:80,443", "deny example.com:443"}, "example.com", "1.2.3.4", 80, Allow},
+		{[]string{"allow example.com:80,443", "deny example.com:443"}, "example.com", "1.2.3.4", 443, Deny},
 		// IPv4-mapped addresses are unmapped.
-		{[]string{"deny 1.2.3.4"}, "", "::ffff:1.2.3.4", 443, deny},
+		{[]string{"deny 1.2.3.4"}, "", "::ffff:1.2.3.4", 443, Deny},
 	}
 	for _, c := range cases {
-		rs := newTestRuleSet(t, ask, c.rules)
+		rs := newTestRuleSet(t, Ask, c.rules)
 		addr := netip.MustParseAddr(c.addr)
 		if got := rs.ConnectionAction(c.domain, addr, c.port, "tcp"); got != c.want {
 			t.Errorf("rules %q: ConnectionAction(%q, %s, %d) = %v, want %v",

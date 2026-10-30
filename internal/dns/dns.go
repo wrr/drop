@@ -166,9 +166,9 @@ func (s *server) resolve(reply *dns.Msg, question dns.Question) {
 		case errors.As(err, &dnsErr) && dnsErr.IsNotFound:
 			reply.Rcode = dns.RcodeNameError
 		default:
-			info("resolve %s: %v", question.Name, err)
 			reply.Rcode = dns.RcodeServerFailure
 		}
+		info("%v", err)
 		return
 	}
 
