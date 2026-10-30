@@ -81,3 +81,33 @@ func TestSandboxArgsSending(t *testing.T) {
 		t.Fatalf("child goroutine: %v", err)
 	}
 }
+
+func TestToggleSerialization(t *testing.T) {
+	// Regression test, firewall.Enabled=false state was lost during
+	// serialization when a pointer to bool was used to represent its 3
+	// distinct states.
+	for _, toggle := range []config.Toggle{config.ToggleUnset, config.ToggleOn, config.ToggleOff} {
+		sender, receiver, err := NewArgsSocket()
+		if err != nil {
+			t.Fatalf("NewArgsSocket: %v", err)
+		}
+		defer sender.Close()
+		defer receiver.Close()
+
+		cfg := &config.Config{
+			Net: config.Net{
+				Firewall: &config.Firewall{Enabled: toggle, DefaultAction: "deny"},
+			},
+		}
+		if err := sender.Send(SandboxArgs{Config: cfg}); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+		received, err := receiver.Recv()
+		if err != nil {
+			t.Fatalf("Recv: %v", err)
+		}
+		if got := received.Config.Net.Firewall.Enabled; got != toggle {
+			t.Errorf("received toggle %d, want %d", got, toggle)
+		}
+	}
+}

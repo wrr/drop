@@ -49,7 +49,7 @@ func Main() error {
 		return err
 	}
 
-	// Created before anything is started, so an invalid rule fails early.
+	// Created early, so an invalid rule fails early.
 	var rules *firewall.RuleSet
 	if cfg.Net.IsFirewallEnabled() {
 		rules, err = firewall.NewRuleSet(cfg.Net.Firewall)

@@ -229,6 +229,16 @@ ask_fallback = "ask"
 			error: "invalid firewall ask_fallback 'ask'",
 		},
 		{
+			name: "enabled must be a boolean",
+			files: map[string]string{
+				"/config/env.toml": `
+[net.firewall]
+enabled = "no"
+`,
+			},
+			error: "expected true or false, got string",
+		},
+		{
 			name: "unrecognized firewall key",
 			files: map[string]string{
 				"/config/env.toml": `

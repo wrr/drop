@@ -31,9 +31,9 @@ func firewallFeatureFlagOn() bool {
 // Firewall configures filtering of outgoing connections in the
 // isolated network mode.
 type Firewall struct {
-	// Nil when no config file sets it, which leaves the firewall
+	// ToggleUnset when no config file sets it, which leaves the firewall
 	// enabled if the [net.firewall] table is present.
-	Enabled *bool `toml:"enabled"`
+	Enabled Toggle `toml:"enabled"`
 	// An action when no rule matches: "allow", "deny" or "ask".
 	DefaultAction string `toml:"default_action"`
 	// What to do with if "ask" prompt cannot be shown: "allow" or
@@ -67,7 +67,7 @@ func mergeFirewall(base, sub *Firewall) *Firewall {
 		return base
 	}
 	merged := *base
-	if sub.Enabled != nil {
+	if sub.Enabled != ToggleUnset {
 		merged.Enabled = sub.Enabled
 	}
 	if sub.DefaultAction != "" {

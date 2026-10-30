@@ -76,9 +76,33 @@ type Net struct {
 	UDPHostPorts      []HostPort      `toml:"udp_host_ports"`
 }
 
+// Toggle is an optional boolean setting. Used instead of *bool, because
+// gob, which passes config between Drop processes, doesn't send a
+// pointer to false and makes it indistinguishable from nil.
+type Toggle uint8
+
+const (
+	ToggleUnset Toggle = iota
+	ToggleOn
+	ToggleOff
+)
+
+func (t *Toggle) UnmarshalTOML(data any) error {
+	b, ok := data.(bool)
+	if !ok {
+		return fmt.Errorf("expected true or false, got %T", data)
+	}
+	if b {
+		*t = ToggleOn
+	} else {
+		*t = ToggleOff
+	}
+	return nil
+}
+
 func (n *Net) IsFirewallEnabled() bool {
 	fw := n.Firewall
-	return n.Mode == NetModeIsolated && fw != nil && (fw.Enabled == nil || *fw.Enabled)
+	return n.Mode == NetModeIsolated && fw != nil && fw.Enabled != ToggleOff
 }
 
 type PublishedPort struct {
