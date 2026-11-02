@@ -262,6 +262,11 @@ func TestConfigDir(t *testing.T) {
 			xdgConfigHome: "/home/alice/configs",
 			want:          "/home/alice/configs/drop",
 		},
+		{
+			name:          "tilde XDG_CONFIG_HOME",
+			xdgConfigHome: "~/configs",
+			want:          "/home/alice/configs/drop",
+		},
 	}
 
 	for _, tt := range tests {

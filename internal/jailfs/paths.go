@@ -174,7 +174,7 @@ func ConfigDir(homeDir string) string {
 	if parent == "" {
 		parent = filepath.Join(homeDir, ".config")
 	}
-	return filepath.Join(parent, "drop")
+	return filepath.Join(osutil.TildeToHomeDir(parent, homeDir), "drop")
 }
 
 // BaseConfigPath returns path to a base Drop config file which
