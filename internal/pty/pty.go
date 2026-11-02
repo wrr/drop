@@ -16,7 +16,6 @@ package pty
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"slices"
@@ -130,16 +129,17 @@ func keepWindowSizeSynced(termToSync *os.File) (func(), error) {
 }
 
 // ForwardPty forwards:
-// * terminal input (if any) of the calling process to the dstPty
-// * dstPty terminal output to the calling process terminal
-// * terminal windows size changes from the calling process to the dstPty
-// The function takes ownership of dstPty.
-// This function returns error if none of stdin, stdout,
+// * terminal input (if any) of the calling process to the sandboxPty
+// * sandboxPty terminal output to the calling process terminal
+// * terminal window size changes from the calling process to the sandboxPty
+// The function takes ownership of sandboxPty.
+// The function returns error if none of stdin, stdout,
 // stderr of the calling process is a terminal (PtyNeeded returns false).
-func ForwardPty(dstPty *os.File) (func(), error) {
+func ForwardPty(sandboxPty *os.File) (func(), error) {
 	var (
 		origState        *term.State
 		cleanWinSizeSync func()
+		fwd              *forwarder
 		err              error
 	)
 
@@ -147,37 +147,38 @@ func ForwardPty(dstPty *os.File) (func(), error) {
 		if cleanWinSizeSync != nil {
 			cleanWinSizeSync()
 		}
+		if fwd != nil {
+			fwd.stop()
+		} else {
+			sandboxPty.Close()
+		}
 		if origState != nil {
 			term.Restore(0, origState)
 		}
-		// Terminates io.Copy goroutine that reads from dstPty,
+	}
+	success := false
+	defer func() {
+		if !success {
+			cleanup()
+		}
+	}()
 
-		// The second io.Copy goroutine that reads from os.Stdin can keep
-		// running until program terminates unless there is some os.Stdin
-		// input.
-		dstPty.Close()
+	if !PtyNeeded() {
+		return nil, fmt.Errorf("none of stdin, stdout, stderr is a terminal")
 	}
 
 	if term.IsTerminal(0) {
 		// Only terminal used for input must be switched to raw mode.
 		origState, err = term.MakeRaw(0)
 		if err != nil {
-			cleanup()
 			return nil, fmt.Errorf("switch terminal to raw mode: %v", err)
 		}
 	}
-	cleanWinSizeSync, err = keepWindowSizeSynced(dstPty)
+	cleanWinSizeSync, err = keepWindowSizeSynced(sandboxPty)
 	if err != nil {
-		cleanup()
 		return nil, err
 	}
 
-	// Start I/O forwarding goroutines
-	if term.IsTerminal(0) {
-		// sandboxed term <- host term
-		go io.Copy(dstPty, os.Stdin)
-	}
-	// host term <- sandboxed term
 	var outputTerm *os.File
 
 	// Find terminal to output to. In a rare case when stdout and
@@ -188,14 +189,18 @@ func ForwardPty(dstPty *os.File) (func(), error) {
 	} else if term.IsTerminal(2) {
 		outputTerm = os.Stderr
 	} else {
-		// stdout and stderr are not terminals, but stdin is.
+		// stdout and stderr are not terminals, so stdin must be.
 		// Write PTY output (primarily input echo) back to stdin,
 		// which works because terminal devices are bidirectional.
 		outputTerm = os.Stdin
 	}
-	// host term <- sandboxed term
-	go io.Copy(outputTerm, dstPty)
+	var inputTerm *os.File
+	if term.IsTerminal(0) {
+		inputTerm = os.Stdin
+	}
 
+	fwd = newForwarder(sandboxPty, outputTerm, inputTerm)
+	success = true
 	return cleanup, nil
 }
 
