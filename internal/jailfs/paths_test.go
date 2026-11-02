@@ -264,6 +264,11 @@ func TestDropHome(t *testing.T) {
 			want:        "/home/alice/data/drop",
 		},
 		{
+			name:        "tilde XDG_DATA_HOME",
+			xdgDataHome: "~/data",
+			want:        "/home/alice/data/drop",
+		},
+		{
 			name:      "invalid DROP_HOME: relative path",
 			dropHome:  "relative/path",
 			wantError: "path must start with / or ~/",

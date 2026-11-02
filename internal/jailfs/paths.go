@@ -215,7 +215,7 @@ func DropHome(homeDir string) (string, error) {
 	if err := osutil.ValidateRootOrHomeSubPath(dropHome); err != nil {
 		return "", fmt.Errorf("invalid XDG_DATA_HOME environment variable: %v", err)
 	}
-	return dropHome, nil
+	return osutil.TildeToHomeDir(dropHome, homeDir), nil
 }
 
 var envIdChars = `a-zA-Z0-9-_\.`
