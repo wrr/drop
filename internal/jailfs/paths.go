@@ -168,7 +168,7 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 
 func ConfigDir(homeDir string) string {
 	if path := os.Getenv("DROP_HOME"); path != "" {
-		return filepath.Join(path, "config")
+		return filepath.Join(osutil.TildeToHomeDir(path, homeDir), "config")
 	}
 	parent := os.Getenv("XDG_CONFIG_HOME")
 	if parent == "" {

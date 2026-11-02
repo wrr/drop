@@ -234,6 +234,48 @@ func TestDefaultConfigPath(t *testing.T) {
 
 }
 
+func TestConfigDir(t *testing.T) {
+	homeDir := "/home/alice"
+
+	tests := []struct {
+		name          string
+		dropHome      string
+		xdgConfigHome string
+		want          string
+	}{
+		{
+			name: "envs not set",
+			want: "/home/alice/.config/drop",
+		},
+		{
+			name:     "absolute DROP_HOME",
+			dropHome: "/var/drop-data",
+			want:     "/var/drop-data/config",
+		},
+		{
+			name:     "tilde DROP_HOME",
+			dropHome: "~/.my-drop",
+			want:     "/home/alice/.my-drop/config",
+		},
+		{
+			name:          "absolute XDG_CONFIG_HOME",
+			xdgConfigHome: "/home/alice/configs",
+			want:          "/home/alice/configs/drop",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DROP_HOME", tt.dropHome)
+			t.Setenv("XDG_CONFIG_HOME", tt.xdgConfigHome)
+
+			if got := ConfigDir(homeDir); got != tt.want {
+				t.Fatalf("ConfigDir(%q) = %q, want %q", homeDir, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDropHome(t *testing.T) {
 	homeDir := "/home/alice"
 
