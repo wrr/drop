@@ -166,15 +166,24 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 	return &paths, cleanRunDir, nil
 }
 
+// return "" if not an absolute path
+func xdgPath(varName string) string {
+	path := os.Getenv(varName)
+	if !filepath.IsAbs(path) {
+		return ""
+	}
+	return path
+}
+
 func ConfigDir(homeDir string) string {
 	if path := os.Getenv("DROP_HOME"); path != "" {
 		return filepath.Join(path, "config")
 	}
-	parent := os.Getenv("XDG_CONFIG_HOME")
+	parent := xdgPath("XDG_CONFIG_HOME")
 	if parent == "" {
 		parent = filepath.Join(homeDir, ".config")
 	}
-	return filepath.Join(osutil.TildeToHomeDir(parent, homeDir), "drop")
+	return filepath.Join(parent, "drop")
 }
 
 // BaseConfigPath returns path to a base Drop config file which
@@ -216,15 +225,11 @@ func DropHome(homeDir string) (string, error) {
 		}
 		return dropHome, nil
 	}
-	parent := os.Getenv("XDG_DATA_HOME")
+	parent := xdgPath("XDG_DATA_HOME")
 	if parent == "" {
 		parent = filepath.Join(homeDir, ".local", "share")
 	}
-	dropHome := filepath.Join(parent, "drop")
-	if err := osutil.ValidateRootOrHomeSubPath(dropHome); err != nil {
-		return "", fmt.Errorf("invalid XDG_DATA_HOME environment variable: %v", err)
-	}
-	return osutil.TildeToHomeDir(dropHome, homeDir), nil
+	return filepath.Join(parent, "drop"), nil
 }
 
 var envIdChars = `a-zA-Z0-9-_\.`

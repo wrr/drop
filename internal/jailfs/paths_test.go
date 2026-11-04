@@ -258,9 +258,14 @@ func TestConfigDir(t *testing.T) {
 			want:          "/home/alice/configs/drop",
 		},
 		{
-			name:          "tilde XDG_CONFIG_HOME",
+			name:          "tilde XDG_CONFIG_HOME is ignored",
 			xdgConfigHome: "~/configs",
-			want:          "/home/alice/configs/drop",
+			want:          "/home/alice/.config/drop",
+		},
+		{
+			name:          "relative XDG_CONFIG_HOME is ignored",
+			xdgConfigHome: "relative/path",
+			want:          "/home/alice/.config/drop",
 		},
 	}
 
@@ -306,9 +311,9 @@ func TestDropHome(t *testing.T) {
 			want:        "/home/alice/data/drop",
 		},
 		{
-			name:        "tilde XDG_DATA_HOME",
+			name:        "tilde XDG_DATA_HOME is ignored",
 			xdgDataHome: "~/data",
-			want:        "/home/alice/data/drop",
+			want:        "/home/alice/.local/share/drop",
 		},
 		{
 			name:      "invalid DROP_HOME: relative path",
@@ -336,9 +341,9 @@ func TestDropHome(t *testing.T) {
 			wantError: "path cannot point to the whole home directory",
 		},
 		{
-			name:        "invalid XDG_DATA_HOME: relative path",
-			xdgDataHome: "ralative/path",
-			wantError:   "path must start with / or ~/",
+			name:        "relative XDG_DATA_HOME is ignored",
+			xdgDataHome: "relative/path",
+			want:        "/home/alice/.local/share/drop",
 		},
 	}
 
