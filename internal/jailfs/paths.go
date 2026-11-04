@@ -168,7 +168,7 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 
 func ConfigDir(homeDir string) string {
 	if path := os.Getenv("DROP_HOME"); path != "" {
-		return filepath.Join(osutil.TildeToHomeDir(path, homeDir), "config")
+		return filepath.Join(path, "config")
 	}
 	parent := os.Getenv("XDG_CONFIG_HOME")
 	if parent == "" {
@@ -202,10 +202,13 @@ func EnvConfigPath(homeDir, envId string) string {
 // (XDG_DATA_HOME or "~/.local/share")/drop/ is returned
 func DropHome(homeDir string) (string, error) {
 	if dropHome := os.Getenv("DROP_HOME"); dropHome != "" {
+		if strings.HasPrefix(dropHome, "~") {
+			return "", fmt.Errorf("DROP_HOME cannot start with shell metacharacter '~': %q; use $HOME instead", dropHome)
+		}
 		if err := osutil.ValidateRootOrHomeSubPath(dropHome); err != nil {
 			return "", fmt.Errorf("invalid DROP_HOME environment variable: %v", err)
 		}
-		return osutil.TildeToHomeDir(dropHome, homeDir), nil
+		return dropHome, nil
 	}
 	parent := os.Getenv("XDG_DATA_HOME")
 	if parent == "" {

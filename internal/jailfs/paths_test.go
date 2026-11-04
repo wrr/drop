@@ -253,11 +253,6 @@ func TestConfigDir(t *testing.T) {
 			want:     "/var/drop-data/config",
 		},
 		{
-			name:     "tilde DROP_HOME",
-			dropHome: "~/.my-drop",
-			want:     "/home/alice/.my-drop/config",
-		},
-		{
 			name:          "absolute XDG_CONFIG_HOME",
 			xdgConfigHome: "/home/alice/configs",
 			want:          "/home/alice/configs/drop",
@@ -301,9 +296,9 @@ func TestDropHome(t *testing.T) {
 			want:     "/var/drop-data",
 		},
 		{
-			name:     "tilde DROP_HOME",
-			dropHome: "~/.my-drop",
-			want:     "/home/alice/.my-drop",
+			name:      "invalid DROP_HOME: starts with tilde",
+			dropHome:  "~/.my-drop",
+			wantError: "DROP_HOME cannot start with shell metacharacter '~'",
 		},
 		{
 			name:        "absolute XDG_DATA_HOME",
