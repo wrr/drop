@@ -234,6 +234,53 @@ func TestDefaultConfigPath(t *testing.T) {
 
 }
 
+func TestConfigDir(t *testing.T) {
+	homeDir := "/home/alice"
+
+	tests := []struct {
+		name          string
+		dropHome      string
+		xdgConfigHome string
+		want          string
+	}{
+		{
+			name: "envs not set",
+			want: "/home/alice/.config/drop",
+		},
+		{
+			name:     "absolute DROP_HOME",
+			dropHome: "/var/drop-data",
+			want:     "/var/drop-data/config",
+		},
+		{
+			name:          "absolute XDG_CONFIG_HOME",
+			xdgConfigHome: "/home/alice/configs",
+			want:          "/home/alice/configs/drop",
+		},
+		{
+			name:          "tilde XDG_CONFIG_HOME is ignored",
+			xdgConfigHome: "~/configs",
+			want:          "/home/alice/.config/drop",
+		},
+		{
+			name:          "relative XDG_CONFIG_HOME is ignored",
+			xdgConfigHome: "relative/path",
+			want:          "/home/alice/.config/drop",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DROP_HOME", tt.dropHome)
+			t.Setenv("XDG_CONFIG_HOME", tt.xdgConfigHome)
+
+			if got := ConfigDir(homeDir); got != tt.want {
+				t.Fatalf("ConfigDir(%q) = %q, want %q", homeDir, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDropHome(t *testing.T) {
 	homeDir := "/home/alice"
 
@@ -254,9 +301,9 @@ func TestDropHome(t *testing.T) {
 			want:     "/var/drop-data",
 		},
 		{
-			name:     "tilde DROP_HOME",
-			dropHome: "~/.my-drop",
-			want:     "/home/alice/.my-drop",
+			name:      "invalid DROP_HOME: starts with tilde",
+			dropHome:  "~/.my-drop",
+			wantError: "DROP_HOME cannot start with shell metacharacter '~'",
 		},
 		{
 			name:        "absolute XDG_DATA_HOME",
@@ -264,9 +311,14 @@ func TestDropHome(t *testing.T) {
 			want:        "/home/alice/data/drop",
 		},
 		{
+			name:        "tilde XDG_DATA_HOME is ignored",
+			xdgDataHome: "~/data",
+			want:        "/home/alice/.local/share/drop",
+		},
+		{
 			name:      "invalid DROP_HOME: relative path",
 			dropHome:  "relative/path",
-			wantError: "path must start with / or ~/",
+			wantError: "path must be absolute",
 		},
 		{
 			name:      "invalid DROP_HOME: not normalized",
@@ -280,13 +332,18 @@ func TestDropHome(t *testing.T) {
 		},
 		{
 			name:      "invalid DROP_HOME: whole home",
-			dropHome:  "~/",
+			dropHome:  "/home/alice",
 			wantError: "path cannot point to the whole home directory",
 		},
 		{
-			name:        "invalid XDG_DATA_HOME: relative path",
-			xdgDataHome: "ralative/path",
-			wantError:   "path must start with / or ~/",
+			name:      "invalid DROP_HOME: whole home with trailing slash",
+			dropHome:  "/home/alice/",
+			wantError: "path cannot point to the whole home directory",
+		},
+		{
+			name:        "relative XDG_DATA_HOME is ignored",
+			xdgDataHome: "relative/path",
+			want:        "/home/alice/.local/share/drop",
 		},
 	}
 

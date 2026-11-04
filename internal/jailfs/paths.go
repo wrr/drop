@@ -166,11 +166,20 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 	return &paths, cleanRunDir, nil
 }
 
+// return "" if not an absolute path
+func xdgPath(varName string) string {
+	path := os.Getenv(varName)
+	if !filepath.IsAbs(path) {
+		return ""
+	}
+	return path
+}
+
 func ConfigDir(homeDir string) string {
 	if path := os.Getenv("DROP_HOME"); path != "" {
 		return filepath.Join(path, "config")
 	}
-	parent := os.Getenv("XDG_CONFIG_HOME")
+	parent := xdgPath("XDG_CONFIG_HOME")
 	if parent == "" {
 		parent = filepath.Join(homeDir, ".config")
 	}
@@ -202,20 +211,25 @@ func EnvConfigPath(homeDir, envId string) string {
 // (XDG_DATA_HOME or "~/.local/share")/drop/ is returned
 func DropHome(homeDir string) (string, error) {
 	if dropHome := os.Getenv("DROP_HOME"); dropHome != "" {
+		if strings.HasPrefix(dropHome, "~") {
+			return "", fmt.Errorf("DROP_HOME cannot start with shell metacharacter '~': %q; use $HOME instead", dropHome)
+		}
+		if !filepath.IsAbs(dropHome) {
+			return "", fmt.Errorf("invalid DROP_HOME environment variable: path must be absolute, got %q", dropHome)
+		}
 		if err := osutil.ValidateRootOrHomeSubPath(dropHome); err != nil {
 			return "", fmt.Errorf("invalid DROP_HOME environment variable: %v", err)
 		}
-		return osutil.TildeToHomeDir(dropHome, homeDir), nil
+		if filepath.Clean(dropHome) == filepath.Clean(homeDir) {
+			return "", fmt.Errorf("invalid DROP_HOME environment variable: path cannot point to the whole home directory")
+		}
+		return dropHome, nil
 	}
-	parent := os.Getenv("XDG_DATA_HOME")
+	parent := xdgPath("XDG_DATA_HOME")
 	if parent == "" {
 		parent = filepath.Join(homeDir, ".local", "share")
 	}
-	dropHome := filepath.Join(parent, "drop")
-	if err := osutil.ValidateRootOrHomeSubPath(dropHome); err != nil {
-		return "", fmt.Errorf("invalid XDG_DATA_HOME environment variable: %v", err)
-	}
-	return dropHome, nil
+	return filepath.Join(parent, "drop"), nil
 }
 
 var envIdChars = `a-zA-Z0-9-_\.`
