@@ -67,8 +67,6 @@ type Rule struct {
 	ports []int
 	// "tcp" or "udp", empty means both
 	proto string
-	// Where the rule comes from.
-	origin string
 }
 
 func (r *Rule) hasPorts() bool {
