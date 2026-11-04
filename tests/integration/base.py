@@ -74,7 +74,8 @@ class TestBase(unittest.TestCase):
     runtime = 'native'
 
     def setUp(self):
-        self.drop_home = tempfile.mkdtemp(prefix='drop-e2e-home-')
+        self.created_homes = set()
+        self.drop_home = self.new_drop_home()
         # Drop puts env tmp dirs and run dirs of each instance in
         # $TMPDIR. Redirecting it lets tearDown remove them all
         # without the need of properly removing drop environments with
@@ -82,8 +83,6 @@ class TestBase(unittest.TestCase):
         self.tmp_dir = tempfile.mkdtemp(prefix='drop-e2e-tmp-')
 
         self.background_processes = []
-        self.created_homes = set()
-        self.created_homes.add(self.drop_home)
 
     def tearDown(self):
         for process in self.background_processes:
@@ -93,6 +92,11 @@ class TestBase(unittest.TestCase):
         for drop_home in self.created_homes:
             rm_tree(drop_home)
         rm_tree(self.tmp_dir)
+
+    def new_drop_home(self):
+        drop_home = tempfile.mkdtemp(prefix='drop-e2e-home-')
+        self.created_homes.add(drop_home)
+        return drop_home
 
     def env_dir(self, env_id=ENV_ID, drop_home=None):
         if not drop_home:
@@ -143,9 +147,7 @@ class TestBase(unittest.TestCase):
         """
 
         env = subprocess_kwargs.get('env') or os.environ.copy()
-        if drop_home:
-            self.created_homes.add(drop_home)
-        else:
+        if not drop_home:
             drop_home = self.drop_home
         env['DROP_HOME'] = drop_home
         env['TMPDIR'] = self.tmp_dir

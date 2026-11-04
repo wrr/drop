@@ -223,7 +223,7 @@ class TestCore(base.TestBase):
 
     def test_change_drop_home_dir(self):
         """Test that DROP_HOME env var is respected"""
-        drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
+        drop_home = self.new_drop_home()
         self.drop_init(ENV_ID, drop_home=drop_home)
         result = self.drop_run('ls', drop_home=drop_home)
         self.assertSuccess(result)
@@ -238,8 +238,57 @@ class TestCore(base.TestBase):
         self.assertFalse(os.path.exists(default_env_dir),
                          f'Drop env should not exist in {default_env_dir}')
 
+    def test_invalid_drop_home_dir(self):
+        cases = [
+            ('~/drop-home', "cannot start with shell metacharacter '~'"),
+            ('drop-home', 'path must be absolute'),
+            (os.environ['HOME'], 'cannot point to the whole home directory'),
+        ]
+        for drop_home, error in cases:
+            with self.subTest(drop_home=drop_home):
+                result = self.drop('ls', drop_home=drop_home)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(error, result.stderr)
+
+    def test_xdg_dirs(self):
+        home_dir = tempfile.mkdtemp(prefix='drop-e2e-user-home-')
+        self.addCleanup(base.rm_tree, home_dir)
+        data_dir = Path(home_dir) / 'xdg-data'
+        config_dir = Path(home_dir) / 'xdg-config'
+        env = os.environ.copy()
+        env.pop('DROP_HOME', None)
+        env.update(HOME=home_dir,
+                   TMPDIR=self.tmp_dir,
+                   XDG_DATA_HOME=str(data_dir),
+                   XDG_CONFIG_HOME=str(config_dir))
+        result = self.wait_process_completed(
+            self.run_background(f'{os.getcwd()}/drop init {ENV_ID}', env=env))
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(os.path.exists(data_dir / 'drop/envs' / ENV_ID))
+        self.assertTrue(os.path.exists(config_dir / 'drop' / f'{ENV_ID}.toml'))
+        self.assertFalse(os.path.exists(Path(home_dir) / '.local'))
+        self.assertFalse(os.path.exists(Path(home_dir) / '.config'))
+
+    def test_relative_xdg_dirs_ignored(self):
+        home_dir = tempfile.mkdtemp(prefix='drop-e2e-user-home-')
+        self.addCleanup(base.rm_tree, home_dir)
+        env = os.environ.copy()
+        env.pop('DROP_HOME', None)
+        env.update(HOME=home_dir,
+                   TMPDIR=self.tmp_dir,
+                   XDG_DATA_HOME='invalid/',
+                   XDG_CONFIG_HOME='~/invalid')
+        result = self.wait_process_completed(
+            self.run_background(f'{os.getcwd()}/drop init {ENV_ID}',
+                                env=env, cwd=home_dir))
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(
+            os.path.exists(Path(home_dir) / '.local/share/drop/envs' / ENV_ID))
+        self.assertTrue(
+            os.path.exists(Path(home_dir) / '.config/drop' / f'{ENV_ID}.toml'))
+
     def test_list_environments(self):
-        drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
+        drop_home = self.new_drop_home()
         result = self.drop('ls', drop_home=drop_home)
         self.assertSuccess(result)
         self.assertEqual('', result.stdout.strip())
@@ -316,7 +365,7 @@ class TestCore(base.TestBase):
             os.close(stdin_write)
 
     def test_remove_environment(self):
-        drop_home = tempfile.mkdtemp(prefix='drop-home-test-')
+        drop_home = self.new_drop_home()
 
         env_ids = ['env1', 'env2', 'env3']
         for env_id in env_ids:
