@@ -313,7 +313,7 @@ func TestDropHome(t *testing.T) {
 		{
 			name:      "invalid DROP_HOME: relative path",
 			dropHome:  "relative/path",
-			wantError: "path must start with / or ~/",
+			wantError: "path must be absolute",
 		},
 		{
 			name:      "invalid DROP_HOME: not normalized",

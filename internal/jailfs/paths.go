@@ -205,6 +205,9 @@ func DropHome(homeDir string) (string, error) {
 		if strings.HasPrefix(dropHome, "~") {
 			return "", fmt.Errorf("DROP_HOME cannot start with shell metacharacter '~': %q; use $HOME instead", dropHome)
 		}
+		if !filepath.IsAbs(dropHome) {
+			return "", fmt.Errorf("invalid DROP_HOME environment variable: path must be absolute, got %q", dropHome)
+		}
 		if err := osutil.ValidateRootOrHomeSubPath(dropHome); err != nil {
 			return "", fmt.Errorf("invalid DROP_HOME environment variable: %v", err)
 		}
