@@ -208,6 +208,9 @@ func DropHome(homeDir string) (string, error) {
 		if err := osutil.ValidateRootOrHomeSubPath(dropHome); err != nil {
 			return "", fmt.Errorf("invalid DROP_HOME environment variable: %v", err)
 		}
+		if filepath.Clean(dropHome) == filepath.Clean(homeDir) {
+			return "", fmt.Errorf("invalid DROP_HOME environment variable: path cannot point to the whole home directory")
+		}
 		return dropHome, nil
 	}
 	parent := os.Getenv("XDG_DATA_HOME")

@@ -327,7 +327,12 @@ func TestDropHome(t *testing.T) {
 		},
 		{
 			name:      "invalid DROP_HOME: whole home",
-			dropHome:  "~/",
+			dropHome:  "/home/alice",
+			wantError: "path cannot point to the whole home directory",
+		},
+		{
+			name:      "invalid DROP_HOME: whole home with trailing slash",
+			dropHome:  "/home/alice/",
 			wantError: "path cannot point to the whole home directory",
 		},
 		{
