@@ -70,6 +70,11 @@ func TestWriteBase(t *testing.T) {
 		t.Errorf("Expected environ.set_vars to be %+v, got %+v", expectedSetVars, cfg.Environ.SetVars)
 	}
 
+	expectedBlockedPaths := []string{"/etc/ssh/ssh_config.d"}
+	if !slices.Equal(cfg.BlockedPaths, expectedBlockedPaths) {
+		t.Errorf("Expected blocked_paths to be %v, got %v", expectedBlockedPaths, cfg.BlockedPaths)
+	}
+
 	net := cfg.Net
 	if net.Mode != NetModeIsolated {
 		t.Errorf("Expected default net mode 'isolated', got %s", net.Mode)
