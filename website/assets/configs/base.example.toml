@@ -74,7 +74,12 @@ mounts = [
 # (for example /etc/shadow). Drop also mounts almost
 # all dirs read-only, so you don't need to include files just to block
 # writing to them.
-blocked_paths = []
+blocked_paths = [
+  # ssh fails if included config files are not owned by root, and files
+  # owned by root are seen as owned by nobody in Drop. Blocking this
+  # dir makes ssh skip these configs.
+  "/etc/ssh/ssh_config.d",
+]
 
 [environ]
 # Environment variables to expose from the process starting Drop to
