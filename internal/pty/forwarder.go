@@ -45,10 +45,7 @@ type forwarder struct {
 
 	stopped chan struct{}
 
-	mu sync.Mutex
-	// Closed when forwarding is paused, replaced on resume. Not set to
-	// nil on pause, so a goroutine that checked the state just before
-	// the pause doesn't block on it forever.
+	mu     sync.Mutex
 	paused chan struct{}
 	// Both channels below are nil when not paused.
 	resumed chan struct{}
@@ -111,7 +108,7 @@ func (f *forwarder) forwardInput() {
 			if f.routeInput(input) {
 				select {
 				case sandboxIn <- bytes.Clone(input):
-				case <-f.pauseSignal():
+				case <-f.pausedCh():
 				case <-writerDone:
 					return
 				}
@@ -123,8 +120,8 @@ func (f *forwarder) forwardInput() {
 	}
 }
 
-// pauseSignal returns a channel closed when forwarding is paused.
-func (f *forwarder) pauseSignal() <-chan struct{} {
+// pausedCh returns a channel closed when forwarding is paused.
+func (f *forwarder) pausedCh() <-chan struct{} {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.paused
@@ -210,6 +207,8 @@ func (f *forwarder) pause() error {
 	if f.isPaused() {
 		return errors.New("forwarding already paused")
 	}
+	// Not set to nil, so forwardInput doesn't block forever trying to
+	// read from a nil channel.
 	close(f.paused)
 	f.discardUntil = time.Now().Add(pausedInputDiscard)
 	f.resumed = make(chan struct{})
