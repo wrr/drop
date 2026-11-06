@@ -22,9 +22,7 @@ import (
 	"github.com/wrr/drop/internal/config"
 )
 
-func newTestRuleSet(t *testing.T, defaultAction Action, lines []string) *RuleSet {
-	t.Helper()
-	rs := newEmptyRuleSet(defaultAction)
+func addTestRules(t *testing.T, rs *RuleSet, lines []string) {
 	for _, line := range lines {
 		r, err := parseRule(line)
 		if err != nil {
@@ -32,6 +30,12 @@ func newTestRuleSet(t *testing.T, defaultAction Action, lines []string) *RuleSet
 		}
 		rs.Add(r)
 	}
+}
+
+func newTestRuleSet(t *testing.T, defaultAction Action, lines []string) *RuleSet {
+	t.Helper()
+	rs := newEmptyRuleSet(defaultAction)
+	addTestRules(t, rs, lines)
 	return rs
 }
 

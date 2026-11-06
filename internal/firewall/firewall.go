@@ -28,6 +28,7 @@ import (
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
 
+	"github.com/wrr/drop/internal/config"
 	"github.com/wrr/drop/internal/dns"
 	"github.com/wrr/drop/internal/log"
 	"github.com/wrr/drop/internal/netns"
@@ -40,6 +41,8 @@ type Firewall struct {
 	resolver dns.Resolver
 	nft      *nftables.Conn
 	stop     func()
+	// Used when the user can't be asked, Allow or Deny.
+	askFallback Action
 	// Held while the user is asked, so only one question is shown at a
 	// time and questions for the same target (for example DNS retries)
 	// do not result in multiple prompts. Guards dialog.
@@ -48,14 +51,19 @@ type Firewall struct {
 	dialog dialog
 }
 
-// New creates and starts the firewall. Installs nftables rules in the
+// New creates and starts the firewall configured by cfg, which filters
+// traffic according to the rules. Installs nftables rules in the
 // network namespace of the process pid, which send the first packet
 // of each new connection to a queue. The queue allows each connection
 // attempt.
 //
 // The caller should call the Firewall.Stop() function on program
 // termination.
-func New(pid int, rules *RuleSet, resolver dns.Resolver) (*Firewall, error) {
+func New(pid int, cfg *config.Firewall, rules *RuleSet, resolver dns.Resolver) (*Firewall, error) {
+	askFallback, err := parseAction(cfg.AskFallback)
+	if err != nil {
+		return nil, err
+	}
 	nft, queue, err := openNetfilter(pid)
 	if err != nil {
 		return nil, err
@@ -81,7 +89,13 @@ func New(pid int, rules *RuleSet, resolver dns.Resolver) (*Firewall, error) {
 		return nil, err
 	}
 	success = true
-	return &Firewall{rules: rules, resolver: resolver, nft: nft, stop: stop}, nil
+	return &Firewall{
+		rules:       rules,
+		resolver:    resolver,
+		nft:         nft,
+		stop:        stop,
+		askFallback: askFallback,
+	}, nil
 }
 
 // SetDialog sets the dialog to ask the user about the Ask rules. Safe
@@ -132,8 +146,7 @@ func (f *Firewall) shouldDeny(domain string) bool {
 		choice, err := f.dialog.Ask(question(domain, netip.Addr{}, 0, ""), promptChoices)
 		if err != nil {
 			info("prompt: %v", err)
-			// TODO: use ask_fallback
-			return true
+			return f.askFallback == Deny
 		}
 		action = Deny
 		if choice.Key == 'a' || choice.Key == 'A' {
@@ -142,8 +155,7 @@ func (f *Firewall) shouldDeny(domain string) bool {
 		f.rules.Add(Rule{domain: domain, action: action})
 		return action == Deny
 	}
-	// TODO: use ask_fallback
-	return true
+	return f.askFallback == Deny
 }
 
 func notFound(domainRooted, reason string) error {
