@@ -17,18 +17,16 @@ package firewall
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"net"
 	"net/netip"
 	"strings"
-	"sync/atomic"
+	"sync"
 
 	nfqueue "github.com/florianl/go-nfqueue/v2"
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
-	"golang.org/x/sys/unix"
 
 	"github.com/wrr/drop/internal/dns"
 	"github.com/wrr/drop/internal/log"
@@ -42,13 +40,18 @@ type Firewall struct {
 	resolver dns.Resolver
 	nft      *nftables.Conn
 	stop     func()
-	prompter atomic.Pointer[prompter]
+	// Held while the user is asked, so only one question is shown at a
+	// time and questions for the same target (for example DNS retries)
+	// do not result in multiple prompts. Guards dialog.
+	askMu sync.Mutex
+	// Nil until set with SetDialog.
+	dialog dialog
 }
 
-// New creates and starts the firewall. Installs nftables rules in the network
-// namespace of the process pid, which send the first packet of each
-// new connection to a queue. The queue logs and allows each
-// connection attempt.
+// New creates and starts the firewall. Installs nftables rules in the
+// network namespace of the process pid, which send the first packet
+// of each new connection to a queue. The queue allows each connection
+// attempt.
 //
 // The caller should call the Firewall.Stop() function on program
 // termination.
@@ -81,11 +84,12 @@ func New(pid int, rules *RuleSet, resolver dns.Resolver) (*Firewall, error) {
 	return &Firewall{rules: rules, resolver: resolver, nft: nft, stop: stop}, nil
 }
 
-// SetDialog sets the dialog, for example *pty.Dialog, used to ask the
-// user about the Ask rules. Safe to call concurrently with the
-// filtering, meant to be called once.
+// SetDialog sets the dialog to ask the user about the Ask rules. Safe
+// to call concurrently, meant to be called once.
 func (f *Firewall) SetDialog(d dialog) {
-	f.prompter.Store(newPrompter(d, f.rules))
+	f.askMu.Lock()
+	defer f.askMu.Unlock()
+	f.dialog = d
 }
 
 // Stop closes Firewall sockets. After stopping the Firewall existing
@@ -102,19 +106,44 @@ func (f *Firewall) LookupNetIP(ctx context.Context, network, domainRooted string
 	if !isValidDomain(domain) {
 		return nil, notFound(domainRooted, "invalid domain name")
 	}
-	action := f.rules.ResolverAction(domain)
-	if action == Ask {
-		if p := f.prompter.Load(); p != nil {
-			action = p.ask(domain, netip.Addr{}, 0, "")
-		} else {
-			// use default
-		}
-	}
-	if action == Deny {
+	if f.shouldDeny(domain) {
 		return nil, notFound(domainRooted, "firewall deny")
 	}
 	// Resolver should get rooted domain, so it doesn't expand it.
 	return f.resolver.LookupNetIP(ctx, network, domainRooted)
+}
+
+// shouldDeny reports whether a DNS query for the domain should be
+// denied, asking the user if the rules say so.
+func (f *Firewall) shouldDeny(domain string) bool {
+	action := f.rules.ResolverAction(domain)
+	if action != Ask {
+		return action == Deny
+	}
+	f.askMu.Lock()
+	defer f.askMu.Unlock()
+	// Each prompt answer adds a rule, so the same question could have
+	// already been answered while waiting for the lock.
+	action = f.rules.ResolverAction(domain)
+	if action != Ask {
+		return action == Deny
+	}
+	if f.dialog != nil {
+		choice, err := f.dialog.Ask(question(domain, netip.Addr{}, 0, ""), promptChoices)
+		if err != nil {
+			info("prompt: %v", err)
+			// TODO: use ask_fallback
+			return true
+		}
+		action = Deny
+		if choice.Key == 'a' || choice.Key == 'A' {
+			action = Allow
+		}
+		f.rules.Add(Rule{domain: domain, action: action})
+		return action == Deny
+	}
+	// TODO: use ask_fallback
+	return true
 }
 
 func notFound(domainRooted, reason string) error {
@@ -190,9 +219,6 @@ func serveQueue(ctx context.Context, queue *nfqueue.Nfqueue) error {
 		if a.PacketID == nil {
 			return 0
 		}
-		if a.Payload != nil {
-			info("new connection %s", describe(*a.Payload))
-		}
 		if err := queue.SetVerdict(*a.PacketID, nfqueue.NfAccept); err != nil {
 			info("set verdict: %v", err)
 		}
@@ -241,58 +267,6 @@ func exprs(parts ...[]expr.Any) []expr.Any {
 		out = append(out, p...)
 	}
 	return out
-}
-
-// describe returns the protocol and the addresses of an IP packet,
-// for example "tcp 10.0.2.15:41234 -> 93.184.215.14:443".
-func describe(packet []byte) string {
-	var src, dst netip.Addr
-	var proto byte
-	var transport []byte
-	switch {
-	case isIPv4(packet):
-		src = netip.AddrFrom4([4]byte(packet[12:16]))
-		dst = netip.AddrFrom4([4]byte(packet[16:20]))
-		proto = packet[9]
-		if headerLen := int(packet[0]&0x0f) * 4; headerLen <= len(packet) {
-			transport = packet[headerLen:]
-		}
-	case isIPv6(packet):
-		src = netip.AddrFrom16([16]byte(packet[8:24]))
-		dst = netip.AddrFrom16([16]byte(packet[24:40]))
-		// Extension headers are not followed.
-		proto = packet[6]
-		transport = packet[40:]
-	default:
-		return fmt.Sprintf("unrecognized packet of %d bytes", len(packet))
-	}
-
-	name := protoName(proto)
-	if name == "" || len(transport) < 4 {
-		return fmt.Sprintf("protocol %d %v -> %v", proto, src, dst)
-	}
-	srcPort := binary.BigEndian.Uint16(transport[0:2])
-	dstPort := binary.BigEndian.Uint16(transport[2:4])
-	return fmt.Sprintf("%s %v -> %v", name,
-		netip.AddrPortFrom(src, srcPort), netip.AddrPortFrom(dst, dstPort))
-}
-
-func isIPv4(packet []byte) bool {
-	return len(packet) >= 20 && packet[0]>>4 == 4
-}
-
-func isIPv6(packet []byte) bool {
-	return len(packet) >= 40 && packet[0]>>4 == 6
-}
-
-func protoName(proto byte) string {
-	switch proto {
-	case unix.IPPROTO_TCP:
-		return "tcp"
-	case unix.IPPROTO_UDP:
-		return "udp"
-	}
-	return ""
 }
 
 func info(format string, args ...any) {

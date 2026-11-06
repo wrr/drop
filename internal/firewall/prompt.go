@@ -33,31 +33,6 @@ type dialog interface {
 	Ask(question string, choices []pty.Choice) (pty.Choice, error)
 }
 
-// prompter asks the user for decisions related to DNS queries and
-// connections intercepted by the Firewall.
-type prompter struct {
-	dialog dialog
-	rules  *RuleSet
-}
-
-func newPrompter(d dialog, rules *RuleSet) *prompter {
-	return &prompter{dialog: d, rules: rules}
-}
-
-// ask asks the user whether to allow the domain or the connection and
-// returns the decision. Returns Deny if the question can't be asked.
-func (p *prompter) ask(domain string, addr netip.Addr, port int, proto string) Action {
-	choice, err := p.dialog.Ask(question(domain, addr, port, proto), promptChoices)
-	if err != nil {
-		info("prompt: %v", err)
-		return Deny
-	}
-	if choice.Key == 'a' || choice.Key == 'A' {
-		return Allow
-	}
-	return Deny
-}
-
 func question(domain string, addr netip.Addr, port int, proto string) string {
 	target := domain
 	if target == "" {
