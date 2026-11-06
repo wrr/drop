@@ -17,17 +17,20 @@ package firewall
 import (
 	"fmt"
 	"net/netip"
+	"sync"
 
 	"github.com/wrr/drop/internal/config"
 )
 
 // RuleSet holds indexed firewall rules.
 type RuleSet struct {
+	defaultAction Action
+	// mu guards all the fields below
+	mu        sync.Mutex
 	addrRules map[netip.Addr][]Rule
 	// Ranges that cover more than one address.
-	prefixRules   []Rule
-	domainRules   map[string]*domainRules
-	defaultAction Action
+	prefixRules []Rule
+	domainRules map[string]*domainRules
 }
 
 // NewRuleSet creates a RuleSet as configured by the cfg.
@@ -61,6 +64,9 @@ func newEmptyRuleSet(defaultAction Action) *RuleSet {
 // Add adds the rule to the set. Of equally specific rules matching the
 // same traffic, the one added later is used.
 func (rs *RuleSet) Add(r Rule) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
 	switch {
 	case r.domain != "":
 		dr := rs.domainRules[r.domain]
@@ -123,6 +129,9 @@ func (dr *domainRules) add(rule Rule) {
 
 // ResolverAction returns the action for a DNS query for the domain.
 func (rs *RuleSet) ResolverAction(domain string) Action {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
 	dr := rs.domainRules[domain]
 	if dr == nil {
 		return rs.defaultAction
@@ -154,6 +163,9 @@ func (rs *RuleSet) ResolverAction(domain string) Action {
 // lowercase name without the trailing dot that addr was resolved
 // from, empty if not known.
 func (rs *RuleSet) ConnectionAction(domain string, addr netip.Addr, port int, proto string) Action {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
 	// Rules never contain IPv4-mapped addresses.
 	addr = addr.Unmap()
 	bestMatch := func(rules []Rule) *Rule {
