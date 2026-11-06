@@ -140,8 +140,9 @@ func Main() error {
 		defer cleanPasta()
 	}
 
+	var fw *firewall.Firewall
 	if cfg.Net.IsFirewallEnabled() {
-		fw, err := firewall.New(cmd.pid(), rules, &net.Resolver{PreferGo: true})
+		fw, err = firewall.New(cmd.pid(), rules, &net.Resolver{PreferGo: true})
 		if err != nil {
 			return err
 		}
@@ -204,9 +205,15 @@ func Main() error {
 			ptyError = result.err
 			if ptyError == nil {
 				var cleanForwardPty func()
-				cleanForwardPty, ptyError = pty.ForwardPty(result.parentPty)
-				if cleanForwardPty != nil {
-					defer cleanForwardPty()
+				var dialog *pty.Dialog
+				dialog, cleanForwardPty, ptyError = pty.ForwardPty(result.parentPty)
+				if ptyError == nil {
+					if cleanForwardPty != nil {
+						defer cleanForwardPty()
+					}
+					if fw != nil {
+						fw.SetDialog(dialog)
+					}
 				}
 			}
 			if ptyError != nil {

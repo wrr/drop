@@ -135,7 +135,7 @@ func keepWindowSizeSynced(termToSync *os.File) (func(), error) {
 // The function takes ownership of sandboxPty.
 // The function returns error if none of stdin, stdout,
 // stderr of the calling process is a terminal (PtyNeeded returns false).
-func ForwardPty(sandboxPty *os.File) (func(), error) {
+func ForwardPty(sandboxPty *os.File) (*Dialog, func(), error) {
 	var (
 		origState        *term.State
 		cleanWinSizeSync func()
@@ -164,19 +164,19 @@ func ForwardPty(sandboxPty *os.File) (func(), error) {
 	}()
 
 	if !PtyNeeded() {
-		return nil, fmt.Errorf("none of stdin, stdout, stderr is a terminal")
+		return nil, nil, fmt.Errorf("none of stdin, stdout, stderr is a terminal")
 	}
 
 	if term.IsTerminal(0) {
 		// Only terminal used for input must be switched to raw mode.
 		origState, err = term.MakeRaw(0)
 		if err != nil {
-			return nil, fmt.Errorf("switch terminal to raw mode: %v", err)
+			return nil, nil, fmt.Errorf("switch terminal to raw mode: %v", err)
 		}
 	}
 	cleanWinSizeSync, err = keepWindowSizeSynced(sandboxPty)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var outputTerm *os.File
@@ -201,7 +201,7 @@ func ForwardPty(sandboxPty *os.File) (func(), error) {
 
 	fwd = newForwarder(sandboxPty, outputTerm, inputTerm)
 	success = true
-	return cleanup, nil
+	return newDialog(fwd), cleanup, nil
 }
 
 // ReplaceTerminal finds which of the stdin, stdout, stderr descriptors

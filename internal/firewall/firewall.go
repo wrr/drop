@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 
 	nfqueue "github.com/florianl/go-nfqueue/v2"
 	"github.com/google/nftables"
@@ -41,6 +42,7 @@ type Firewall struct {
 	resolver dns.Resolver
 	nft      *nftables.Conn
 	stop     func()
+	prompter atomic.Pointer[prompter]
 }
 
 // New creates and starts the firewall. Installs nftables rules in the network
@@ -79,6 +81,13 @@ func New(pid int, rules *RuleSet, resolver dns.Resolver) (*Firewall, error) {
 	return &Firewall{rules: rules, resolver: resolver, nft: nft, stop: stop}, nil
 }
 
+// SetDialog sets the dialog, for example *pty.Dialog, used to ask the
+// user about the Ask rules. Safe to call concurrently with the
+// filtering, meant to be called once.
+func (f *Firewall) SetDialog(d dialog) {
+	f.prompter.Store(newPrompter(d, f.rules))
+}
+
 // Stop closes Firewall sockets. After stopping the Firewall existing
 // rules continue to apply, no new connections are allowed.
 func (f *Firewall) Stop() {
@@ -94,6 +103,13 @@ func (f *Firewall) LookupNetIP(ctx context.Context, network, domainRooted string
 		return nil, notFound(domainRooted, "invalid domain name")
 	}
 	action := f.rules.ResolverAction(domain)
+	if action == Ask {
+		if p := f.prompter.Load(); p != nil {
+			action = p.ask(domain, netip.Addr{}, 0, "")
+		} else {
+			// use default
+		}
+	}
 	if action == Deny {
 		return nil, notFound(domainRooted, "firewall deny")
 	}
