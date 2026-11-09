@@ -80,11 +80,15 @@ func Init() error {
 	}
 
 	dnsAddr := pasta.DNSForwardAddr
+	resolvOpts := ""
 	if cfg.Net.IsFirewallEnabled() {
 		dnsAddr = "127.0.0.1"
+		// Increase resolver timeout to give the user time to answer the
+		// firewall interactive prompts.
+		resolvOpts = "timeout:30 attempts:3"
 	}
 
-	if err := jailfs.WriteResolvConf(paths.RunEtc, dnsAddr); err != nil {
+	if err := jailfs.WriteResolvConf(paths.RunEtc, dnsAddr, resolvOpts); err != nil {
 		return fmt.Errorf("write resolv.conf: %v", err)
 	}
 

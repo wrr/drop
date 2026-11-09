@@ -21,8 +21,11 @@ import (
 
 // WriteResolvConf creates and writes resolv.conf file in the passed
 // directory.
-func WriteResolvConf(etcDir, dnsAddr string) error {
+func WriteResolvConf(etcDir, dnsAddr, options string) error {
 	resolvConfPath := filepath.Join(etcDir, "resolv.conf")
 	content := "nameserver " + dnsAddr + "\n"
+	if options != "" {
+		content += "options " + options + "\n"
+	}
 	return os.WriteFile(resolvConfPath, []byte(content), 0600)
 }
