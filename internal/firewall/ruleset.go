@@ -22,10 +22,11 @@ import (
 	"github.com/wrr/drop/internal/config"
 )
 
-// RuleSet holds indexed firewall rules.
+// RuleSet holds indexed firewall rules. Safe for concurrent use.
 type RuleSet struct {
 	defaultAction Action
-	// mu guards all the fields below
+
+	// mu guards all the fields below.
 	mu        sync.Mutex
 	addrRules map[netip.Addr][]Rule
 	// Ranges that cover more than one address.

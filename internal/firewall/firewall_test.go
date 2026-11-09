@@ -101,7 +101,11 @@ func (d *fakeDialog) Answer(key byte) {
 	d.answers <- key
 }
 
-func (d *fakeDialog) Ask(question string, choices []pty.Choice) (pty.Choice, error) {
+func (d *fakeDialog) MaxWidth() int {
+	return 80
+}
+
+func (d *fakeDialog) Ask(question []string, choices []pty.Choice) (pty.Choice, error) {
 	d.asked++
 	if d.err != nil {
 		return pty.Choice{}, d.err

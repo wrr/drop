@@ -143,7 +143,8 @@ func (f *Firewall) shouldDeny(domain string) bool {
 		return action == Deny
 	}
 	if f.dialog != nil {
-		choice, err := f.dialog.Ask(question(domain, netip.Addr{}, 0, ""), promptChoices)
+		q := question(domain, netip.Addr{}, 0, "", f.dialog.MaxWidth())
+		choice, err := f.dialog.Ask(q, promptChoices)
 		if err != nil {
 			info("prompt: %v", err)
 			return f.askFallback == Deny

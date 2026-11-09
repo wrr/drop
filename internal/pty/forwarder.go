@@ -20,6 +20,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -197,7 +199,8 @@ func (f *forwarder) writeOutput(output []byte) error {
 // resume is called. The sandboxed process keeps running, but its
 // output is no longer read (it blocks once the PTY buffer is
 // full). The user input is no longer passed to the sandbox, but
-// exposed to Drop via readInput.
+// exposed to Drop via readInput. Drop can also write to the terminal
+// with the write function.
 func (f *forwarder) pause() error {
 	if f.hostInput == nil {
 		return errors.New("stdin is not a terminal")
@@ -233,6 +236,27 @@ func (f *forwarder) resume() {
 	f.paused = make(chan struct{})
 	close(f.capturedInput)
 	f.capturedInput = nil
+}
+
+// write writes to paused terminal.
+func (f *forwarder) write(s string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.isPaused() {
+		panic("write to not paused terminal")
+	}
+	_, err := f.hostOutput.WriteString(s)
+	return err
+}
+
+// winSize returns the number of rows and columns of the host output
+// terminal.
+func (f *forwarder) winSize() (int, int, error) {
+	size, err := unix.IoctlGetWinsize(int(f.hostOutput.Fd()), unix.TIOCGWINSZ)
+	if err != nil {
+		return 0, 0, err
+	}
+	return int(size.Row), int(size.Col), nil
 }
 
 // readInput returns one byte of the user input while forwarding is
