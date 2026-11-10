@@ -31,8 +31,9 @@ const (
 	// intended for the sandbox, from being captured and interpreted as
 	// the prompt action.
 	pausedInputDiscard = 700 * time.Millisecond
-	// How many bytes of input a paused forwarder will capture reliably.
-	maxCapturedInput = 16
+	// How many single key presses a paused forwarder will capture
+	// reliably.
+	maxCapturedKeys = 16
 )
 
 // forwarder relays input and output between the terminal from the
@@ -51,9 +52,9 @@ type forwarder struct {
 	paused chan struct{}
 	// Both channels below are nil when not paused.
 	resumed chan struct{}
-	// Receives input captured while forwarding is paused.
-	capturedInput chan byte
-	discardUntil  time.Time
+	// Receives keys captured while forwarding is paused.
+	capturedKey  chan byte
+	discardUntil time.Time
 }
 
 // newForwarder creates forwarder and takes ownership of sandboxPty.
@@ -84,7 +85,7 @@ func (f *forwarder) stop() {
 
 // forwardInput copies the user input from the host terminal to the
 // sandboxed process PTY. When the forwarder is paused the input no
-// longer reaches the sandbox and can be retrieved with the readInput
+// longer reaches the sandbox and can be retrieved with the readKey
 // function.
 func (f *forwarder) forwardInput() {
 	// Writing is done in a separate goroutine, so when the sandbox
@@ -129,9 +130,19 @@ func (f *forwarder) pausedCh() <-chan struct{} {
 	return f.paused
 }
 
+func sameBytes(input []byte) bool {
+	for _, x := range input {
+		if x != input[0] {
+			return false
+		}
+	}
+	return true
+}
+
 // routeInput returns true if the forwarding is not paused and the
 // input should be passed to the sandboxed process. Otherwise it
-// exposes the input to Drop via the readInput function.
+// exposes the input to Drop via the readKey function, if the input
+// is a single key, possibly pressed multiple times.
 func (f *forwarder) routeInput(input []byte) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -139,18 +150,23 @@ func (f *forwarder) routeInput(input []byte) bool {
 		return true
 	}
 	if time.Now().Before(f.discardUntil) {
-		// Discard input entered immediately after the forwarding was
+		// Discard keys entered immediately after the forwarding was
 		// paused.
 		return false
 	}
-	for _, b := range input {
-		select {
-		case f.capturedInput <- b:
-		default:
-			// No more space, drop remaining input, interactive prompt needs
-			// only a single key.
-			return false
-		}
+	if len(input) == 0 || !sameBytes(input) {
+		// The dialog needs only a single key. Special keys (arrows,
+		// function keys), mouse events and pastes arrive as multi-byte
+		// reads, which are discarded, otherwise their individual bytes
+		// could be interpreted as keys. Only single byte reads are
+		// accepted and also repeated presses of the same key arriving in
+		// one read.
+		return false
+	}
+	select {
+	case f.capturedKey <- input[0]:
+	default:
+		// No more space, the interactive prompt needs only a single key.
 	}
 	return false
 }
@@ -199,7 +215,7 @@ func (f *forwarder) writeOutput(output []byte) error {
 // resume is called. The sandboxed process keeps running, but its
 // output is no longer read (it blocks once the PTY buffer is
 // full). The user input is no longer passed to the sandbox, but
-// exposed to Drop via readInput. Drop can also write to the terminal
+// exposed to Drop via readKey. Drop can also write to the terminal
 // with the write function.
 func (f *forwarder) pause() error {
 	if f.hostInput == nil {
@@ -215,13 +231,13 @@ func (f *forwarder) pause() error {
 	close(f.paused)
 	f.discardUntil = time.Now().Add(pausedInputDiscard)
 	f.resumed = make(chan struct{})
-	f.capturedInput = make(chan byte, maxCapturedInput)
+	f.capturedKey = make(chan byte, maxCapturedKeys)
 	return nil
 }
 
 // isPaused reports whether forwarding is paused. f.mu must be held.
 func (f *forwarder) isPaused() bool {
-	return f.capturedInput != nil
+	return f.capturedKey != nil
 }
 
 // resume resumes the forwarding.
@@ -234,8 +250,8 @@ func (f *forwarder) resume() {
 	close(f.resumed)
 	f.resumed = nil
 	f.paused = make(chan struct{})
-	close(f.capturedInput)
-	f.capturedInput = nil
+	close(f.capturedKey)
+	f.capturedKey = nil
 }
 
 // write writes to paused terminal.
@@ -259,14 +275,23 @@ func (f *forwarder) winSize() (int, int, error) {
 	return int(size.Row), int(size.Col), nil
 }
 
-// readInput returns one byte of the user input while forwarding is
-// paused. It can be called multiple times, but only maxCapturedInput
-// bytes are guaranteed to be captured reliably, further input can be
-// lost. The call blocks until input is available or forwarding is
-// resumed or stopped.
-func (f *forwarder) readInput() (byte, error) {
+// readKey returns one key pressed by the user while forwarding is
+// paused.
+//
+// Key delivery is simplistic, to avoid complications with
+// multi-byte key parsing. It is only sufficient for the simple
+// dialogs that expect the user to press a single, one-byte generating
+// key:
+// * Only keys that send a single byte are returned.
+// * If multiple, different keys are pressed or pasted quickly, the
+// whole such input chunk can be discarded, unless it contains only
+// identical keys.
+//
+// The call blocks until key is available or forwarding is resumed or
+// stopped.
+func (f *forwarder) readKey() (byte, error) {
 	f.mu.Lock()
-	ch := f.capturedInput
+	ch := f.capturedKey
 	f.mu.Unlock()
 	if ch == nil {
 		return 0, errors.New("forwarding not paused")

@@ -123,7 +123,7 @@ func write(t *testing.T, file *os.File, data string) {
 	}
 }
 
-// noInputDiscard lets the input reach readInput right after pause.
+// noInputDiscard lets the input reach readKey right after pause.
 func noInputDiscard(f *forwarder) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -188,8 +188,8 @@ func TestPauseRoutesInput(t *testing.T) {
 	}
 	noInputDiscard(tf.fwd)
 	write(t, tf.hostInputWriter, "b")
-	if key, err := tf.fwd.readInput(); err != nil || key != 'b' {
-		t.Errorf("readInput = %q, %v, want b", key, err)
+	if key, err := tf.fwd.readKey(); err != nil || key != 'b' {
+		t.Errorf("readKey = %q, %v, want b", key, err)
 	}
 
 	tf.fwd.resume()
@@ -211,20 +211,40 @@ func TestRouteInput(t *testing.T) {
 	if f.routeInput([]byte("b")) {
 		t.Error("input forwarded when paused")
 	}
-	if n := len(f.capturedInput); n != 0 {
+	if n := len(f.capturedKey); n != 0 {
 		t.Errorf("%d bytes captured during the discard period", n)
 	}
 
 	noInputDiscard(f)
-	input := strings.Repeat("c", maxCapturedInput) + "d"
-	if f.routeInput([]byte(input)) {
+	// Up arrow, X10 mouse click at column 33, pastes.
+	for _, input := range []string{"\x1b[A", "\x1b[M A!", "ad", "aab"} {
+		if f.routeInput([]byte(input)) {
+			t.Errorf("input %q forwarded while paused", input)
+		}
+	}
+	if n := len(f.capturedKey); n != 0 {
+		t.Errorf("%d keys captured from multi-byte input", n)
+	}
+
+	f.routeInput([]byte("aaa"))
+	if n := len(f.capturedKey); n != 1 {
+		t.Fatalf("captured %d keys from repeated presses, want 1", n)
+	}
+	if b, err := f.readKey(); err != nil || b != 'a' {
+		t.Errorf("readKey = %q, %v, want a", b, err)
+	}
+
+	for range maxCapturedKeys {
+		f.routeInput([]byte("c"))
+	}
+	if f.routeInput([]byte("d")) {
 		t.Error("input forwarded while paused")
 	}
-	if n := len(f.capturedInput); n != maxCapturedInput {
-		t.Errorf("captured %d bytes, want %d", n, maxCapturedInput)
+	if n := len(f.capturedKey); n != maxCapturedKeys {
+		t.Errorf("captured %d keys, want %d", n, maxCapturedKeys)
 	}
-	if b, err := f.readInput(); err != nil || b != 'c' {
-		t.Errorf("readInput = %q, %v, want c", b, err)
+	if b, err := f.readKey(); err != nil || b != 'c' {
+		t.Errorf("readKey = %q, %v, want c", b, err)
 	}
 
 	f.resume()

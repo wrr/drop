@@ -80,7 +80,7 @@ func (d *Dialog) Ask(question []string, choices []Choice) (Choice, error) {
 		return Choice{}, err
 	}
 	for {
-		key, err := d.fwd.readInput()
+		key, err := d.fwd.readKey()
 		if err != nil {
 			dismiss(Choice{})
 			return Choice{}, err
