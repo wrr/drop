@@ -281,3 +281,29 @@ func (f *forwarder) readInput() (byte, error) {
 		return 0, errors.New("forwarder stopped")
 	}
 }
+
+// repaint sends signals to the sandboxed processes to redraw the
+// terminal. Must be called when forwarder is not paused, so the
+// repaint isn't withheld.
+func (f *forwarder) repaint() error {
+	fd := int(f.sandboxPty.Fd())
+	size, err := unix.IoctlGetWinsize(fd, unix.TIOCGWINSZ)
+	if err != nil {
+		return err
+	}
+	if size.Row > 1 {
+		size.Row--
+	} else {
+		size.Row++
+	}
+	if err := unix.IoctlSetWinsize(fd, unix.TIOCSWINSZ, size); err != nil {
+		return err
+	}
+	// SIGWINCH does not queue. Without the delay the program can see
+	// only the second signal with the original size, and skip the
+	// redraw.
+	time.Sleep(100 * time.Millisecond)
+	// The current host size, in case the terminal was actually resized
+	// during the sleep.
+	return syncWindowSize(int(f.hostOutput.Fd()), fd)
+}

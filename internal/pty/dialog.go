@@ -67,8 +67,15 @@ func (d *Dialog) Ask(question []string, choices []Choice) (Choice, error) {
 	if err := d.fwd.pause(); err != nil {
 		return Choice{}, err
 	}
-	defer d.fwd.resume()
-	dismiss, err := d.show(question, choices)
+	var dismiss func(Choice)
+	defer func() {
+		d.fwd.resume()
+		if dismiss != nil {
+			d.fwd.repaint()
+		}
+	}()
+	var err error
+	dismiss, err = d.show(question, choices)
 	if err != nil {
 		return Choice{}, err
 	}
