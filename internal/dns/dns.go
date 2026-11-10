@@ -21,7 +21,6 @@ import (
 	"net"
 	"net/netip"
 	"strings"
-	"time"
 
 	"github.com/miekg/dns" // Until v2 is stable
 
@@ -29,7 +28,6 @@ import (
 	"github.com/wrr/drop/internal/netns"
 )
 
-const upstreamTimeout = 5 * time.Second
 const ttl = 5
 
 // Resolver resolves names for the server.
@@ -153,8 +151,9 @@ func (s *server) handle(w dns.ResponseWriter, req *dns.Msg) {
 
 // resolve fills in reply for an address query.
 func (s *server) resolve(reply *dns.Msg, question dns.Question) {
-	ctx, cancel := context.WithTimeout(context.Background(), upstreamTimeout)
-	defer cancel()
+	// No explicit timeout: use timeout from the host resolv.conf or the
+	// default.
+	ctx := context.Background()
 
 	// The incoming name is always rooted, CanonicalName ensures it is
 	// also lowercase, so the firewall always sees rooted, lowercase
