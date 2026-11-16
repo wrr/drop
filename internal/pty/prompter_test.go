@@ -75,3 +75,49 @@ func TestAnswerRows(t *testing.T) {
 		t.Errorf("answerRows() = %q, want %q", got, want)
 	}
 }
+
+func TestQuestionBoxFits(t *testing.T) {
+	lines := []string{"Allow example.com?"}
+	answers := []string{"[a]llow"}
+	// 18 columns of text plus the frame, 2 lines plus the top and bottom
+	// border.
+	cases := []struct {
+		rows, cols int
+		want       bool
+	}{
+		{4, 22, true},
+		{10, 80, true},
+		{3, 22, false},
+		{4, 21, false},
+	}
+	for _, c := range cases {
+		_, boxRows, fits := questionBox(lines, answers, c.rows, c.cols)
+		if fits != c.want {
+			t.Errorf("%dx%d: fits = %v, want %v", c.cols, c.rows, fits, c.want)
+		}
+		if fits && boxRows != 4 {
+			t.Errorf("%dx%d: box rows = %d, want 4", c.cols, c.rows, boxRows)
+		}
+	}
+}
+
+func TestTooSmallBox(t *testing.T) {
+	cases := []struct {
+		cols int
+		want string
+	}{
+		{80, tooSmallMsg},
+		{len(tooSmallMsg), tooSmallMsg},
+		{4, "Drop"},
+		{1, "D"},
+	}
+	for _, c := range cases {
+		s, rows := tooSmallBox(5, c.cols)
+		if want := clearLine(5) + c.want; s != want {
+			t.Errorf("cols %d: got %q, want %q", c.cols, s, want)
+		}
+		if rows != 1 {
+			t.Errorf("cols %d: rows = %d, want 1", c.cols, rows)
+		}
+	}
+}

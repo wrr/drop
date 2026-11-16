@@ -31,8 +31,8 @@ var promptChoices = []pty.Choice{
 
 // prompter shows questions to the user.
 type prompter interface {
-	// MaxWidth returns how long question lines can be, longer lines make
-	// Ask fail.
+	// MaxWidth returns how long question lines can be. If they are
+	// longer, Ask shows a "terminal too small" message instead.
 	MaxWidth() int
 	Ask(question []string, choices []pty.Choice) (pty.Choice, error)
 }
@@ -41,8 +41,7 @@ type prompter interface {
 // fit maxWidth.
 //
 // The fixed text is not shortened. On terminals too narrow for "Allow
-// connections to", the Ask fails and the ask_fallback setting
-// applies.
+// connections to", the user is informed that the terminal is too small.
 func question(domain string, addr netip.Addr, port int, proto string, maxWidth int) []string {
 	target := domain
 	if target == "" {
