@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"slices"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -86,48 +85,6 @@ func SetControllingTerminal(pty *os.File) error {
 	return nil
 }
 
-// syncWindowSize copies the window size from srcFd to dstFd.
-func syncWindowSize(srcFd, dstFd int) error {
-	ws, err := unix.IoctlGetWinsize(srcFd, unix.TIOCGWINSZ)
-	if err != nil {
-		return err
-	}
-	return unix.IoctlSetWinsize(dstFd, unix.TIOCSWINSZ, ws)
-}
-
-// keepWindowSizeSynced propagates terminal window size from the
-// current process to the termToSync. The function starts a goroutine
-// to propagate also all future terminal window size changes.
-// Returns error if none of stdin, stdout, stderr is a terminal
-// (PtyNeeded returns false).
-//
-// Returns a cleanup function that should be called when program exits.
-func keepWindowSizeSynced(termToSync *os.File) (func(), error) {
-	syncFrom := slices.IndexFunc([]int{0, 1, 2}, term.IsTerminal)
-	if syncFrom == -1 {
-		return nil, fmt.Errorf("sync window size: none of stdin, stdout, stderr is a terminal")
-	}
-	syncTo := int(termToSync.Fd())
-	if err := syncWindowSize(syncFrom, syncTo); err != nil {
-		return nil, fmt.Errorf("sync window size: %v", err)
-	}
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGWINCH)
-
-	go func() {
-		for range sigCh {
-			// Ignore errors
-			syncWindowSize(syncFrom, syncTo)
-		}
-	}()
-
-	cleanup := func() {
-		signal.Stop(sigCh)
-		close(sigCh)
-	}
-	return cleanup, nil
-}
-
 // ForwardPty forwards:
 // * terminal input (if any) of the calling process to the sandboxPty
 // * sandboxPty terminal output to the calling process terminal
@@ -137,15 +94,15 @@ func keepWindowSizeSynced(termToSync *os.File) (func(), error) {
 // stderr of the calling process is a terminal (PtyNeeded returns false).
 func ForwardPty(sandboxPty *os.File) (*Prompter, func(), error) {
 	var (
-		origState        *term.State
-		cleanWinSizeSync func()
-		fwd              *forwarder
-		err              error
+		origState *term.State
+		resized   chan os.Signal
+		fwd       *forwarder
+		err       error
 	)
 
 	cleanup := func() {
-		if cleanWinSizeSync != nil {
-			cleanWinSizeSync()
+		if resized != nil {
+			signal.Stop(resized)
 		}
 		if fwd != nil {
 			fwd.stop()
@@ -174,11 +131,6 @@ func ForwardPty(sandboxPty *os.File) (*Prompter, func(), error) {
 			return nil, nil, fmt.Errorf("switch terminal to raw mode: %v", err)
 		}
 	}
-	cleanWinSizeSync, err = keepWindowSizeSynced(sandboxPty)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	var outputTerm *os.File
 
 	// Find terminal to output to. In a rare case when stdout and
@@ -199,7 +151,12 @@ func ForwardPty(sandboxPty *os.File) (*Prompter, func(), error) {
 		inputTerm = os.Stdin
 	}
 
-	fwd = newForwarder(sandboxPty, outputTerm, inputTerm)
+	resized = make(chan os.Signal, 1)
+	signal.Notify(resized, syscall.SIGWINCH)
+	fwd, err = newForwarder(sandboxPty, outputTerm, inputTerm, resized)
+	if err != nil {
+		return nil, nil, err
+	}
 	success = true
 	return newPrompter(fwd), cleanup, nil
 }

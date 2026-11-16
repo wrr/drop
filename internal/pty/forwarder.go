@@ -17,6 +17,7 @@ package pty
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -57,8 +58,10 @@ type forwarder struct {
 	discardUntil time.Time
 }
 
-// newForwarder creates forwarder and takes ownership of sandboxPty.
-func newForwarder(sandboxPty, hostOutput, hostInput *os.File) *forwarder {
+// newForwarder creates forwarder and, on success, takes ownership of
+// sandboxPty. The host terminal size is copied to sandboxPty now and
+// on each value received from resized.
+func newForwarder(sandboxPty, hostOutput, hostInput *os.File, resized <-chan os.Signal) (*forwarder, error) {
 	fwd := &forwarder{
 		sandboxPty: sandboxPty,
 		hostOutput: hostOutput,
@@ -66,13 +69,17 @@ func newForwarder(sandboxPty, hostOutput, hostInput *os.File) *forwarder {
 		stopped:    make(chan struct{}),
 		paused:     make(chan struct{}),
 	}
+	if err := fwd.copyWindowSize(); err != nil {
+		return nil, fmt.Errorf("copy window size: %v", err)
+	}
 	if hostInput != nil {
 		// sandboxed pty <- host term
 		go fwd.forwardInput()
 	}
 	// host term <- sandboxed pty
 	go fwd.forwardOutput()
-	return fwd
+	go fwd.forwardResizes(resized)
+	return fwd, nil
 }
 
 // stop permanently stops the forwarder. The forwarding goroutines
@@ -189,6 +196,20 @@ func (f *forwarder) forwardOutput() {
 	}
 }
 
+// forwardResizes copies the host terminal size to the sandboxed
+// process PTY on each resize, until the forwarder is stopped.
+func (f *forwarder) forwardResizes(resized <-chan os.Signal) {
+	for {
+		select {
+		case <-resized:
+			// Ignore errors
+			f.copyWindowSize()
+		case <-f.stopped:
+			return
+		}
+	}
+}
+
 // writeOutput writes the output to the host terminal. It waits for
 // paused forwarding to resume.
 func (f *forwarder) writeOutput(output []byte) error {
@@ -268,7 +289,7 @@ func (f *forwarder) write(s string) error {
 // winSize returns the number of rows and columns of the host output
 // terminal.
 func (f *forwarder) winSize() (int, int, error) {
-	size, err := unix.IoctlGetWinsize(int(f.hostOutput.Fd()), unix.TIOCGWINSZ)
+	size, err := getWinsize(f.hostOutput)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -311,8 +332,7 @@ func (f *forwarder) readKey() (byte, error) {
 // terminal. Must be called when forwarder is not paused, so the
 // repaint isn't withheld.
 func (f *forwarder) repaint() error {
-	fd := int(f.sandboxPty.Fd())
-	size, err := unix.IoctlGetWinsize(fd, unix.TIOCGWINSZ)
+	size, err := getWinsize(f.sandboxPty)
 	if err != nil {
 		return err
 	}
@@ -321,7 +341,7 @@ func (f *forwarder) repaint() error {
 	} else {
 		size.Row++
 	}
-	if err := unix.IoctlSetWinsize(fd, unix.TIOCSWINSZ, size); err != nil {
+	if err := setWinsize(f.sandboxPty, size); err != nil {
 		return err
 	}
 	// SIGWINCH does not queue. Without the delay the program can see
@@ -330,5 +350,50 @@ func (f *forwarder) repaint() error {
 	time.Sleep(100 * time.Millisecond)
 	// The current host size, in case the terminal was actually resized
 	// during the sleep.
-	return syncWindowSize(int(f.hostOutput.Fd()), fd)
+	return f.copyWindowSize()
+}
+
+// copyWindowSize copies the host terminal size to the sandboxed
+// process PTY.
+func (f *forwarder) copyWindowSize() error {
+	ws, err := getWinsize(f.hostOutput)
+	if err != nil {
+		return err
+	}
+	return setWinsize(f.sandboxPty, ws)
+}
+
+// getWinsize returns the window size of the terminal file.
+func getWinsize(file *os.File) (*unix.Winsize, error) {
+	var ws *unix.Winsize
+	err := control(file, func(fd int) error {
+		var err error
+		ws, err = unix.IoctlGetWinsize(fd, unix.TIOCGWINSZ)
+		return err
+	})
+	return ws, err
+}
+
+// setWinsize sets the window size of the terminal file.
+func setWinsize(file *os.File, ws *unix.Winsize) error {
+	return control(file, func(fd int) error {
+		return unix.IoctlSetWinsize(fd, unix.TIOCSWINSZ, ws)
+	})
+}
+
+// control calls fn with the Unix descriptor corresponding to the
+// file. Unlike with Fd(), file can't be closed while fn runs.
+func control(file *os.File, fn func(fd int) error) error {
+	conn, err := file.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var fnErr error
+	captureFnErr := func(fd uintptr) {
+		fnErr = fn(int(fd))
+	}
+	if err := conn.Control(captureFnErr); err != nil {
+		return err
+	}
+	return fnErr
 }

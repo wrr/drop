@@ -18,14 +18,16 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
 
-// testForwarder is a forwarder connected to a real PTY, with pipes in
-// place of the host terminal.
+// testForwarder is a forwarder connected to a real PTY, with another
+// PTY as the host output terminal and a pipe as the host input.
 type testForwarder struct {
 	fwd *forwarder
 	// The sandboxed process side of the PTY.
@@ -34,6 +36,8 @@ type testForwarder struct {
 	hostOutputReader *os.File
 	// Writes the user input. Nil without an input terminal.
 	hostInputWriter *os.File
+	// Sends resize events to the forwarder.
+	resized chan os.Signal
 }
 
 func newTestForwarder(t *testing.T, withInput bool) *testForwarder {
@@ -44,10 +48,11 @@ func newTestForwarder(t *testing.T, withInput bool) *testForwarder {
 	}
 	makeRaw(t, child)
 
-	outputReader, outputWriter, err := os.Pipe()
+	outputReader, outputWriter, err := NewPty()
 	if err != nil {
 		t.Fatal(err)
 	}
+	makeRaw(t, outputWriter)
 	var inputReader, inputWriter *os.File
 	if withInput {
 		inputReader, inputWriter, err = os.Pipe()
@@ -56,7 +61,11 @@ func newTestForwarder(t *testing.T, withInput bool) *testForwarder {
 		}
 	}
 
-	fwd := newForwarder(parent, outputWriter, inputReader)
+	resized := make(chan os.Signal, 1)
+	fwd, err := newForwarder(parent, outputWriter, inputReader, resized)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		select {
 		case <-fwd.stopped:
@@ -78,6 +87,7 @@ func newTestForwarder(t *testing.T, withInput bool) *testForwarder {
 		sandboxPty:       child,
 		hostOutputReader: outputReader,
 		hostInputWriter:  inputWriter,
+		resized:          resized,
 	}
 }
 
@@ -264,5 +274,28 @@ func TestPauseErrors(t *testing.T) {
 	}
 	if err := tf.fwd.pause(); err == nil || !strings.Contains(err.Error(), "already paused") {
 		t.Errorf("expected an error for a second pause, got %v", err)
+	}
+}
+
+func TestForwardResizes(t *testing.T) {
+	tf := newTestForwarder(t, false)
+	want := &unix.Winsize{Row: 30, Col: 100}
+	if err := setWinsize(tf.hostOutputReader, want); err != nil {
+		t.Fatal(err)
+	}
+	tf.resized <- syscall.SIGWINCH
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got, err := getWinsize(tf.sandboxPty)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Row == want.Row && got.Col == want.Col {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("sandbox size %dx%d, want %dx%d", got.Col, got.Row, want.Col, want.Row)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
