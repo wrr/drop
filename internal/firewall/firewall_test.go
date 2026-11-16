@@ -32,12 +32,12 @@ type stubResolver struct {
 	lastHost string
 }
 
-func newTestFirewall(defaultAction, askFallback Action, d dialog) (*Firewall, *stubResolver) {
+func newTestFirewall(defaultAction, askFallback Action, p prompter) (*Firewall, *stubResolver) {
 	resolver := &stubResolver{}
 	rules := newEmptyRuleSet(defaultAction)
 	fw := &Firewall{rules: rules, resolver: resolver, askFallback: askFallback}
-	if d != nil {
-		fw.SetDialog(d)
+	if p != nil {
+		fw.SetPrompter(p)
 	}
 	return fw, resolver
 }
@@ -84,35 +84,35 @@ func TestLookupNetIPRejectsDeniedDomain(t *testing.T) {
 	}
 }
 
-// fakeDialog waits in Ask until the test presses a key with Answer,
+// fakePrompter waits in Ask until the test presses a key with Answer,
 // or fails with err.
-type fakeDialog struct {
+type fakePrompter struct {
 	err     error
 	answers chan byte
 	asked   int
 }
 
-func newFakeDialog() *fakeDialog {
-	return &fakeDialog{answers: make(chan byte)}
+func newFakePrompter() *fakePrompter {
+	return &fakePrompter{answers: make(chan byte)}
 }
 
 // Answer blocks until Ask receives the key.
-func (d *fakeDialog) Answer(key byte) {
-	d.answers <- key
+func (p *fakePrompter) Answer(key byte) {
+	p.answers <- key
 }
 
-func (d *fakeDialog) MaxWidth() int {
+func (p *fakePrompter) MaxWidth() int {
 	return 80
 }
 
-func (d *fakeDialog) Ask(question []string, choices []pty.Choice) (pty.Choice, error) {
-	d.asked++
-	if d.err != nil {
-		return pty.Choice{}, d.err
+func (p *fakePrompter) Ask(question []string, choices []pty.Choice) (pty.Choice, error) {
+	p.asked++
+	if p.err != nil {
+		return pty.Choice{}, p.err
 	}
 	var key byte
 	select {
-	case key = <-d.answers:
+	case key = <-p.answers:
 	// An unexpected question fails the test instead of blocking it.
 	case <-time.After(10 * time.Second):
 		return pty.Choice{}, errors.New("not answered")
@@ -136,8 +136,8 @@ func lookupDenied(t *testing.T, fw *Firewall, domain string) bool {
 }
 
 func TestLookupNetIPAllowAndDenyRules(t *testing.T) {
-	d := newFakeDialog()
-	fw, _ := newTestFirewall(Ask, Deny, d)
+	p := newFakePrompter()
+	fw, _ := newTestFirewall(Ask, Deny, p)
 	fw.rules.Add(Rule{domain: "allowed.com", action: Allow})
 	fw.rules.Add(Rule{domain: "denied.com", action: Deny})
 	if lookupDenied(t, fw, "allowed.com.") {
@@ -146,8 +146,8 @@ func TestLookupNetIPAllowAndDenyRules(t *testing.T) {
 	if !lookupDenied(t, fw, "denied.com.") {
 		t.Error("denied.com allowed")
 	}
-	if d.asked != 0 {
-		t.Errorf("asked %d times, want 0", d.asked)
+	if p.asked != 0 {
+		t.Errorf("asked %d times, want 0", p.asked)
 	}
 }
 
@@ -162,9 +162,9 @@ func TestLookupNetIPAsks(t *testing.T) {
 		{'D', true},
 	}
 	for _, c := range cases {
-		d := newFakeDialog()
-		fw, _ := newTestFirewall(Ask, Allow, d)
-		go d.Answer(c.key)
+		p := newFakePrompter()
+		fw, _ := newTestFirewall(Ask, Allow, p)
+		go p.Answer(c.key)
 		if got := lookupDenied(t, fw, "example.com."); got != c.deny {
 			t.Errorf("key %q: denied = %v, want %v", c.key, got, c.deny)
 		}
@@ -172,13 +172,13 @@ func TestLookupNetIPAsks(t *testing.T) {
 		if got := lookupDenied(t, fw, "example.com."); got != c.deny {
 			t.Errorf("key %q: second denied = %v, want %v", c.key, got, c.deny)
 		}
-		if d.asked != 1 {
-			t.Errorf("key %q: asked %d times, want 1", c.key, d.asked)
+		if p.asked != 1 {
+			t.Errorf("key %q: asked %d times, want 1", c.key, p.asked)
 		}
 	}
 }
 
-func TestLookupNetIPUsesFallbackWithoutDialog(t *testing.T) {
+func TestLookupNetIPUsesFallbackWithoutPrompter(t *testing.T) {
 	for _, fallback := range []Action{Allow, Deny} {
 		fw, _ := newTestFirewall(Ask, fallback, nil)
 		if got := lookupDenied(t, fw, "example.com."); got != (fallback == Deny) {
@@ -187,36 +187,36 @@ func TestLookupNetIPUsesFallbackWithoutDialog(t *testing.T) {
 	}
 }
 
-func TestLookupNetIPUsesFallbackOnDialogError(t *testing.T) {
+func TestLookupNetIPUsesFallbackOnPrompterError(t *testing.T) {
 	for _, fallback := range []Action{Allow, Deny} {
-		d := newFakeDialog()
-		d.err = errors.New("terminal too small")
-		fw, _ := newTestFirewall(Ask, fallback, d)
+		p := newFakePrompter()
+		p.err = errors.New("terminal too small")
+		fw, _ := newTestFirewall(Ask, fallback, p)
 		if got := lookupDenied(t, fw, "example.com."); got != (fallback == Deny) {
 			t.Errorf("fallback %v: denied = %v", fallback, got)
 		}
 		// No answer is remembered, so the next query asks again.
 		lookupDenied(t, fw, "example.com.")
-		if d.asked != 2 {
-			t.Errorf("fallback %v: asked %d times, want 2", fallback, d.asked)
+		if p.asked != 2 {
+			t.Errorf("fallback %v: asked %d times, want 2", fallback, p.asked)
 		}
 	}
 }
 
 func TestLookupNetIPAsksOnceForConcurrentQueries(t *testing.T) {
 	results := make([]bool, 5)
-	d := newFakeDialog()
-	fw, _ := newTestFirewall(Ask, Allow, d)
+	p := newFakePrompter()
+	fw, _ := newTestFirewall(Ask, Allow, p)
 	var wg sync.WaitGroup
 	for i := range results {
 		wg.Go(func() {
 			results[i] = lookupDenied(t, fw, "example.com.")
 		})
 	}
-	d.Answer('d')
+	p.Answer('d')
 	wg.Wait()
-	if d.asked != 1 {
-		t.Errorf("asked %d times, want 1", d.asked)
+	if p.asked != 1 {
+		t.Errorf("asked %d times, want 1", p.asked)
 	}
 	for i, denied := range results {
 		if !denied {

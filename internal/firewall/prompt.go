@@ -29,8 +29,8 @@ var promptChoices = []pty.Choice{
 	{Key: 'D', Label: "[D]eny always", Answer: "always denied"},
 }
 
-// dialog shows questions to the user.
-type dialog interface {
+// prompter shows questions to the user.
+type prompter interface {
 	// MaxWidth returns how long question lines can be, longer lines make
 	// Ask fail.
 	MaxWidth() int
@@ -40,9 +40,9 @@ type dialog interface {
 // question returns the question lines, with the domain shortened to
 // fit maxWidth.
 //
-// The fixed text is not shortened. On terminals too narrow for
-// "Allow connections to", the dialog fails and the ask_fallback
-// setting applies.
+// The fixed text is not shortened. On terminals too narrow for "Allow
+// connections to", the Ask fails and the ask_fallback setting
+// applies.
 func question(domain string, addr netip.Addr, port int, proto string, maxWidth int) []string {
 	target := domain
 	if target == "" {

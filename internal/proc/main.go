@@ -205,14 +205,14 @@ func Main() error {
 			ptyError = result.err
 			if ptyError == nil {
 				var cleanForwardPty func()
-				var dialog *pty.Dialog
-				dialog, cleanForwardPty, ptyError = pty.ForwardPty(result.parentPty)
+				var prompter *pty.Prompter
+				prompter, cleanForwardPty, ptyError = pty.ForwardPty(result.parentPty)
 				if ptyError == nil {
 					if cleanForwardPty != nil {
 						defer cleanForwardPty()
 					}
 					if fw != nil {
-						fw.SetDialog(dialog)
+						fw.SetPrompter(prompter)
 					}
 				}
 			}

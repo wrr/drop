@@ -38,13 +38,13 @@ type Choice struct {
 	Answer string
 }
 
-// Dialog shows questions to the user on the terminal.
-type Dialog struct {
+// Prompter shows questions to the user on the terminal.
+type Prompter struct {
 	fwd *forwarder
 }
 
-func newDialog(fwd *forwarder) *Dialog {
-	return &Dialog{
+func newPrompter(fwd *forwarder) *Prompter {
+	return &Prompter{
 		fwd: fwd,
 	}
 }
@@ -52,8 +52,8 @@ func newDialog(fwd *forwarder) *Dialog {
 // MaxWidth returns how long the question lines can be, 0 if the
 // terminal size is not known. It's a hint for formatting the question:
 // Ask returns an error instead of showing a question with longer lines.
-func (d *Dialog) MaxWidth() int {
-	_, cols, err := d.fwd.winSize()
+func (p *Prompter) MaxWidth() int {
+	_, cols, err := p.fwd.winSize()
 	if err != nil {
 		return 0
 	}
@@ -63,24 +63,24 @@ func (d *Dialog) MaxWidth() int {
 // Ask displays a dialog window to the user with the question lines,
 // each at most MaxWidth long, and choices describing the possible
 // answers. Returns the choice selected by the user.
-func (d *Dialog) Ask(question []string, choices []Choice) (Choice, error) {
-	if err := d.fwd.pause(); err != nil {
+func (p *Prompter) Ask(question []string, choices []Choice) (Choice, error) {
+	if err := p.fwd.pause(); err != nil {
 		return Choice{}, err
 	}
 	var dismiss func(Choice)
 	defer func() {
-		d.fwd.resume()
+		p.fwd.resume()
 		if dismiss != nil {
-			d.fwd.repaint()
+			p.fwd.repaint()
 		}
 	}()
 	var err error
-	dismiss, err = d.show(question, choices)
+	dismiss, err = p.show(question, choices)
 	if err != nil {
 		return Choice{}, err
 	}
 	for {
-		key, err := d.fwd.readKey()
+		key, err := p.fwd.readKey()
 		if err != nil {
 			dismiss(Choice{})
 			return Choice{}, err
@@ -103,8 +103,8 @@ func choiceWithKey(key byte, choices []Choice) (Choice, bool) {
 
 // show displays the question to the user. Returns a function to
 // dismiss the question.
-func (d *Dialog) show(question []string, choices []Choice) (func(Choice), error) {
-	rows, cols, err := d.fwd.winSize()
+func (p *Prompter) show(question []string, choices []Choice) (func(Choice), error) {
+	rows, cols, err := p.fwd.winSize()
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (d *Dialog) show(question []string, choices []Choice) (func(Choice), error)
 	if err != nil {
 		return nil, err
 	}
-	if err := d.fwd.write(s); err != nil {
+	if err := p.fwd.write(s); err != nil {
 		return nil, err
 	}
 
@@ -127,7 +127,7 @@ func (d *Dialog) show(question []string, choices []Choice) (func(Choice), error)
 		}
 		restore.WriteString(restoreCursor)
 		// Ignore error
-		d.fwd.write(restore.String())
+		p.fwd.write(restore.String())
 	}
 
 	return dismiss, nil

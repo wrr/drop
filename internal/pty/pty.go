@@ -135,7 +135,7 @@ func keepWindowSizeSynced(termToSync *os.File) (func(), error) {
 // The function takes ownership of sandboxPty.
 // The function returns error if none of stdin, stdout,
 // stderr of the calling process is a terminal (PtyNeeded returns false).
-func ForwardPty(sandboxPty *os.File) (*Dialog, func(), error) {
+func ForwardPty(sandboxPty *os.File) (*Prompter, func(), error) {
 	var (
 		origState        *term.State
 		cleanWinSizeSync func()
@@ -201,7 +201,7 @@ func ForwardPty(sandboxPty *os.File) (*Dialog, func(), error) {
 
 	fwd = newForwarder(sandboxPty, outputTerm, inputTerm)
 	success = true
-	return newDialog(fwd), cleanup, nil
+	return newPrompter(fwd), cleanup, nil
 }
 
 // ReplaceTerminal finds which of the stdin, stdout, stderr descriptors

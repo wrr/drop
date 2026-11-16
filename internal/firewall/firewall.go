@@ -45,10 +45,10 @@ type Firewall struct {
 	askFallback Action
 	// Held while the user is asked, so only one question is shown at a
 	// time and questions for the same target (for example DNS retries)
-	// do not result in multiple prompts. Guards dialog.
+	// do not result in multiple prompts. Guards prompter.
 	askMu sync.Mutex
-	// Nil until set with SetDialog.
-	dialog dialog
+	// Nil until set with SetPrompter.
+	prompter prompter
 }
 
 // New creates and starts the firewall configured by cfg, which filters
@@ -98,12 +98,12 @@ func New(pid int, cfg *config.Firewall, rules *RuleSet, resolver dns.Resolver) (
 	}, nil
 }
 
-// SetDialog sets the dialog to ask the user about the Ask rules. Safe
+// SetPrompter sets the prompter to ask the user about the Ask rules. Safe
 // to call concurrently, meant to be called once.
-func (f *Firewall) SetDialog(d dialog) {
+func (f *Firewall) SetPrompter(p prompter) {
 	f.askMu.Lock()
 	defer f.askMu.Unlock()
-	f.dialog = d
+	f.prompter = p
 }
 
 // Stop closes Firewall sockets. After stopping the Firewall existing
@@ -142,9 +142,9 @@ func (f *Firewall) shouldDeny(domain string) bool {
 	if action != Ask {
 		return action == Deny
 	}
-	if f.dialog != nil {
-		q := question(domain, netip.Addr{}, 0, "", f.dialog.MaxWidth())
-		choice, err := f.dialog.Ask(q, promptChoices)
+	if f.prompter != nil {
+		q := question(domain, netip.Addr{}, 0, "", f.prompter.MaxWidth())
+		choice, err := f.prompter.Ask(q, promptChoices)
 		if err != nil {
 			info("prompt: %v", err)
 			return f.askFallback == Deny
