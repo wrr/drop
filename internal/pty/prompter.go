@@ -67,26 +67,27 @@ func (p *Prompter) Ask(question []string, choices []Choice) (Choice, error) {
 	if err := p.fwd.pause(); err != nil {
 		return Choice{}, err
 	}
-	var dismiss func(Choice)
+	var d *dialog
 	defer func() {
+		if d != nil {
+			d.dismiss()
+		}
 		p.fwd.resume()
-		if dismiss != nil {
+		if d != nil {
 			p.fwd.repaint()
 		}
 	}()
 	var err error
-	dismiss, err = p.show(question, choices)
+	d, err = showDialog(p.fwd, question, choices)
 	if err != nil {
 		return Choice{}, err
 	}
 	for {
 		key, err := p.fwd.readKey()
 		if err != nil {
-			dismiss(Choice{})
 			return Choice{}, err
 		}
 		if choice, ok := choiceWithKey(key, choices); ok {
-			dismiss(choice)
 			return choice, nil
 		}
 	}
@@ -101,36 +102,58 @@ func choiceWithKey(key byte, choices []Choice) (Choice, bool) {
 	return Choice{}, false
 }
 
-// show displays the question to the user. Returns a function to
-// dismiss the question.
-func (p *Prompter) show(question []string, choices []Choice) (func(Choice), error) {
-	rows, cols, err := p.fwd.winSize()
-	if err != nil {
+// dialog is one question shown on the terminal, with the geometry
+// needed to redraw or erase it.
+type dialog struct {
+	fwd      *forwarder
+	question []string
+	choices  []Choice
+
+	rows, boxRows int
+}
+
+func showDialog(fwd *forwarder, question []string, choices []Choice) (*dialog, error) {
+	d := &dialog{
+		fwd:      fwd,
+		question: question,
+		choices:  choices,
+	}
+	if err := d.show(); err != nil {
 		return nil, err
 	}
-	lines := make([]string, len(question))
-	for i, line := range question {
+	return d, nil
+}
+
+func (d *dialog) show() error {
+	rows, cols, err := d.fwd.winSize()
+	if err != nil {
+		return err
+	}
+	lines := make([]string, len(d.question))
+	for i, line := range d.question {
 		lines[i] = sanitize(line)
 	}
-	s, boxRows, err := questionBox(lines, answerRows(choices), rows, cols)
+	s, boxRows, err := questionBox(lines, answerRows(d.choices), rows, cols)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := p.fwd.write(s); err != nil {
-		return nil, err
+	if err := d.fwd.write(s); err != nil {
+		return err
 	}
+	d.rows = rows
+	d.boxRows = boxRows
+	return nil
+}
 
-	dismiss := func(c Choice) {
-		var restore strings.Builder
-		for row := rows - boxRows + 1; row <= rows; row++ {
-			restore.WriteString(clearLine(row))
-		}
-		restore.WriteString(restoreCursor)
-		// Ignore error
-		p.fwd.write(restore.String())
+// dismiss erases the dialog and restores the cursor.
+func (d *dialog) dismiss() {
+	var restore strings.Builder
+	for row := d.rows - d.boxRows + 1; row <= d.rows; row++ {
+		restore.WriteString(clearLine(row))
 	}
-
-	return dismiss, nil
+	restore.WriteString(restoreCursor)
+	// Ignore error
+	d.fwd.write(restore.String())
 }
 
 // questionBox returns the sequences that draw the question in a box
