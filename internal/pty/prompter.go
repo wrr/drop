@@ -50,23 +50,15 @@ func newPrompter(fwd *forwarder) *Prompter {
 	}
 }
 
-// MaxWidth returns how long the question lines can be, 0 if the
-// terminal size is not known. It's a hint for formatting the question:
-// Ask shows a "terminal too small" message if a question includes longer
-// lines.
-func (p *Prompter) MaxWidth() int {
-	_, cols, err := p.fwd.winSize()
-	if err != nil {
-		return 0
-	}
-	return max(cols-frameWidth, 0)
-}
-
-// Ask displays a dialog window to the user with the question lines,
-// each at most MaxWidth long, and choices describing the possible
-// answers. Returns the choice selected by the user. Fails if the
-// terminal size is not known.
-func (p *Prompter) Ask(question []string, choices []Choice) (Choice, error) {
+// Ask displays a dialog window to the user with the question and
+// choices describing the possible answers. Returns the choice selected
+// by the user. Fails if the terminal size is not known.
+//
+// formatQuestion returns the question lines, each at most maxWidth
+// long. It is called for each draw, so the lines can be reformatted
+// when the terminal is resized. If the lines are longer, a "terminal
+// too small" message is shown instead.
+func (p *Prompter) Ask(formatQuestion func(maxWidth int) []string, choices []Choice) (Choice, error) {
 	if err := p.fwd.pause(); err != nil {
 		return Choice{}, err
 	}
@@ -81,7 +73,7 @@ func (p *Prompter) Ask(question []string, choices []Choice) (Choice, error) {
 		}
 	}()
 	var err error
-	d, err = showDialog(p.fwd, question, choices)
+	d, err = showDialog(p.fwd, formatQuestion, choices)
 	if err != nil {
 		return Choice{}, err
 	}
@@ -112,16 +104,16 @@ func choiceWithKey(key byte, choices []Choice) (Choice, bool) {
 // dialog is one question shown on the terminal, with the geometry
 // needed to redraw or erase it.
 type dialog struct {
-	fwd      *forwarder
-	question []string
-	choices  []Choice
+	fwd            *forwarder
+	formatQuestion func(maxWidth int) []string
+	choices        []Choice
 
 	rows, boxRows int
 	// Terminal is too small to show the question.
 	tooSmall bool
 }
 
-func showDialog(fwd *forwarder, question []string, choices []Choice) (*dialog, error) {
+func showDialog(fwd *forwarder, formatQuestion func(maxWidth int) []string, choices []Choice) (*dialog, error) {
 	rows, cols, err := fwd.winSize()
 	if err != nil {
 		return nil, err
@@ -132,9 +124,9 @@ func showDialog(fwd *forwarder, question []string, choices []Choice) (*dialog, e
 		return nil, errors.New("terminal size unknown")
 	}
 	d := &dialog{
-		fwd:      fwd,
-		question: question,
-		choices:  choices,
+		fwd:            fwd,
+		formatQuestion: formatQuestion,
+		choices:        choices,
 	}
 	// The program may have selected the line drawing charset, by
 	// switching to G1 or loading it into G0, which would mangle the
@@ -153,8 +145,9 @@ func (d *dialog) show() error {
 	if err != nil {
 		return err
 	}
-	lines := make([]string, len(d.question))
-	for i, line := range d.question {
+	question := d.formatQuestion(max(cols-frameWidth, 0))
+	lines := make([]string, len(question))
+	for i, line := range question {
 		lines[i] = sanitize(line)
 	}
 	s, boxRows, fits := questionBox(lines, answerRows(d.choices), rows, cols)

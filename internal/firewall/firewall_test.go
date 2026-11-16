@@ -101,11 +101,7 @@ func (p *fakePrompter) Answer(key byte) {
 	p.answers <- key
 }
 
-func (p *fakePrompter) MaxWidth() int {
-	return 80
-}
-
-func (p *fakePrompter) Ask(question []string, choices []pty.Choice) (pty.Choice, error) {
+func (p *fakePrompter) Ask(formatQuestion func(maxWidth int) []string, choices []pty.Choice) (pty.Choice, error) {
 	p.asked++
 	if p.err != nil {
 		return pty.Choice{}, p.err

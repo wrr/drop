@@ -31,10 +31,10 @@ var promptChoices = []pty.Choice{
 
 // prompter shows questions to the user.
 type prompter interface {
-	// MaxWidth returns how long question lines can be. If they are
-	// longer, Ask shows a "terminal too small" message instead.
-	MaxWidth() int
-	Ask(question []string, choices []pty.Choice) (pty.Choice, error)
+	// Ask shows the question with given choices. The question lines are
+	// formatted by formatQuestion to fit within maxWidth. Returns the
+	// choice selected by the user.
+	Ask(formatQuestion func(maxWidth int) []string, choices []pty.Choice) (pty.Choice, error)
 }
 
 // question returns the question lines, with the domain shortened to
