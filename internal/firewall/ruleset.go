@@ -15,7 +15,9 @@
 package firewall
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/netip"
 	"os"
 	"strings"
@@ -54,6 +56,12 @@ func NewRuleSet(cfg *config.Firewall) (*RuleSet, error) {
 			return nil, err
 		}
 	}
+	if cfg.SavedRulesFile != "" {
+		err := addRulesFromFile(cfg.SavedRulesFile, rules)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+	}
 	return rules, nil
 }
 
@@ -72,7 +80,7 @@ func addRule(r string, rules *RuleSet) error {
 func addRulesFromFile(path string, rules *RuleSet) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("firewall rule file: %v", err)
+		return fmt.Errorf("firewall rule file: %w", err)
 	}
 	for idx, line := range strings.Split(string(content), "\n") {
 		line = strings.TrimSpace(line)

@@ -120,10 +120,12 @@ deny b.com
 allow c.com
 allow d.com`)
 	second := writeRuleFile(t, "second.rules", "deny c.com\n")
+	saved := writeRuleFile(t, "saved.rules", "allow e.com\n")
 	cfg := &config.Firewall{
-		DefaultAction: "ask",
-		RuleFiles:     []string{first, second},
-		Rules:         []string{"deny d.com"},
+		DefaultAction:  "ask",
+		RuleFiles:      []string{first, second},
+		SavedRulesFile: saved,
+		Rules:          []string{"deny d.com", "deny e.com"},
 	}
 	rs, err := NewRuleSet(cfg)
 	if err != nil {
@@ -139,7 +141,9 @@ allow d.com`)
 		{"c.com", Deny},
 		// Inline rules override files.
 		{"d.com", Deny},
-		{"e.com", Ask},
+		// Saved rules override inline rules.
+		{"e.com", Allow},
+		{"f.com", Ask},
 	}
 	for _, c := range cases {
 		if got := rs.ResolverAction(c.domain); got != c.want {
@@ -153,21 +157,38 @@ func TestNewRuleSetRuleFileErrors(t *testing.T) {
 allow a.com
 alow b.com
 `)
+	invalidErr := invalid + `:3: firewall rule "alow b.com"`
+	expectNewRuleSetErr(t, &config.Firewall{
+		DefaultAction: "ask",
+		RuleFiles:     []string{invalid},
+	}, invalidErr)
 	missing := filepath.Join(t.TempDir(), "missing.rules")
-	cases := []struct {
-		path    string
-		wantErr string
-	}{
-		{invalid, invalid + `:3: firewall rule "alow b.com"`},
-		{missing, missing},
+	missingErr := "firewall rule file: open " + missing + ": no such file or directory"
+	expectNewRuleSetErr(t, &config.Firewall{
+		DefaultAction: "ask",
+		RuleFiles:     []string{missing},
+	}, missingErr)
+	expectNewRuleSetErr(t, &config.Firewall{
+		DefaultAction:  "ask",
+		SavedRulesFile: invalid,
+	}, invalidErr)
+}
+
+func expectNewRuleSetErr(t *testing.T, cfg *config.Firewall, wantErr string) {
+	t.Helper()
+	_, err := NewRuleSet(cfg)
+	if err == nil {
+		t.Errorf("NewRuleSet(%+v): expected an error", cfg)
+	} else if !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("NewRuleSet(%+v): error %q, want %q", cfg, err, wantErr)
 	}
-	for _, c := range cases {
-		_, err := NewRuleSet(&config.Firewall{DefaultAction: "ask", RuleFiles: []string{c.path}})
-		if err == nil {
-			t.Errorf("NewRuleSet(%s): expected an error", c.path)
-		} else if !strings.Contains(err.Error(), c.wantErr) {
-			t.Errorf("NewRuleSet(%s): error %q, want %q", c.path, err, c.wantErr)
-		}
+}
+
+func TestNewRuleSetMissingSavedRulesFile(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "saved.rules")
+	cfg := &config.Firewall{DefaultAction: "ask", SavedRulesFile: missing}
+	if _, err := NewRuleSet(cfg); err != nil {
+		t.Errorf("NewRuleSet: %v", err)
 	}
 }
 
