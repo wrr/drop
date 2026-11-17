@@ -16,6 +16,8 @@ package firewall
 
 import (
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -96,6 +98,75 @@ func TestNewRuleSetErrors(t *testing.T) {
 			t.Errorf("NewRuleSet(%+v): expected an error", c.cfg)
 		} else if !strings.Contains(err.Error(), c.wantErr) {
 			t.Errorf("NewRuleSet(%+v): error %q, want %q", c.cfg, err, c.wantErr)
+		}
+	}
+}
+
+func writeRuleFile(t *testing.T, name, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestNewRuleSetRuleFiles(t *testing.T) {
+	first := writeRuleFile(t, "first.rules", `# Comment
+
+  allow a.com
+deny b.com
+   # Indented comment
+allow c.com
+allow d.com`)
+	second := writeRuleFile(t, "second.rules", "deny c.com\n")
+	cfg := &config.Firewall{
+		DefaultAction: "ask",
+		RuleFiles:     []string{first, second},
+		Rules:         []string{"deny d.com"},
+	}
+	rs, err := NewRuleSet(cfg)
+	if err != nil {
+		t.Fatalf("NewRuleSet: %v", err)
+	}
+	cases := []struct {
+		domain string
+		want   Action
+	}{
+		{"a.com", Allow},
+		{"b.com", Deny},
+		// A later file overrides an earlier one.
+		{"c.com", Deny},
+		// Inline rules override files.
+		{"d.com", Deny},
+		{"e.com", Ask},
+	}
+	for _, c := range cases {
+		if got := rs.ResolverAction(c.domain); got != c.want {
+			t.Errorf("ResolverAction(%s) = %v, want %v", c.domain, got, c.want)
+		}
+	}
+}
+
+func TestNewRuleSetRuleFileErrors(t *testing.T) {
+	invalid := writeRuleFile(t, "invalid.rules", `# Comment
+allow a.com
+alow b.com
+`)
+	missing := filepath.Join(t.TempDir(), "missing.rules")
+	cases := []struct {
+		path    string
+		wantErr string
+	}{
+		{invalid, invalid + `:3: firewall rule "alow b.com"`},
+		{missing, missing},
+	}
+	for _, c := range cases {
+		_, err := NewRuleSet(&config.Firewall{DefaultAction: "ask", RuleFiles: []string{c.path}})
+		if err == nil {
+			t.Errorf("NewRuleSet(%s): expected an error", c.path)
+		} else if !strings.Contains(err.Error(), c.wantErr) {
+			t.Errorf("NewRuleSet(%s): error %q, want %q", c.path, err, c.wantErr)
 		}
 	}
 }

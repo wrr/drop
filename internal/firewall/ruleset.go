@@ -17,6 +17,8 @@ package firewall
 import (
 	"fmt"
 	"net/netip"
+	"os"
+	"strings"
 	"sync"
 
 	"github.com/wrr/drop/internal/config"
@@ -42,14 +44,46 @@ func NewRuleSet(cfg *config.Firewall) (*RuleSet, error) {
 		return nil, err
 	}
 	rules := newEmptyRuleSet(defaultAction)
-	for _, rstr := range cfg.Rules {
-		rule, err := parseRule(rstr)
-		if err != nil {
-			return nil, fmt.Errorf("firewall rule %q: %v", rstr, err)
+	for _, path := range cfg.RuleFiles {
+		if err := addRulesFromFile(path, rules); err != nil {
+			return nil, err
 		}
-		rules.Add(rule)
+	}
+	for _, rstr := range cfg.Rules {
+		if err := addRule(rstr, rules); err != nil {
+			return nil, err
+		}
 	}
 	return rules, nil
+}
+
+// addRule parses the rule r and adds it to rules.
+func addRule(r string, rules *RuleSet) error {
+	rule, err := parseRule(r)
+	if err != nil {
+		return fmt.Errorf("firewall rule %q: %v", r, err)
+	}
+	rules.Add(rule)
+	return nil
+}
+
+// addRulesFromFile parses all rules from a path and adds them to the
+// rules.
+func addRulesFromFile(path string, rules *RuleSet) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("firewall rule file: %v", err)
+	}
+	for idx, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+		if err := addRule(line, rules); err != nil {
+			return fmt.Errorf("%s:%d: %v", path, idx+1, err)
+		}
+	}
+	return nil
 }
 
 // newEmptyRuleSet returns an empty RuleSet with defaultAction for
