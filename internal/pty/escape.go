@@ -29,6 +29,8 @@ const (
 	promptStyle   = csi + "1;33m" // Bold with yellow foreground
 )
 
+// moveTo returns the sequence that moves the cursor to the row and
+// column, both 0-based. The sequence itself is 1-based.
 func moveTo(row, col int) string {
-	return fmt.Sprintf(csi+"%d;%dH", row, col)
+	return fmt.Sprintf(csi+"%d;%dH", row+1, col+1)
 }

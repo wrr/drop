@@ -158,7 +158,7 @@ func (d *dialog) refresh() error {
 		return err
 	}
 	// Clear the whole window, ignore error
-	d.fwd.write(eraseRows(1, rows))
+	d.fwd.write(eraseRows(0, rows))
 	return d.draw(rows, cols)
 }
 
@@ -184,16 +184,16 @@ func (d *dialog) draw(rows, cols int) error {
 
 // dismiss erases the dialog and restores the cursor.
 func (d *dialog) dismiss() {
-	erase := eraseRows(d.rows-d.boxRows+1, d.rows)
+	erase := eraseRows(d.rows-d.boxRows, d.rows)
 	// Ignore error
 	d.fwd.write(erase + restoreCursor)
 }
 
-// eraseRows returns the sequences that erase rows between rowStart
-// and rowEnd inclusive.
+// eraseRows returns the sequences that erase rows in the [rowStart,
+// rowEnd) range.
 func eraseRows(rowStart, rowEnd int) string {
 	var s strings.Builder
-	for row := rowStart; row <= rowEnd; row++ {
+	for row := rowStart; row < rowEnd; row++ {
 		s.WriteString(clearLine(row))
 	}
 	return s.String()
@@ -214,7 +214,7 @@ func questionBox(lines, answers []string, rows, cols int) (string, int, bool) {
 	if questionRows > rows || needCols > cols {
 		return "", 0, false
 	}
-	top := rows - questionRows + 1
+	top := rows - questionRows
 
 	rule := strings.Repeat("─", width-2)
 
@@ -224,12 +224,12 @@ func questionBox(lines, answers []string, rows, cols int) (string, int, bool) {
 	for i, line := range lines {
 		box.WriteString(clearLine(top+1+i) + "│ " + pad(line, innerWidth) + " │")
 	}
-	box.WriteString(clearLine(rows) + "└" + rule + "┘")
+	box.WriteString(clearLine(rows-1) + "└" + rule + "┘")
 	lastLine := ""
 	if len(lines) > 0 {
 		lastLine = lines[len(lines)-1]
 	}
-	box.WriteString(moveTo(rows-1, (frameWidth/2+1)+utf8.RuneCountInString(lastLine)))
+	box.WriteString(moveTo(rows-2, frameWidth/2+utf8.RuneCountInString(lastLine)))
 	return box.String(), questionRows, true
 }
 
@@ -239,7 +239,7 @@ func questionBox(lines, answers []string, rows, cols int) (string, int, bool) {
 func tooSmallBox(rows, cols int) (string, int) {
 	msg := []rune(tooSmallMsg)
 	msg = msg[:min(len(msg), cols)]
-	return clearLine(rows) + string(msg), 1
+	return clearLine(rows-1) + string(msg), 1
 }
 
 // answerRows lays out the choice labels two per row, aligned in
@@ -274,7 +274,7 @@ func pad(text string, width int) string {
 func clearLine(row int) string {
 	// Colors are reset first, because the terminal erases with the
 	// current background color, which belongs to the sandboxed program.
-	return resetStyle + moveTo(row, 1) + eraseLine + promptStyle
+	return resetStyle + moveTo(row, 0) + eraseLine + promptStyle
 }
 
 // sanitize removes terminal control characters from s.

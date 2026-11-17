@@ -120,7 +120,7 @@ func TestTooSmallBox(t *testing.T) {
 	}
 	for _, c := range cases {
 		s, rows := tooSmallBox(5, c.cols)
-		if want := clearLine(5) + c.want; s != want {
+		if want := clearLine(4) + c.want; s != want {
 			t.Errorf("cols %d: got %q, want %q", c.cols, s, want)
 		}
 		if rows != 1 {
