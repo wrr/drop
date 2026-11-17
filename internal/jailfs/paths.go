@@ -432,42 +432,11 @@ func removeOrphanedRunDirs(runDirsPath string) error {
 // automatically released by the kernel when process exits/dies. This
 // allows to detect orphaned, unused run dirs and remove them.
 func lockRunDir(runDir string) (*os.File, error) {
-	lockPath := filepath.Join(runDir, runLockFname)
-	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return nil, fmt.Errorf("create a file: %v", err)
-	}
-	// Do not close the file, as this releases the lock. The lock should
-	// be released when the process terminates.
-
-	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-	if err != nil {
-		return nil, fmt.Errorf("lock a file %v: %v", lockPath, err)
-	}
-	return file, nil
+	return osutil.LockFile(filepath.Join(runDir, runLockFname))
 }
 
 func isRunDirLocked(runDir string) (bool, error) {
-	lockPath := filepath.Join(runDir, runLockFname)
-	file, err := os.Open(lockPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Lock file doesn't exists, runDir is not locked
-			return false, nil
-		}
-		return false, err
-	}
-	defer file.Close()
-	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-	if err != nil {
-		// File is locked by another process or another error
-		// (we just assume file is locked to avoid complex error
-		//  handling).
-		return true, nil
-	}
-	// Not locked, release the lock
-	syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
-	return false, nil
+	return osutil.IsFileLocked(filepath.Join(runDir, runLockFname))
 }
 
 func hasRunningDropInstances(runDirsPath string, envId string) (bool, error) {
