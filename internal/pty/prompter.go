@@ -78,9 +78,15 @@ func (p *Prompter) Ask(formatQuestion func(maxWidth int) []string, choices []Cho
 		return Choice{}, err
 	}
 	for {
-		key, err := p.fwd.readKey()
+		key, resized, err := p.fwd.waitEvent()
 		if err != nil {
 			return Choice{}, err
+		}
+		if resized {
+			if err := d.refresh(); err != nil {
+				return Choice{}, err
+			}
+			continue
 		}
 		if d.tooSmall {
 			// Ignore all keys, the user can't see the choices.
@@ -134,17 +140,30 @@ func showDialog(fwd *forwarder, formatQuestion func(maxWidth int) []string, choi
 	if err := fwd.write(saveCursor + selectASCII + g0ASCII); err != nil {
 		return nil, err
 	}
-	if err := d.show(); err != nil {
+	if err := d.draw(rows, cols); err != nil {
 		return nil, err
 	}
 	return d, nil
 }
 
-func (d *dialog) show() error {
+// refresh redraws the dialog after a terminal resize.
+//
+// Terminals handle resizes differently: some keep the existing lines
+// in place, some move them down, some add wrapping. To ensure
+// consistent resize behavior, the whole screen is cleared, and only
+// the dialog is redrawn at the bottom.
+func (d *dialog) refresh() error {
 	rows, cols, err := d.fwd.winSize()
 	if err != nil {
 		return err
 	}
+	// Clear the whole window, ignore error
+	d.fwd.write(eraseRows(1, rows))
+	return d.draw(rows, cols)
+}
+
+// draw draws the dialog using the given terminal size.
+func (d *dialog) draw(rows, cols int) error {
 	question := d.formatQuestion(max(cols-frameWidth, 0))
 	lines := make([]string, len(question))
 	for i, line := range question {
@@ -165,13 +184,19 @@ func (d *dialog) show() error {
 
 // dismiss erases the dialog and restores the cursor.
 func (d *dialog) dismiss() {
-	var restore strings.Builder
-	for row := d.rows - d.boxRows + 1; row <= d.rows; row++ {
-		restore.WriteString(clearLine(row))
-	}
-	restore.WriteString(restoreCursor)
+	erase := eraseRows(d.rows-d.boxRows+1, d.rows)
 	// Ignore error
-	d.fwd.write(restore.String())
+	d.fwd.write(erase + restoreCursor)
+}
+
+// eraseRows returns the sequences that erase rows between rowStart
+// and rowEnd inclusive.
+func eraseRows(rowStart, rowEnd int) string {
+	var s strings.Builder
+	for row := rowStart; row <= rowEnd; row++ {
+		s.WriteString(clearLine(row))
+	}
+	return s.String()
 }
 
 // questionBox returns the sequences that draw the question in a box

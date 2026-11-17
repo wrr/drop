@@ -51,10 +51,13 @@ type forwarder struct {
 
 	mu     sync.Mutex
 	paused chan struct{}
-	// Both channels below are nil when not paused.
+	// The channels below are nil when not paused.
 	resumed chan struct{}
 	// Receives keys captured while forwarding is paused.
-	capturedKey  chan byte
+	capturedKey chan byte
+	// Receives a value when the host terminal is resized while
+	// forwarding is paused.
+	pausedResize chan struct{}
 	discardUntil time.Time
 }
 
@@ -92,7 +95,7 @@ func (f *forwarder) stop() {
 
 // forwardInput copies the user input from the host terminal to the
 // sandboxed process PTY. When the forwarder is paused the input no
-// longer reaches the sandbox and can be retrieved with the readKey
+// longer reaches the sandbox and can be retrieved with the waitEvent
 // function.
 func (f *forwarder) forwardInput() {
 	// Writing is done in a separate goroutine, so when the sandbox
@@ -148,7 +151,7 @@ func sameBytes(input []byte) bool {
 
 // routeInput returns true if the forwarding is not paused and the
 // input should be passed to the sandboxed process. Otherwise it
-// exposes the input to Drop via the readKey function, if the input
+// exposes the input to Drop via the waitEvent function, if the input
 // is a single key, possibly pressed multiple times.
 func (f *forwarder) routeInput(input []byte) bool {
 	f.mu.Lock()
@@ -197,16 +200,32 @@ func (f *forwarder) forwardOutput() {
 }
 
 // forwardResizes copies the host terminal size to the sandboxed
-// process PTY on each resize, until the forwarder is stopped.
+// process PTY on each resize, until the forwarder is stopped. When
+// paused, the resize is also reported by waitEvent.
 func (f *forwarder) forwardResizes(resized <-chan os.Signal) {
 	for {
 		select {
 		case <-resized:
 			// Ignore errors
 			f.copyWindowSize()
+			f.notifyPausedResize()
 		case <-f.stopped:
 			return
 		}
+	}
+}
+
+// notifyPausedResize lets waitEvent return a resize.
+func (f *forwarder) notifyPausedResize() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.isPaused() {
+		return
+	}
+	select {
+	case f.pausedResize <- struct{}{}:
+	default:
+		// A resize notification is already pending.
 	}
 }
 
@@ -236,7 +255,7 @@ func (f *forwarder) writeOutput(output []byte) error {
 // resume is called. The sandboxed process keeps running, but its
 // output is no longer read (it blocks once the PTY buffer is
 // full). The user input is no longer passed to the sandbox, but
-// exposed to Drop via readKey. Drop can also write to the terminal
+// exposed to Drop via waitEvent. Drop can also write to the terminal
 // with the write function.
 func (f *forwarder) pause() error {
 	if f.hostInput == nil {
@@ -253,6 +272,7 @@ func (f *forwarder) pause() error {
 	f.discardUntil = time.Now().Add(pausedInputDiscard)
 	f.resumed = make(chan struct{})
 	f.capturedKey = make(chan byte, maxCapturedKeys)
+	f.pausedResize = make(chan struct{}, 1)
 	return nil
 }
 
@@ -273,6 +293,7 @@ func (f *forwarder) resume() {
 	f.paused = make(chan struct{})
 	close(f.capturedKey)
 	f.capturedKey = nil
+	f.pausedResize = nil
 }
 
 // write writes to paused terminal.
@@ -296,8 +317,8 @@ func (f *forwarder) winSize() (int, int, error) {
 	return int(size.Row), int(size.Col), nil
 }
 
-// readKey returns one key pressed by the user while forwarding is
-// paused.
+// waitEvent returns one key pressed by the user while forwarding is
+// paused, or resized set to true if the host terminal was resized.
 //
 // Key delivery is simplistic, to avoid complications with
 // multi-byte key parsing. It is only sufficient for the simple
@@ -308,23 +329,26 @@ func (f *forwarder) winSize() (int, int, error) {
 // whole such input chunk can be discarded, unless it contains only
 // identical keys.
 //
-// The call blocks until key is available or forwarding is resumed or
-// stopped.
-func (f *forwarder) readKey() (byte, error) {
+// The call blocks until key is available, the terminal is resized or
+// forwarding is resumed or stopped.
+func (f *forwarder) waitEvent() (key byte, resized bool, err error) {
 	f.mu.Lock()
-	ch := f.capturedKey
+	keys := f.capturedKey
+	resizes := f.pausedResize
 	f.mu.Unlock()
-	if ch == nil {
-		return 0, errors.New("forwarding not paused")
+	if keys == nil {
+		return 0, false, errors.New("forwarding not paused")
 	}
 	select {
-	case b, ok := <-ch:
+	case b, ok := <-keys:
 		if !ok {
-			return 0, errors.New("forwarding resumed")
+			return 0, false, errors.New("forwarding resumed")
 		}
-		return b, nil
+		return b, false, nil
+	case <-resizes:
+		return 0, true, nil
 	case <-f.stopped:
-		return 0, errors.New("forwarder stopped")
+		return 0, false, errors.New("forwarder stopped")
 	}
 }
 

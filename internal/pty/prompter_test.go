@@ -15,8 +15,15 @@
 package pty
 
 import (
+	"fmt"
+	"os"
 	"slices"
+	"strings"
+	"syscall"
 	"testing"
+	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestSanitize(t *testing.T) {
@@ -119,5 +126,57 @@ func TestTooSmallBox(t *testing.T) {
 		if rows != 1 {
 			t.Errorf("cols %d: rows = %d, want 1", c.cols, rows)
 		}
+	}
+}
+
+// readUntil reads from the file until the read data contains s.
+func readUntil(t *testing.T, file *os.File, s string) {
+	t.Helper()
+	file.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var got []byte
+	buf := make([]byte, 1024)
+	for !strings.Contains(string(got), s) {
+		n, err := file.Read(buf)
+		if err != nil {
+			t.Fatalf("read %q waiting for %q: %v", got, s, err)
+		}
+		got = append(got, buf[:n]...)
+	}
+}
+
+func TestAskRedrawsOnResize(t *testing.T) {
+	tf := newTestForwarder(t, true)
+	if err := setWinsize(tf.hostOutputReader, &unix.Winsize{Row: 10, Col: 40}); err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		choice Choice
+		err    error
+	}
+	done := make(chan result)
+	go func() {
+		formatQuestion := func(maxWidth int) []string {
+			return []string{fmt.Sprintf("width %d", maxWidth)}
+		}
+		choice, err := newPrompter(tf.fwd).Ask(formatQuestion, []Choice{{Key: 'y', Label: "[y]es"}})
+		done <- result{choice, err}
+	}()
+	readUntil(t, tf.hostOutputReader, "width 36")
+
+	if err := setWinsize(tf.hostOutputReader, &unix.Winsize{Row: 10, Col: 60}); err != nil {
+		t.Fatal(err)
+	}
+	tf.resized <- syscall.SIGWINCH
+	readUntil(t, tf.hostOutputReader, "width 56")
+
+	noInputDiscard(tf.fwd)
+	write(t, tf.hostInputWriter, "y")
+	select {
+	case r := <-done:
+		if r.err != nil || r.choice.Key != 'y' {
+			t.Errorf("Ask = %q, %v, want y", r.choice.Key, r.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ask didn't return")
 	}
 }

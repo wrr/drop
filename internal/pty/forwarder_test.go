@@ -133,7 +133,7 @@ func write(t *testing.T, file *os.File, data string) {
 	}
 }
 
-// noInputDiscard lets the input reach readKey right after pause.
+// noInputDiscard lets the input reach waitEvent right after pause.
 func noInputDiscard(f *forwarder) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -198,8 +198,8 @@ func TestPauseRoutesInput(t *testing.T) {
 	}
 	noInputDiscard(tf.fwd)
 	write(t, tf.hostInputWriter, "b")
-	if key, err := tf.fwd.readKey(); err != nil || key != 'b' {
-		t.Errorf("readKey = %q, %v, want b", key, err)
+	if key, _, err := tf.fwd.waitEvent(); err != nil || key != 'b' {
+		t.Errorf("waitEvent = %q, %v, want b", key, err)
 	}
 
 	tf.fwd.resume()
@@ -240,8 +240,8 @@ func TestRouteInput(t *testing.T) {
 	if n := len(f.capturedKey); n != 1 {
 		t.Fatalf("captured %d keys from repeated presses, want 1", n)
 	}
-	if b, err := f.readKey(); err != nil || b != 'a' {
-		t.Errorf("readKey = %q, %v, want a", b, err)
+	if b, _, err := f.waitEvent(); err != nil || b != 'a' {
+		t.Errorf("waitEvent = %q, %v, want a", b, err)
 	}
 
 	for range maxCapturedKeys {
@@ -253,8 +253,8 @@ func TestRouteInput(t *testing.T) {
 	if n := len(f.capturedKey); n != maxCapturedKeys {
 		t.Errorf("captured %d keys, want %d", n, maxCapturedKeys)
 	}
-	if b, err := f.readKey(); err != nil || b != 'c' {
-		t.Errorf("readKey = %q, %v, want c", b, err)
+	if b, _, err := f.waitEvent(); err != nil || b != 'c' {
+		t.Errorf("waitEvent = %q, %v, want c", b, err)
 	}
 
 	f.resume()
@@ -297,5 +297,16 @@ func TestForwardResizes(t *testing.T) {
 			t.Fatalf("sandbox size %dx%d, want %dx%d", got.Col, got.Row, want.Col, want.Row)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestWaitEventReportsResize(t *testing.T) {
+	tf := newTestForwarder(t, true)
+	if err := tf.fwd.pause(); err != nil {
+		t.Fatal(err)
+	}
+	tf.resized <- syscall.SIGWINCH
+	if _, resized, err := tf.fwd.waitEvent(); err != nil || !resized {
+		t.Errorf("waitEvent resized = %v, %v, want true", resized, err)
 	}
 }
