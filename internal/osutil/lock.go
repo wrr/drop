@@ -20,19 +20,17 @@ import (
 	"syscall"
 )
 
-// lockFile locks the file with path. Return a file handle which should
+// LockFile locks the file with path. Returns a file handle which should
 // be closed to release the lock.
 func LockFile(path string) (*os.File, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("create a file: %v", err)
+		return nil, fmt.Errorf("open lock file: %v", err)
 	}
-	// Do not close the file, as this releases the lock. The lock should
-	// be released when the process terminates.
-
 	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if err != nil {
-		return nil, fmt.Errorf("lock a file %v: %v", path, err)
+		file.Close()
+		return nil, fmt.Errorf("lock %s: %v", path, err)
 	}
 	return file, nil
 }
@@ -42,7 +40,7 @@ func IsFileLocked(path string) (bool, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Lock file doesn't exists,  not locked
+			// Lock file doesn't exist, not locked
 			return false, nil
 		}
 		return false, err
@@ -58,5 +56,4 @@ func IsFileLocked(path string) (bool, error) {
 	// Not locked, release the lock
 	syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
 	return false, nil
-
 }
