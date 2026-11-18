@@ -86,6 +86,41 @@ func TestParseRule(t *testing.T) {
 	}
 }
 
+func TestRuleString(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"deny example.com", "deny example.com"},
+		{"allow  Example.COM.", "allow example.com"},
+		{"allow registry.npmjs.org:443,21,156", "allow registry.npmjs.org:21,156,443"},
+		{"allow example.com:8443/UDP", "allow example.com:8443/udp"},
+		{"ask 73.23.75.23", "ask 73.23.75.23"},
+		{"allow 73.23.75.23:45/tcp", "allow 73.23.75.23:45/tcp"},
+		{"ask 192.168.0.0/16", "ask 192.168.0.0/16"},
+		{"allow 10.0.0.0/8:443/udp", "allow 10.0.0.0/8:443/udp"},
+		{"allow [FD00::1]", "allow [fd00::1]"},
+		{"allow [fd00::1]:80,443", "allow [fd00::1]:80,443"},
+		{"allow [fd00::/8]:443/tcp", "allow [fd00::/8]:443/tcp"},
+	}
+	for _, c := range cases {
+		r, err := parseRule(c.in)
+		if err != nil {
+			t.Fatalf("parseRule(%q): %v", c.in, err)
+		}
+		got := r.String()
+		if got != c.want {
+			t.Errorf("parseRule(%q).String() = %q, want %q", c.in, got, c.want)
+		}
+		// The result must parse back to the same rule.
+		r2, err := parseRule(got)
+		if err != nil {
+			t.Errorf("parseRule(%q): %v", got, err)
+		} else if !reflect.DeepEqual(r, r2) {
+			t.Errorf("parseRule(%q) = %+v, want %+v", got, r2, r)
+		}
+	}
+}
+
 func TestParseRuleErrors(t *testing.T) {
 	cases := []struct {
 		line, wantErr string

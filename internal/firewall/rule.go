@@ -69,6 +69,38 @@ type Rule struct {
 	proto string
 }
 
+// String returns the rule in the string format accepted by parseRule.
+func (r Rule) String() string {
+	var b strings.Builder
+	b.WriteString(r.action.String())
+	b.WriteString(" ")
+	if r.domain != "" {
+		b.WriteString(r.domain)
+	} else {
+		target := r.addr.String()
+		if r.addr.IsSingleIP() {
+			target = r.addr.Addr().String()
+		}
+		if r.addr.Addr().Is6() {
+			target = "[" + target + "]"
+		}
+		b.WriteString(target)
+	}
+	for i, port := range r.ports {
+		if i == 0 {
+			b.WriteString(":")
+		} else {
+			b.WriteString(",")
+		}
+		b.WriteString(strconv.Itoa(port))
+	}
+	if r.proto != "" {
+		b.WriteString("/")
+		b.WriteString(r.proto)
+	}
+	return b.String()
+}
+
 func (r *Rule) hasPorts() bool {
 	return len(r.ports) > 0
 }
