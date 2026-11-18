@@ -69,6 +69,17 @@ type Rule struct {
 	proto string
 }
 
+// destination of outgoing traffic.
+type destination struct {
+	// Lowercase, without the trailing dot. Empty if not known.
+	domain string
+	addr   netip.Addr
+	// 0 if unknown or the protocol has no ports.
+	port int
+	// "tcp", "udp" or empty for other protocols.
+	proto string
+}
+
 // String returns the rule in the string format accepted by parseRule.
 func (r Rule) String() string {
 	var b strings.Builder
@@ -109,20 +120,20 @@ func (r *Rule) hasProto() bool {
 	return r.proto != ""
 }
 
-// matches returns true if the rule applies to the given connection parameters.
-func (r *Rule) matches(domain string, addr netip.Addr, port int, proto string) bool {
-	if r.proto != "" && r.proto != proto {
+// matches returns true if the rule applies to the destination.
+func (r *Rule) matches(d destination) bool {
+	if r.proto != "" && r.proto != d.proto {
 		return false
 	}
 	if len(r.ports) > 0 {
-		if _, hasPort := slices.BinarySearch(r.ports, port); !hasPort {
+		if _, hasPort := slices.BinarySearch(r.ports, d.port); !hasPort {
 			return false
 		}
 	}
 	if r.domain != "" {
-		return r.domain == domain
+		return r.domain == d.domain
 	}
-	return r.addr.Contains(addr)
+	return r.addr.Contains(d.addr)
 }
 
 // compareSpecificity returns 1 if r is more specific than o, 0 if

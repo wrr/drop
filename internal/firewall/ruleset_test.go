@@ -78,8 +78,8 @@ func TestNewRuleSetAddressRule(t *testing.T) {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
 	addr := netip.MustParseAddr("1.2.3.4")
-	if got := rs.ConnectionAction("", addr, 443, "tcp"); got != Deny {
-		t.Errorf("ConnectionAction(%s) = %v, want %v", addr, got, Deny)
+	if got := rs.connectionAction(destination{addr: addr, port: 443, proto: "tcp"}); got != Deny {
+		t.Errorf("connectionAction(%s) = %v, want %v", addr, got, Deny)
 	}
 }
 
@@ -307,8 +307,8 @@ func TestConnectionAction(t *testing.T) {
 	for _, c := range cases {
 		rs := newTestRuleSet(t, Ask, c.rules)
 		addr := netip.MustParseAddr(c.addr)
-		if got := rs.ConnectionAction(c.domain, addr, c.port, "tcp"); got != c.want {
-			t.Errorf("rules %q: ConnectionAction(%q, %s, %d) = %v, want %v",
+		if got := rs.connectionAction(destination{c.domain, addr, c.port, "tcp"}); got != c.want {
+			t.Errorf("rules %q: connectionAction(%q, %s, %d) = %v, want %v",
 				c.rules, c.domain, addr, c.port, got, c.want)
 		}
 	}

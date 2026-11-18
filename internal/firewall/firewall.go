@@ -145,7 +145,7 @@ func (f *Firewall) filterDomain(domain string) Action {
 	}
 	if f.prompter != nil {
 		formatQuestion := func(maxWidth int) []string {
-			return question(domain, netip.Addr{}, 0, "", maxWidth)
+			return question(destination{domain: domain}, maxWidth)
 		}
 		choice, err := f.prompter.Ask(formatQuestion, promptChoices)
 		if err != nil {

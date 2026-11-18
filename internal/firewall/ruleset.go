@@ -234,29 +234,27 @@ func (rs *RuleSet) ResolverAction(domain string) Action {
 	return base
 }
 
-// ConnectionAction returns the action for a connection to addr and
-// port with the proto ("tcp", "udp" or empty for other protocols,
-// which match only rules without ports and protocol). domain is the
-// lowercase name without the trailing dot that addr was resolved
-// from, empty if not known.
-func (rs *RuleSet) ConnectionAction(domain string, addr netip.Addr, port int, proto string) Action {
+// connectionAction returns the action for a connection to d.
+// Protocols other than tcp and udp match only rules without ports and
+// protocol.
+func (rs *RuleSet) connectionAction(d destination) Action {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 
 	// Rules never contain IPv4-mapped addresses.
-	addr = addr.Unmap()
+	d.addr = d.addr.Unmap()
 	bestMatch := func(rules []Rule) *Rule {
 		var best *Rule
 		for i := range rules {
 			r := &rules[i]
-			if r.matches(domain, addr, port, proto) && (best == nil || r.compareSpecificity(best) >= 0) {
+			if r.matches(d) && (best == nil || r.compareSpecificity(best) >= 0) {
 				best = r
 			}
 		}
 		return best
 	}
 
-	if b := bestMatch(rs.addrRules[addr]); b != nil {
+	if b := bestMatch(rs.addrRules[d.addr]); b != nil {
 		return b.action
 	}
 	if b := bestMatch(rs.prefixRules); b != nil {
@@ -264,7 +262,7 @@ func (rs *RuleSet) ConnectionAction(domain string, addr netip.Addr, port int, pr
 	}
 
 	// Address rules win over domain rules.
-	if dr := rs.domainRules[domain]; dr != nil {
+	if dr := rs.domainRules[d.domain]; dr != nil {
 		if b := bestMatch(dr.narrow); b != nil {
 			return b.action
 		}

@@ -16,7 +16,6 @@ package firewall
 
 import (
 	"fmt"
-	"net/netip"
 	"unicode/utf8"
 
 	"github.com/wrr/drop/internal/pty"
@@ -42,15 +41,15 @@ type prompter interface {
 //
 // The fixed text is not shortened. On terminals too narrow for "Allow
 // connections to", the user is informed that the terminal is too small.
-func question(domain string, addr netip.Addr, port int, proto string, maxWidth int) []string {
-	target := domain
+func question(d destination, maxWidth int) []string {
+	target := d.domain
 	if target == "" {
-		target = addr.String()
+		target = d.addr.String()
 	}
 	details := ""
-	if port != 0 {
+	if d.port != 0 {
 		// The decision covers all ports, the port and proto are only a context.
-		details = fmt.Sprintf("(attempted: port %d/%s)", port, proto)
+		details = fmt.Sprintf("(attempted: port %d/%s)", d.port, d.proto)
 	}
 	line := "Allow connections to " + target + "?"
 	if details != "" {

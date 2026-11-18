@@ -47,29 +47,26 @@ func TestShorten(t *testing.T) {
 func TestQuestion(t *testing.T) {
 	long := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + ".c2.evil.example"
 	cases := []struct {
-		domain string
-		addr   netip.Addr
-		port   int
-		proto  string
-		width  int
-		want   []string
+		d     destination
+		width int
+		want  []string
 	}{
-		{"example.com", netip.Addr{}, 0, "", 40,
+		{destination{domain: "example.com"}, 40,
 			[]string{"Allow connections to example.com?"}},
-		{"", netip.MustParseAddr("10.0.0.1"), 443, "tcp", 80,
+		{destination{addr: netip.MustParseAddr("10.0.0.1"), port: 443, proto: "tcp"}, 80,
 			[]string{"Allow connections to 10.0.0.1? (attempted: port 443/tcp)"}},
-		{"www.example.com", netip.Addr{}, 0, "", 30,
+		{destination{domain: "www.example.com"}, 30,
 			[]string{"Allow connections to", "  www.example.com?"}},
-		{"www.example.com", netip.Addr{}, 443, "tcp", 40,
+		{destination{domain: "www.example.com", port: 443, proto: "tcp"}, 40,
 			[]string{"Allow connections to", "  www.example.com?", "  (attempted: port 443/tcp)"}},
-		{long, netip.Addr{}, 0, "", 40,
+		{destination{domain: long}, 40,
 			[]string{"Allow connections to", "  [...]bbbbbbbbbbbbbbbb.c2.evil.example?"}},
 	}
 	for _, c := range cases {
-		got := question(c.domain, c.addr, c.port, c.proto, c.width)
+		got := question(c.d, c.width)
 		if !slices.Equal(got, c.want) {
 			t.Errorf("question(%q, %v, %d, %q, %d) = %q, want %q",
-				c.domain, c.addr, c.port, c.proto, c.width, got, c.want)
+				c.d.domain, c.d.addr, c.d.port, c.d.proto, c.width, got, c.want)
 		}
 		for _, line := range got {
 			if utf8.RuneCountInString(line) > c.width {

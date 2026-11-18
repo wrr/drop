@@ -202,7 +202,7 @@ func TestRuleMatches(t *testing.T) {
 			t.Fatalf("parseRule(%q): %v", c.rule, err)
 		}
 		addr := netip.MustParseAddr(c.addr)
-		if got := r.matches(c.domain, addr, c.port, c.proto); got != c.want {
+		if got := r.matches(destination{c.domain, addr, c.port, c.proto}); got != c.want {
 			t.Errorf("%q matches(%q, %s, %d, %q) = %v, want %v",
 				c.rule, c.domain, addr, c.port, c.proto, got, c.want)
 		}
