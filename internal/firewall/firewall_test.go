@@ -18,8 +18,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -149,17 +152,20 @@ func TestLookupNetIPAllowAndDenyRules(t *testing.T) {
 
 func TestLookupNetIPAsks(t *testing.T) {
 	cases := []struct {
-		key  byte
-		deny bool
+		key       byte
+		deny      bool
+		wantSaved string
 	}{
-		{'a', false},
-		{'A', false},
-		{'d', true},
-		{'D', true},
+		{'a', false, ""},
+		{'A', false, "allow example.com\n"},
+		{'d', true, ""},
+		{'D', true, "deny example.com\n"},
 	}
 	for _, c := range cases {
 		p := newFakePrompter()
 		fw, _ := newTestFirewall(Ask, Allow, p)
+		path := filepath.Join(t.TempDir(), "saved.rules")
+		fw.rules.savedRulesFile = path
 		go p.Answer(c.key)
 		if got := lookupDenied(t, fw, "example.com."); got != c.deny {
 			t.Errorf("key %q: denied = %v, want %v", c.key, got, c.deny)
@@ -170,6 +176,14 @@ func TestLookupNetIPAsks(t *testing.T) {
 		}
 		if p.asked != 1 {
 			t.Errorf("key %q: asked %d times, want 1", c.key, p.asked)
+		}
+		// Only "always" answers are saved.
+		saved, err := os.ReadFile(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if string(saved) != c.wantSaved {
+			t.Errorf("key %q: saved %q, want %q", c.key, saved, c.wantSaved)
 		}
 	}
 }

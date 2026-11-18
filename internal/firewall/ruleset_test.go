@@ -197,6 +197,55 @@ func TestNewRuleSetMissingSavedRulesFile(t *testing.T) {
 	}
 }
 
+func TestSave(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "saved.rules")
+	cfg := &config.Firewall{DefaultAction: "ask", SavedRulesFile: path}
+	rs, err := NewRuleSet(cfg)
+	if err != nil {
+		t.Fatalf("NewRuleSet: %v", err)
+	}
+	toSave := []Rule{
+		{action: Allow, domain: "a.com", ports: []int{443}},
+		{action: Deny, addr: netip.MustParsePrefix("fd00::1/128")},
+	}
+	for _, r := range toSave {
+		if err := rs.Save(r); err != nil {
+			t.Fatalf("Save(%s): %v", r, err)
+		}
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "allow a.com:443\ndeny [fd00::1]\n"
+	if string(content) != want {
+		t.Errorf("saved rules file = %q, want %q", content, want)
+	}
+	// Save does not add rules to the set.
+	if got := rs.ResolverAction("a.com"); got != Ask {
+		t.Errorf("ResolverAction(a.com) = %v, want %v", got, Ask)
+	}
+
+	// Saved rules are loaded on the next start.
+	rs, err = NewRuleSet(cfg)
+	if err != nil {
+		t.Fatalf("NewRuleSet: %v", err)
+	}
+	if got := rs.ResolverAction("a.com"); got != Allow {
+		t.Errorf("ResolverAction(a.com) after reload = %v, want %v", got, Allow)
+	}
+}
+
+func TestSaveWithoutSavedRulesFile(t *testing.T) {
+	rs, err := NewRuleSet(&config.Firewall{DefaultAction: "ask"})
+	if err != nil {
+		t.Fatalf("NewRuleSet: %v", err)
+	}
+	if err := rs.Save(Rule{action: Allow, domain: "a.com"}); err == nil {
+		t.Error("Save: expected an error")
+	}
+}
+
 func TestResolverAction(t *testing.T) {
 	cases := []struct {
 		rules []string

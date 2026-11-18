@@ -29,7 +29,8 @@ import (
 
 // RuleSet holds indexed firewall rules. Safe for concurrent use.
 type RuleSet struct {
-	defaultAction Action
+	defaultAction  Action
+	savedRulesFile string
 
 	// mu guards all the fields below.
 	mu        sync.Mutex
@@ -58,6 +59,7 @@ func NewRuleSet(cfg *config.Firewall) (*RuleSet, error) {
 		}
 	}
 	if cfg.SavedRulesFile != "" {
+		rules.savedRulesFile = cfg.SavedRulesFile
 		err := addRulesFromFile(cfg.SavedRulesFile, rules)
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
@@ -133,6 +135,29 @@ func (rs *RuleSet) Add(r Rule) {
 	default:
 		rs.prefixRules = append(rs.prefixRules, r)
 	}
+}
+
+// Save appends the rule to the saved rules file. Does not add the rule
+// to the set.
+func (rs *RuleSet) Save(r Rule) error {
+	s := r.String()
+	if rs.savedRulesFile == "" {
+		return fmt.Errorf("cannot save '%s': no saved_rules_file", s)
+	}
+	f, err := os.OpenFile(rs.savedRulesFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
+	if err != nil {
+		return fmt.Errorf("cannot save '%s': %v", s, err)
+	}
+	// A single write, so lines appended concurrently by other Drop
+	// instances don't interleave.
+	_, err = f.Write([]byte(s + "\n"))
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return fmt.Errorf("cannot save '%s' to %s: %v", s, rs.savedRulesFile, err)
+	}
+	return nil
 }
 
 type domainRules struct {

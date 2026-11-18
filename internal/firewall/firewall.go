@@ -120,19 +120,20 @@ func (f *Firewall) LookupNetIP(ctx context.Context, network, domainRooted string
 	if !isValidDomain(domain) {
 		return nil, notFound(domainRooted, "invalid domain name")
 	}
-	if f.shouldDeny(domain) {
+	if f.filterDomain(domain) == Deny {
 		return nil, notFound(domainRooted, "firewall deny")
 	}
 	// Resolver should get rooted domain, so it doesn't expand it.
 	return f.resolver.LookupNetIP(ctx, network, domainRooted)
 }
 
-// shouldDeny reports whether a DNS query for the domain should be
-// denied, asking the user if the rules say so.
-func (f *Firewall) shouldDeny(domain string) bool {
+// filterDomain returns the action for a DNS query, Allow or Deny. If
+// the rules say Ask, prompts the user and adds a rule for the answer
+// (also saving it for "always" answers).
+func (f *Firewall) filterDomain(domain string) Action {
 	action := f.rules.ResolverAction(domain)
 	if action != Ask {
-		return action == Deny
+		return action
 	}
 	f.askMu.Lock()
 	defer f.askMu.Unlock()
@@ -140,7 +141,7 @@ func (f *Firewall) shouldDeny(domain string) bool {
 	// already been answered while waiting for the lock.
 	action = f.rules.ResolverAction(domain)
 	if action != Ask {
-		return action == Deny
+		return action
 	}
 	if f.prompter != nil {
 		formatQuestion := func(maxWidth int) []string {
@@ -149,16 +150,22 @@ func (f *Firewall) shouldDeny(domain string) bool {
 		choice, err := f.prompter.Ask(formatQuestion, promptChoices)
 		if err != nil {
 			info("prompt: %v", err)
-			return f.askFallback == Deny
+			return f.askFallback
 		}
 		action = Deny
 		if choice.Key == 'a' || choice.Key == 'A' {
 			action = Allow
 		}
-		f.rules.Add(Rule{domain: domain, action: action})
-		return action == Deny
+		rule := Rule{domain: domain, action: action}
+		f.rules.Add(rule)
+		if choice.Key == 'A' || choice.Key == 'D' {
+			if err := f.rules.Save(rule); err != nil {
+				info("%v", err)
+			}
+		}
+		return action
 	}
-	return f.askFallback == Deny
+	return f.askFallback
 }
 
 func notFound(domainRooted, reason string) error {
