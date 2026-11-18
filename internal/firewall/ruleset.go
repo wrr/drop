@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/wrr/drop/internal/config"
+	"github.com/wrr/drop/internal/osutil"
 )
 
 // RuleSet holds indexed firewall rules. Safe for concurrent use.
@@ -58,8 +59,16 @@ func NewRuleSet(cfg *config.Firewall) (*RuleSet, error) {
 	}
 	if cfg.SavedRulesFile != "" {
 		err := addRulesFromFile(cfg.SavedRulesFile, rules)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return nil, err
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				return nil, err
+			}
+			// Do not create the rules file now, so environments that never
+			// add rules do not create empty rules files, but check if the
+			// file can be created.
+			if !osutil.CanCreate(cfg.SavedRulesFile) {
+				return nil, fmt.Errorf("saved rules file %s cannot be created", cfg.SavedRulesFile)
+			}
 		}
 	}
 	return rules, nil

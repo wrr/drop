@@ -172,6 +172,11 @@ alow b.com
 		DefaultAction:  "ask",
 		SavedRulesFile: invalid,
 	}, invalidErr)
+	uncreatable := filepath.Join(t.TempDir(), "missing-dir", "saved.rules")
+	expectNewRuleSetErr(t, &config.Firewall{
+		DefaultAction:  "ask",
+		SavedRulesFile: uncreatable,
+	}, "saved rules file "+uncreatable+" cannot be created")
 }
 
 func expectNewRuleSetErr(t *testing.T, cfg *config.Firewall, wantErr string) {

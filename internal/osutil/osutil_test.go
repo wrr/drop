@@ -238,6 +238,38 @@ func TestCanRead(t *testing.T) {
 	}
 }
 
+func TestCanCreate(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "dir")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0700) })
+	path := filepath.Join(dir, "file")
+
+	tests := []struct {
+		perm os.FileMode
+		want bool
+	}{
+		{perm: 0700, want: true},
+		{perm: 0300, want: true},
+		{perm: 0500, want: false},
+		{perm: 0600, want: false},
+		{perm: 0000, want: false},
+	}
+	for _, tt := range tests {
+		if err := os.Chmod(dir, tt.perm); err != nil {
+			t.Fatal(err)
+		}
+		if got := CanCreate(path); got != tt.want {
+			t.Errorf("CanCreate(%s), dir perm %o = %v, want %v", path, tt.perm, got, tt.want)
+		}
+	}
+
+	if CanCreate(filepath.Join(dir, "missing", "file")) {
+		t.Error("CanCreate in a missing directory should be false")
+	}
+}
+
 func TestIsRootOrHomeSubPath(t *testing.T) {
 	tests := []struct {
 		path   string

@@ -50,6 +50,12 @@ func CanRead(path string) bool {
 	return unix.Access(path, unix.R_OK) == nil
 }
 
+// CanCreate returns true if the current user can create a file at
+// path. Does not check if the file already exists.
+func CanCreate(path string) bool {
+	return unix.Access(filepath.Dir(path), unix.W_OK|unix.X_OK) == nil
+}
+
 // CreateEmptyFile creates an empty file with the given
 // permissions. It fails if the file already exists. Takes umask into
 // account, so the actual permissions of the created file can be
