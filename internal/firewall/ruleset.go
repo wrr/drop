@@ -37,7 +37,7 @@ type RuleSet struct {
 	addrRules map[netip.Addr][]Rule
 	// Ranges that cover more than one address.
 	prefixRules []Rule
-	domainRules map[string]*domainRules
+	domainRules map[string]Rule
 }
 
 // NewRuleSet creates a RuleSet as configured by the cfg.
@@ -110,7 +110,7 @@ func addRulesFromFile(path string, rules *RuleSet) error {
 func newEmptyRuleSet(defaultAction Action) *RuleSet {
 	return &RuleSet{
 		addrRules:     make(map[netip.Addr][]Rule),
-		domainRules:   make(map[string]*domainRules),
+		domainRules:   make(map[string]Rule),
 		defaultAction: defaultAction,
 	}
 }
@@ -123,12 +123,7 @@ func (rs *RuleSet) Add(r Rule) {
 
 	switch {
 	case r.domain != "":
-		dr := rs.domainRules[r.domain]
-		if dr == nil {
-			dr = &domainRules{}
-			rs.domainRules[r.domain] = dr
-		}
-		dr.add(r)
+		rs.domainRules[r.domain] = r
 	case r.addr.IsSingleIP():
 		addr := r.addr.Addr()
 		rs.addrRules[addr] = append(rs.addrRules[addr], r)
@@ -160,83 +155,20 @@ func (rs *RuleSet) Save(r Rule) error {
 	return nil
 }
 
-type domainRules struct {
-	broad  Rule
-	narrow []Rule
-}
-
-func isBroad(r Rule) bool {
-	return !r.hasPorts() && !r.hasProto()
-}
-
-func (dr *domainRules) hasBroad() bool {
-	return dr.broad.domain != ""
-}
-
-// p0 and p1 must be sorted but can contain duplicates.
-func arePortsSubset(p0, p1 []int) bool {
-	i := 0
-	for _, x := range p0 {
-		for i < len(p1) && p1[i] < x {
-			i++
-		}
-		if i == len(p1) || p1[i] != x {
-			return false
-		}
-	}
-	return true
-}
-
-func (dr *domainRules) add(rule Rule) {
-	if isBroad(rule) {
-		dr.broad = rule
-		return
-	}
-	narrow := []Rule{}
-	for _, r := range dr.narrow {
-		replaced := rule.compareSpecificity(&r) == 0 &&
-			r.proto == rule.proto &&
-			arePortsSubset(r.ports, rule.ports)
-		if !replaced {
-			narrow = append(narrow, r)
-		}
-	}
-	dr.narrow = append(narrow, rule)
-}
-
 // ResolverAction returns the action for a DNS query for the domain.
 func (rs *RuleSet) ResolverAction(domain string) Action {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 
-	dr := rs.domainRules[domain]
-	if dr == nil {
-		return rs.defaultAction
+	if r, ok := rs.domainRules[domain]; ok {
+		return r.action
 	}
-	narrowAsk := false
-	for _, r := range dr.narrow {
-		if r.action == Allow {
-			// If any narrow rule allows the domain, DNS lookup is allowed.
-			return Allow
-		}
-		if r.action == Ask {
-			// If any narrow rule asks, DNS lookup will ask or be allowed.
-			narrowAsk = true
-		}
-	}
-	base := rs.defaultAction
-	if dr.hasBroad() {
-		base = dr.broad.action
-	}
-	if narrowAsk && base == Deny {
-		return Ask
-	}
-	return base
+	return rs.defaultAction
 }
 
 // connectionAction returns the action for a connection to d.
-// Protocols other than tcp and udp match only rules without ports and
-// protocol.
+// Protocols other than tcp and udp match only address rules without
+// ports and protocol.
 func (rs *RuleSet) connectionAction(d destination) Action {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
@@ -261,14 +193,9 @@ func (rs *RuleSet) connectionAction(d destination) Action {
 		return b.action
 	}
 
-	// Address rules win over domain rules.
-	if dr := rs.domainRules[d.domain]; dr != nil {
-		if b := bestMatch(dr.narrow); b != nil {
-			return b.action
-		}
-		if dr.hasBroad() {
-			return dr.broad.action
-		}
+	// Address rules take priority over domain rules.
+	if r, ok := rs.domainRules[d.domain]; ok {
+		return r.action
 	}
 	return rs.defaultAction
 }

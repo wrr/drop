@@ -53,14 +53,14 @@ func TestParseRule(t *testing.T) {
 	}{
 		{"deny telemetry.example.com",
 			Rule{action: Deny, domain: "telemetry.example.com"}},
-		{"allow registry.npmjs.org:443,21,156",
-			Rule{action: Allow, domain: "registry.npmjs.org", ports: []int{21, 156, 443}}},
-		{"allow example.com:65535",
-			Rule{action: Allow, domain: "example.com", ports: []int{65535}}},
-		{"allow example.com:8443/udp",
-			Rule{action: Allow, domain: "example.com", ports: []int{8443}, proto: "udp"}},
-		{"ask google.com/tcp",
-			Rule{action: Ask, domain: "google.com", proto: "tcp"}},
+		{"allow 192.0.2.1:443,21,156",
+			Rule{action: Allow, addr: prefix("192.0.2.1/32"), ports: []int{21, 156, 443}}},
+		{"allow 192.0.2.1:65535",
+			Rule{action: Allow, addr: prefix("192.0.2.1/32"), ports: []int{65535}}},
+		{"allow 192.0.2.1:8443/udp",
+			Rule{action: Allow, addr: prefix("192.0.2.1/32"), ports: []int{8443}, proto: "udp"}},
+		{"ask 192.0.2.0/24/tcp",
+			Rule{action: Ask, addr: prefix("192.0.2.0/24"), proto: "tcp"}},
 		{"allow EXAMPLE.com.",
 			Rule{action: Allow, domain: "example.com"}},
 		{"allow 73.23.75.23:45",
@@ -92,8 +92,8 @@ func TestRuleString(t *testing.T) {
 	}{
 		{"deny example.com", "deny example.com"},
 		{"allow  Example.COM.", "allow example.com"},
-		{"allow registry.npmjs.org:443,21,156", "allow registry.npmjs.org:21,156,443"},
-		{"allow example.com:8443/UDP", "allow example.com:8443/udp"},
+		{"allow 192.0.2.1:443,21,156", "allow 192.0.2.1:21,156,443"},
+		{"allow 192.0.2.1:8443/UDP", "allow 192.0.2.1:8443/udp"},
 		{"ask 73.23.75.23", "ask 73.23.75.23"},
 		{"allow 73.23.75.23:45/tcp", "allow 73.23.75.23:45/tcp"},
 		{"ask 192.168.0.0/16", "ask 192.168.0.0/16"},
@@ -127,11 +127,13 @@ func TestParseRuleErrors(t *testing.T) {
 	}{
 		{"allow", "expected action and target"},
 		{"maybe example.com", `invalid action "maybe"`},
-		{"allow example.com:0", `invalid port "0"`},
-		{"allow example.com:65536", `invalid port "65536"`},
-		{"allow example.com:http", `invalid port "http"`},
-		{"allow example.com/sctp", `invalid protocol "sctp"`},
-		{"allow example.com:443 forever", `unexpected "forever"`},
+		{"allow 192.0.2.1:0", `invalid port "0"`},
+		{"allow 192.0.2.1:65536", `invalid port "65536"`},
+		{"allow 192.0.2.1:http", `invalid port "http"`},
+		{"allow 192.0.2.1/sctp", `invalid protocol "sctp"`},
+		{"allow example.com forever", `unexpected "forever"`},
+		{"allow example.com:443", "ports and protocol are only supported for IP address rules"},
+		{"allow example.com/udp", "ports and protocol are only supported for IP address rules"},
 		{"ask 192.168.1.1/16", "has host bits set, expected 192.168.0.0/16"},
 		{"ask 192.168.0.0/33", `invalid address range "192.168.0.0/33"`},
 		{"allow [fe80::1%eth0]", "IPv6 zone"},
@@ -170,16 +172,19 @@ func TestRuleMatches(t *testing.T) {
 		// A protocol other than tcp and udp.
 		{"allow example.com", "example.com", "1.2.3.4", 0, "", true},
 
-		{"allow example.com:80,443", "example.com", "1.2.3.4", 443, "tcp", true},
-		{"allow example.com:80,443", "example.com", "1.2.3.4", 80, "udp", true},
-		{"allow example.com:80,443", "example.com", "1.2.3.4", 8080, "tcp", false},
+		// Domain rules apply to all ports and protocols.
+		{"allow example.com", "example.com", "1.2.3.4", 22, "udp", true},
 
-		{"allow example.com/udp", "example.com", "1.2.3.4", 53, "udp", true},
-		{"allow example.com/udp", "example.com", "1.2.3.4", 53, "tcp", false},
-		{"allow example.com/udp", "example.com", "1.2.3.4", 0, "", false},
-		{"allow example.com:53/udp", "example.com", "1.2.3.4", 53, "udp", true},
-		{"allow example.com:53/udp", "example.com", "1.2.3.4", 54, "udp", false},
-		{"allow example.com:53/udp", "example.com", "1.2.3.4", 53, "tcp", false},
+		{"allow 1.2.3.4:80,443", "", "1.2.3.4", 443, "tcp", true},
+		{"allow 1.2.3.4:80,443", "", "1.2.3.4", 80, "udp", true},
+		{"allow 1.2.3.4:80,443", "", "1.2.3.4", 8080, "tcp", false},
+
+		{"allow 1.2.3.4/udp", "", "1.2.3.4", 53, "udp", true},
+		{"allow 1.2.3.4/udp", "", "1.2.3.4", 53, "tcp", false},
+		{"allow 1.2.3.4/udp", "", "1.2.3.4", 0, "", false},
+		{"allow 1.2.3.4:53/udp", "", "1.2.3.4", 53, "udp", true},
+		{"allow 1.2.3.4:53/udp", "", "1.2.3.4", 54, "udp", false},
+		{"allow 1.2.3.4:53/udp", "", "1.2.3.4", 53, "tcp", false},
 
 		{"allow 1.2.3.4", "", "1.2.3.4", 443, "tcp", true},
 		// The domain doesn't matter for address rules.
@@ -215,24 +220,20 @@ func TestCompareSpecificity(t *testing.T) {
 		want        int
 	}{
 		// The action doesn't matter.
-		{"allow example.com", "deny example.com", 0},
-		// Address rules win over domain rules, even a /0 range over a
-		// domain with ports and protocol.
-		{"allow 1.2.3.4", "deny example.com", 1},
-		{"ask 0.0.0.0/0", "allow example.com:443/tcp", 1},
+		{"allow 1.2.3.4", "deny 1.2.3.4", 0},
 		// A longer prefix wins, regardless of ports and protocol.
 		{"allow 1.2.3.4", "deny 1.2.0.0/16:443/tcp", 1},
 		{"deny 1.2.0.0/16", "allow 1.2.3.0/24", -1},
 		{"allow [fd00::1]", "deny [fd00::/8]:443", 1},
 		// Ports win over protocol, which wins over neither.
-		{"allow example.com:443", "deny example.com/tcp", 1},
-		{"allow example.com:443/tcp", "deny example.com:443", 1},
-		{"allow example.com/udp", "deny example.com", 1},
+		{"allow 1.2.3.4:443", "deny 1.2.3.4/tcp", 1},
+		{"allow 1.2.3.4:443/tcp", "deny 1.2.3.4:443", 1},
+		{"allow 1.2.3.4/udp", "deny 1.2.3.4", 1},
 		{"allow 1.2.3.4:22", "deny 1.2.3.4", 1},
 		// The number and values of ports and the protocol don't matter.
-		{"allow example.com:443", "deny example.com:80,443,8080", 0},
-		{"allow example.com:80", "deny example.com:443", 0},
-		{"allow example.com/tcp", "deny example.com/udp", 0},
+		{"allow 1.2.3.4:443", "deny 1.2.3.4:80,443,8080", 0},
+		{"allow 1.2.3.4:80", "deny 1.2.3.4:443", 0},
+		{"allow 1.2.3.4/tcp", "deny 1.2.3.4/udp", 0},
 	}
 	for _, c := range cases {
 		r, err := parseRule(c.rule)

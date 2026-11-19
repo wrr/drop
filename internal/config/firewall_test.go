@@ -152,7 +152,7 @@ enabled = true
 default_action = "deny"
 ask_fallback = "allow"
 rule_files = ["env.rules"]
-rules = ["allow api.example.com:443"]
+rules = ["allow api.example.com"]
 `,
 				"/config/sub-dir/base.toml": `
 [net.firewall]
@@ -174,7 +174,7 @@ rules = ["deny telemetry.example.com"]
 			savedRulesFile: "/config/sub-dir/foo.rules",
 			rules: []string{
 				"deny telemetry.example.com",
-				"allow api.example.com:443",
+				"allow api.example.com",
 			},
 		},
 		{

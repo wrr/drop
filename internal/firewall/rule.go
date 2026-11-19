@@ -60,12 +60,13 @@ func parseAction(s string) (Action, error) {
 type Rule struct {
 	action Action
 	// A lowercase domain name without trailing dot, empty if addr is set.
+	// Rules with domain apply to all ports and protocols.
 	domain string
 	// An IP address or address range, invalid if domain is set.
 	addr netip.Prefix
 	// Sorted ports. Empty means all the ports.
 	ports []int
-	// "tcp" or "udp", empty means both
+	// "tcp" or "udp". Empty means all the protocols.
 	proto string
 }
 
@@ -145,7 +146,6 @@ func (r *Rule) compareSpecificity(o *Rule) int {
 		}
 		return -1
 	}
-	// Bits is -1 for domain rules, so address rules win over them.
 	if rb, ob := r.addr.Bits(), o.addr.Bits(); rb != ob {
 		return result(rb > ob)
 	}
@@ -162,10 +162,9 @@ func (r *Rule) compareSpecificity(o *Rule) int {
 // Example valid strings:
 //
 //	deny   example.com
-//	allow  registry.npmjs.org:80,443
-//	allow  example.com:8443/udp
-//	allow  home.example.com:8080
+//	allow  registry.npmjs.org
 //	allow  73.23.75.23:45
+//	allow  73.23.75.23:80,443/tcp
 //	ask    192.168.0.0/16
 //	allow  192.168.0.0/16:80/tcp
 func parseRule(line string) (Rule, error) {
@@ -238,6 +237,9 @@ func parseRule(line string) (Rule, error) {
 		r.domain = strings.TrimSuffix(target, ".")
 		if !isValidDomain(r.domain) {
 			return Rule{}, fmt.Errorf("invalid domain %q", r.domain)
+		}
+		if r.hasPorts() || r.hasProto() {
+			return Rule{}, fmt.Errorf("ports and protocol are only supported for IP address rules")
 		}
 	}
 	if bracketed && !r.addr.Addr().Is6() {

@@ -205,7 +205,7 @@ func TestSave(t *testing.T) {
 		t.Fatalf("NewRuleSet: %v", err)
 	}
 	toSave := []Rule{
-		{action: Allow, domain: "a.com", ports: []int{443}},
+		{action: Allow, domain: "a.com"},
 		{action: Deny, addr: netip.MustParsePrefix("fd00::1/128")},
 	}
 	for _, r := range toSave {
@@ -217,7 +217,7 @@ func TestSave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "allow a.com:443\ndeny [fd00::1]\n"
+	want := "allow a.com\ndeny [fd00::1]\n"
 	if string(content) != want {
 		t.Errorf("saved rules file = %q, want %q", content, want)
 	}
@@ -255,16 +255,9 @@ func TestResolverAction(t *testing.T) {
 		{[]string{"allow other.com"}, Ask},
 		{[]string{"allow example.com", "deny example.com"}, Deny},
 		{[]string{"deny example.com", "allow example.com"}, Allow},
-		{[]string{"allow example.com", "deny example.com:80"}, Allow},
-		{[]string{"deny example.com", "allow example.com:443"}, Allow},
-		{[]string{"deny example.com", "ask example.com:22"}, Ask},
-		{[]string{"allow example.com", "ask example.com:22"}, Allow},
-		// A later rule replaces an earlier one it fully covers.
-		{[]string{"deny example.com", "allow example.com:443", "deny example.com:80,443"}, Deny},
-		{[]string{"deny example.com", "allow example.com:80,443", "deny example.com:443"}, Allow},
-		{[]string{"deny example.com", "allow example.com:443/udp", "deny example.com:443/tcp"}, Allow},
-		{[]string{"deny example.com", "allow example.com/udp", "deny example.com:53/udp"}, Allow},
-		{[]string{"deny example.com", "allow example.com:443/tcp", "deny example.com:443"}, Allow},
+		{[]string{"ask example.com", "deny example.com", "allow example.com"}, Allow},
+		// Address rules don't affect DNS queries.
+		{[]string{"deny example.com", "allow 1.2.3.4"}, Deny},
 	}
 	for _, c := range cases {
 		rs := newTestRuleSet(t, Ask, c.rules)
@@ -286,21 +279,28 @@ func TestConnectionAction(t *testing.T) {
 		{[]string{"allow example.com"}, "other.com", "1.2.3.4", 443, Ask},
 		{[]string{"allow example.com"}, "example.com", "1.2.3.4", 443, Allow},
 		// Address rules win over domain rules.
-		{[]string{"deny 1.2.3.4", "allow example.com:443"}, "example.com", "1.2.3.4", 443, Deny},
-		{[]string{"ask 1.0.0.0/8", "allow example.com:443"}, "example.com", "1.2.3.4", 443, Ask},
+		{[]string{"deny 1.2.3.4", "allow example.com"}, "example.com", "1.2.3.4", 443, Deny},
+		{[]string{"ask 1.0.0.0/8", "allow example.com"}, "example.com", "1.2.3.4", 443, Ask},
+		// Domain rules apply to all ports not matched by address rules.
+		{[]string{"allow example.com"}, "example.com", "1.2.3.4", 22, Allow},
+		{[]string{"deny example.com", "allow 1.2.3.4:443"}, "example.com", "1.2.3.4", 443, Allow},
+		{[]string{"deny example.com", "allow 1.2.3.4:443"}, "example.com", "1.2.3.4", 80, Deny},
+		{[]string{"allow example.com", "deny 1.2.3.4/tcp"}, "example.com", "1.2.3.4", 443, Deny},
 		// A longer prefix wins over a shorter one.
 		{[]string{"allow 1.2.3.4", "deny 1.0.0.0/8:443"}, "", "1.2.3.4", 443, Allow},
 		{[]string{"allow 1.2.0.0/16", "deny 1.0.0.0/8"}, "", "1.2.3.4", 443, Allow},
 		{[]string{"deny 1.0.0.0/8", "allow 1.2.0.0/16"}, "", "1.2.3.4", 443, Allow},
 		// Ports win over protocol, which wins over neither.
-		{[]string{"allow example.com:443", "deny example.com"}, "example.com", "1.2.3.4", 443, Allow},
-		{[]string{"allow example.com:443", "deny example.com"}, "example.com", "1.2.3.4", 80, Deny},
-		{[]string{"allow example.com:443", "deny example.com/tcp"}, "example.com", "1.2.3.4", 443, Allow},
+		{[]string{"allow 1.2.3.4:443", "deny 1.2.3.4"}, "", "1.2.3.4", 443, Allow},
+		{[]string{"allow 1.2.3.4:443", "deny 1.2.3.4"}, "", "1.2.3.4", 80, Deny},
+		{[]string{"allow 1.2.3.4:443", "deny 1.2.3.4/tcp"}, "", "1.2.3.4", 443, Allow},
 		{[]string{"allow 1.2.3.4/tcp", "deny 1.2.3.4"}, "", "1.2.3.4", 443, Allow},
 		// Of equally specific rules, the later wins.
 		{[]string{"allow 1.2.3.4:443", "deny 1.2.3.4:80,443"}, "", "1.2.3.4", 443, Deny},
-		{[]string{"allow example.com:80,443", "deny example.com:443"}, "example.com", "1.2.3.4", 80, Allow},
-		{[]string{"allow example.com:80,443", "deny example.com:443"}, "example.com", "1.2.3.4", 443, Deny},
+		{[]string{"allow 1.2.3.4:80,443", "deny 1.2.3.4:443"}, "", "1.2.3.4", 80, Allow},
+		{[]string{"allow 1.2.3.4:80,443", "deny 1.2.3.4:443"}, "", "1.2.3.4", 443, Deny},
+		// Of domain rules, the later wins.
+		{[]string{"allow example.com", "deny example.com"}, "example.com", "1.2.3.4", 443, Deny},
 		// IPv4-mapped addresses are unmapped.
 		{[]string{"deny 1.2.3.4"}, "", "::ffff:1.2.3.4", 443, Deny},
 	}
