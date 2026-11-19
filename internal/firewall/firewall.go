@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 
@@ -37,10 +38,11 @@ import (
 const queueNum = 0
 
 type Firewall struct {
-	rules    *RuleSet
-	resolver dns.Resolver
-	nft      *nftables.Conn
-	stop     func()
+	rules         *RuleSet
+	resolver      dns.Resolver
+	nft           *nftables.Conn
+	resolvedAddrs *resolvedAddrs
+	stop          func()
 	// Used when the user can't be asked, Allow or Deny.
 	askFallback Action
 	// Held while the user is asked, so only one question is shown at a
@@ -51,11 +53,41 @@ type Firewall struct {
 	prompter prompter
 }
 
+type resolvedAddrs struct {
+	// mu guards all the fields below.
+	mu            sync.Mutex
+	addrToDomains map[netip.Addr][]string
+}
+
+func newResolvedAddrs() *resolvedAddrs {
+	return &resolvedAddrs{
+		addrToDomains: make(map[netip.Addr][]string),
+	}
+}
+
+// domains returns the domains addr was resolved for, nil if none.
+func (t *resolvedAddrs) domains(addr netip.Addr) []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// A copy, so callers can't modify the slice outside of the lock.
+	return slices.Clone(t.addrToDomains[addr])
+}
+
+func (t *resolvedAddrs) add(domain string, addrs []netip.Addr) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, addr := range addrs {
+		if !slices.Contains(t.addrToDomains[addr], domain) {
+			t.addrToDomains[addr] = append(t.addrToDomains[addr], domain)
+		}
+	}
+}
+
 // New creates and starts the firewall configured by cfg, which filters
 // traffic according to the rules. Installs nftables rules in the
 // network namespace of the process pid, which send the first packet
-// of each new connection to a queue. The queue allows each connection
-// attempt.
+// of each new connection to a queue. The queue allows or denies each
+// connection attempt according to the rules.
 //
 // The caller should call the Firewall.Stop() function on program
 // termination.
@@ -85,17 +117,19 @@ func New(pid int, cfg *config.Firewall, rules *RuleSet, resolver dns.Resolver) (
 		return nil, err
 	}
 
-	if err := serveQueue(ctx, queue); err != nil {
+	fw := Firewall{
+		rules:         rules,
+		resolver:      resolver,
+		nft:           nft,
+		resolvedAddrs: newResolvedAddrs(),
+		stop:          stop,
+		askFallback:   askFallback,
+	}
+	if err := fw.serveQueue(ctx, queue); err != nil {
 		return nil, err
 	}
 	success = true
-	return &Firewall{
-		rules:       rules,
-		resolver:    resolver,
-		nft:         nft,
-		stop:        stop,
-		askFallback: askFallback,
-	}, nil
+	return &fw, nil
 }
 
 // SetPrompter sets the prompter to ask the user about the Ask rules. Safe
@@ -124,12 +158,16 @@ func (f *Firewall) LookupNetIP(ctx context.Context, network, domainRooted string
 		return nil, notFound(domainRooted, "firewall deny")
 	}
 	// Resolver should get rooted domain, so it doesn't expand it.
-	return f.resolver.LookupNetIP(ctx, network, domainRooted)
+	addrs, err := f.resolver.LookupNetIP(ctx, network, domainRooted)
+	if err == nil {
+		f.resolvedAddrs.add(domain, addrs)
+	}
+	return addrs, err
 }
 
 // filterDomain returns the action for a DNS query, Allow or Deny. If
-// the rules say Ask, prompts the user and adds a rule for the answer
-// (also saving it for "always" answers).
+// the rules require Ask, prompts the user and handles the user
+// answer.
 func (f *Firewall) filterDomain(domain string) Action {
 	action := f.rules.ResolverAction(domain)
 	if action != Ask {
@@ -137,35 +175,128 @@ func (f *Firewall) filterDomain(domain string) Action {
 	}
 	f.askMu.Lock()
 	defer f.askMu.Unlock()
-	// Each prompt answer adds a rule, so the same question could have
-	// already been answered while waiting for the lock.
+	// The same question could have already been answered while waiting
+	// for the lock.
 	action = f.rules.ResolverAction(domain)
-	if action != Ask {
-		return action
-	}
-	if f.prompter != nil {
+	if action == Ask {
 		formatQuestion := func(maxWidth int) []string {
-			return question(destination{domain: domain}, maxWidth)
+			return resolverQuestion(domain, maxWidth)
 		}
-		choice, err := f.prompter.Ask(formatQuestion, promptChoices)
-		if err != nil {
-			info("prompt: %v", err)
-			return f.askFallback
-		}
-		action = Deny
-		if choice.Key == 'a' || choice.Key == 'A' {
-			action = Allow
-		}
-		rule := Rule{domain: domain, action: action}
-		f.rules.Add(rule)
-		if choice.Key == 'A' || choice.Key == 'D' {
-			if err := f.rules.Save(rule); err != nil {
-				info("%v", err)
-			}
-		}
-		return action
+		action = f.ask(destination{domain: domain}, formatQuestion)
 	}
-	return f.askFallback
+	return action
+}
+
+func (f *Firewall) serveQueue(ctx context.Context, queue *nfqueue.Nfqueue) error {
+	handle := func(a nfqueue.Attribute) int {
+		if a.PacketID == nil {
+			return 0
+		}
+		// Process concurrently, so other packets are not blocked when a
+		// firewall prompt is shown.
+		go func() {
+			verdict := nfqueue.NfDrop
+			if a.Payload == nil {
+				info("packet without payload")
+			} else if dst, err := parseDestination(*a.Payload); err != nil {
+				info("parse destination error: %v", err)
+			} else {
+				action := f.filterConnection(dst)
+				if action == Allow {
+					verdict = nfqueue.NfAccept
+				}
+			}
+			if err := queue.SetVerdict(*a.PacketID, verdict); err != nil {
+				info("set verdict: %v", err)
+			}
+		}()
+		// Keep reading.
+		return 0
+	}
+	// Called for errors reading the queue.
+	handleErr := func(err error) int {
+		// Stopping the firewall (ctx.Err() != nil) makes the pending
+		// read fail; that error is expected and not logged.
+		if ctx.Err() == nil {
+			info("queue: %v", err)
+		}
+		// Keep reading. A transient error should not stop the firewall,
+		// which would block all new connections.
+		return 0
+	}
+	if err := queue.RegisterWithErrorFunc(ctx, handle, handleErr); err != nil {
+		return fmt.Errorf("register nfqueue handler: %v", err)
+	}
+	return nil
+}
+
+// filterConnection returns the action for an outgoing connection,
+// Allow or Deny. If the rules require Ask, prompts the user and
+// handles the user answer.
+func (f *Firewall) filterConnection(dst destination) Action {
+	domains := f.resolvedAddrs.domains(dst.addr)
+	if len(domains) > 0 {
+		// Set the last domain that resolved to this address. All
+		// the resolved domains are allowed.
+		dst.domain = domains[len(domains)-1]
+	}
+	action := f.rules.connectionAction(dst)
+	if action == Ask {
+		f.askMu.Lock()
+		defer f.askMu.Unlock()
+		// The same question could have already been answered while
+		// waiting for the lock.
+		action = f.rules.connectionAction(dst)
+		if action == Ask {
+			formatQuestion := func(maxWidth int) []string {
+				return connectionQuestion(dst, domains, maxWidth)
+			}
+			action = f.ask(dst, formatQuestion)
+		}
+	}
+	return action
+}
+
+func (f *Firewall) ask(dst destination, formatQuestion func(maxWidth int) []string) Action {
+	if f.prompter == nil {
+		return f.askFallback
+	}
+	choice, err := f.prompter.Ask(formatQuestion, promptChoices)
+	if err != nil {
+		info("prompt: %v", err)
+		return f.askFallback
+	}
+	action := Deny
+	if choice.Key == 'a' || choice.Key == 'A' {
+		action = Allow
+	}
+	rule := answerRule(action, dst)
+	f.rules.Add(rule)
+	if choice.Key == 'A' || choice.Key == 'D' {
+		if err := f.rules.Save(rule); err != nil {
+			info("%v", err)
+		}
+	}
+	return action
+}
+
+// answerRule returns the rule for the user's answer to the question
+// about dst. For connections, the rule covers only dst's address, port
+// and protocol. For DNS queries (no address), the whole domain.
+func answerRule(action Action, dst destination) Rule {
+	r := Rule{
+		action: action,
+	}
+	if dst.hasAddr() {
+		r.addr = netip.PrefixFrom(dst.addr, dst.addr.BitLen())
+		if dst.port != 0 {
+			r.ports = []int{dst.port}
+		}
+		r.proto = dst.proto
+	} else {
+		r.domain = dst.domain
+	}
+	return r
 }
 
 func notFound(domainRooted, reason string) error {
@@ -232,34 +363,6 @@ func installRules(nft *nftables.Conn) error {
 	})
 	if err := nft.Flush(); err != nil {
 		return fmt.Errorf("install nftables rules: %v", err)
-	}
-	return nil
-}
-
-func serveQueue(ctx context.Context, queue *nfqueue.Nfqueue) error {
-	handle := func(a nfqueue.Attribute) int {
-		if a.PacketID == nil {
-			return 0
-		}
-		if err := queue.SetVerdict(*a.PacketID, nfqueue.NfAccept); err != nil {
-			info("set verdict: %v", err)
-		}
-		// Keep reading.
-		return 0
-	}
-	// Called for errors reading the queue.
-	handleErr := func(err error) int {
-		// Stopping the firewall (ctx.Err() != nil) makes the pending
-		// read fail; that error is expected and not logged.
-		if ctx.Err() == nil {
-			info("queue: %v", err)
-		}
-		// Keep reading. A transient error should not stop the firewall,
-		// which would block all new connections.
-		return 0
-	}
-	if err := queue.RegisterWithErrorFunc(ctx, handle, handleErr); err != nil {
-		return fmt.Errorf("register nfqueue handler: %v", err)
 	}
 	return nil
 }

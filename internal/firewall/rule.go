@@ -81,6 +81,10 @@ type destination struct {
 	proto string
 }
 
+func (d destination) hasAddr() bool {
+	return d.addr.IsValid()
+}
+
 // String returns the rule in the string format accepted by parseRule.
 func (r Rule) String() string {
 	var b strings.Builder

@@ -16,6 +16,7 @@ package firewall
 
 import (
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/wrr/drop/internal/pty"
@@ -36,35 +37,59 @@ type prompter interface {
 	Ask(formatQuestion func(maxWidth int) []string, choices []pty.Choice) (pty.Choice, error)
 }
 
-// question returns the question lines, with the domain shortened to
-// fit maxWidth.
+// resolverQuestion returns the question lines for a DNS query domain,
+// with the domain shortened to fit maxWidth.
 //
 // The fixed text is not shortened. On terminals too narrow for "Allow
 // connections to", the user is informed that the terminal is too small.
-func question(d destination, maxWidth int) []string {
-	target := d.domain
-	if target == "" {
-		target = d.addr.String()
-	}
-	details := ""
-	if d.port != 0 {
-		// The decision covers all ports, the port and proto are only a context.
-		details = fmt.Sprintf("(attempted: port %d/%s)", d.port, d.proto)
-	}
-	line := "Allow connections to " + target + "?"
-	if details != "" {
-		line += " " + details
-	}
+func resolverQuestion(domain string, maxWidth int) []string {
+	line := "Allow connections to " + domain + "?"
 	if utf8.RuneCountInString(line) <= maxWidth {
 		return []string{line}
 	}
 	const indent = "  "
 	lines := []string{
 		"Allow connections to",
-		indent + shorten(target, maxWidth-len(indent)-len("?")) + "?",
+		indent + shorten(domain, maxWidth-len(indent)-len("?")) + "?",
 	}
-	if details != "" {
-		lines = append(lines, indent+details)
+	return lines
+}
+
+// connectionQuestion returns the question lines for a new connection
+// to the destination d.
+// domains, which resolved to d's address in the order given, are
+// shown as context, the most recently resolved first.
+func connectionQuestion(d destination, domains []string, maxWidth int) []string {
+	addr := d.addr.String()
+	details := ""
+	if d.port != 0 {
+		details += fmt.Sprintf(" port %d", d.port)
+	}
+	if d.proto != "" {
+		details += "/" + d.proto
+	}
+	const indent = "  "
+	lines := []string{fmt.Sprintf("Allow connections to %s%s?", addr, details)}
+	if utf8.RuneCountInString(lines[0]) > maxWidth {
+		lines = []string{
+			"Allow connections to",
+			indent + addr,
+		}
+		if len(details) > 0 {
+			lines = append(lines, indent+strings.TrimSpace(details))
+		}
+		lines[len(lines)-1] += "?"
+	}
+	prefix := indent + "Address of: "
+	const maxDomains = 7
+	for i := 0; i < len(domains) && i < maxDomains; i++ {
+		item := domains[len(domains)-1-i]
+		if i == maxDomains-1 && len(domains) > maxDomains {
+			item = fmt.Sprintf("+%d more", len(domains)-i)
+		}
+		line := prefix + shorten(item, maxWidth-len(prefix))
+		lines = append(lines, line)
+		prefix = strings.Repeat(" ", len(prefix))
 	}
 	return lines
 }
