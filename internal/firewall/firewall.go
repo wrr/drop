@@ -37,6 +37,9 @@ import (
 
 const queueNum = 0
 
+// The kernel always gives lo index 1 in every network namespace.
+const loopbackIfindex = 1
+
 type Firewall struct {
 	rules         *RuleSet
 	resolver      dns.Resolver
@@ -69,7 +72,8 @@ func newResolvedAddrs() *resolvedAddrs {
 func (t *resolvedAddrs) domains(addr netip.Addr) []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	// A copy, so callers can't modify the slice outside of the lock.
+	// A copy, so callers can't modify the slice without holding the
+	// lock.
 	return slices.Clone(t.addrToDomains[addr])
 }
 
@@ -281,8 +285,8 @@ func (f *Firewall) ask(dst destination, formatQuestion func(maxWidth int) []stri
 }
 
 // answerRule returns the rule for the user's answer to the question
-// about dst. For connections, the rule covers only dst's address, port
-// and protocol. For DNS queries (no address), the whole domain.
+// about dst. For connections, the rule covers dst's address, port
+// and protocol. For DNS queries, the whole domain.
 func answerRule(action Action, dst destination) Rule {
 	r := Rule{
 		action: action,
@@ -355,6 +359,13 @@ func installRules(nft *nftables.Conn) error {
 			accept(),
 		),
 	})
+	// Traffic within the sandbox, including queries to the Drop DNS
+	// server, is not filtered.
+	nft.AddRule(&nftables.Rule{
+		Table: table,
+		Chain: output,
+		Exprs: exprs(oifIs(loopbackIfindex), accept()),
+	})
 	// Pass everything else to the queue.
 	nft.AddRule(&nftables.Rule{
 		Table: table,
@@ -380,6 +391,18 @@ func ctStateIn(states uint32) []expr.Any {
 			Xor:            binaryutil.NativeEndian.PutUint32(0),
 		},
 		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(0)},
+	}
+}
+
+// oifIs matches if the packet's output interface has the given index.
+func oifIs(ifindex uint32) []expr.Any {
+	return []expr.Any{
+		&expr.Meta{Key: expr.MetaKeyOIF, Register: 1},
+		&expr.Cmp{
+			Op:       expr.CmpOpEq,
+			Register: 1,
+			Data:     binaryutil.NativeEndian.PutUint32(ifindex),
+		},
 	}
 }
 
