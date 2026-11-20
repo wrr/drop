@@ -112,11 +112,11 @@ type PublishedPort struct {
 	GuestPort int
 }
 
-// Different from PublishedPort because Pasta, contrary to its man
-// page, doesn't seem to support HostIP for ports forwarded from host
-// to the namespace.
+// Different from PublishedPort because exposing all host ports with
+// auto is not supported, and Pasta contrary to its man page, doesn't
+// seem to support HostIP for ports forwarded from host to the
+// namespace.
 type HostPort struct {
-	Auto      bool
 	HostPort  int
 	GuestPort int
 }
@@ -221,8 +221,7 @@ func (p *PublishedPort) UnmarshalTOML(data any) error {
 }
 
 // Custom toml.Unmarshaler for HostPort field. Input is a string in
-// the format hostPort[:guestPort] or "auto" for automatic port
-// forwarding of all ports.
+// the format hostPort[:guestPort].
 func (p *HostPort) UnmarshalTOML(data any) error {
 	str, ok := data.(string)
 	if !ok {
@@ -391,16 +390,8 @@ func Validate(cfg *Config) error {
 		return fmt.Errorf("invalid tcp_published_ports: %v", err)
 	}
 
-	if err := validateHostPorts(cfg.Net.TCPHostPorts); err != nil {
-		return fmt.Errorf("invalid tcp_host_ports: %v", err)
-	}
-
 	if err := validatePublishedPorts(cfg.Net.UDPPublishedPorts); err != nil {
 		return fmt.Errorf("invalid udp_published_ports: %v", err)
-	}
-
-	if err := validateHostPorts(cfg.Net.UDPHostPorts); err != nil {
-		return fmt.Errorf("invalid udp_host_ports: %v", err)
 	}
 
 	if err := validateFirewall(cfg.Net); err != nil {
@@ -505,15 +496,11 @@ func ParsePublishedPort(spec string) (*PublishedPort, error) {
 }
 
 // ParseHostPort parses host port string. Like ParsePublishedPort,
-// but does not allow to specify hostIP/, only HOST_PORT[:DROP_PORT] or "auto".
+// but does not allow to specify hostIP/ or "auto", only HOST_PORT[:DROP_PORT].
 func ParseHostPort(spec string) (*HostPort, error) {
 	var p HostPort
 
 	spec = strings.TrimSpace(spec)
-	if spec == "auto" {
-		p.Auto = true
-		return &p, nil
-	}
 
 	hostPort, guestPort, err := parsePortPair(spec)
 	if err != nil {
@@ -608,19 +595,6 @@ func validatePublishedPorts(mappings []PublishedPort) error {
 	for _, m := range mappings {
 		if m.Auto && len(mappings) > 1 {
 			return fmt.Errorf("\"auto\" must be the only published port entry")
-		}
-	}
-	return nil
-}
-
-// validateHostPorts validates host port forwarding list. The list
-// individual entries are already validated during HostPort items
-// parsing, this function checks only list-level constraints (
-// ensures "auto" is the only rule if present).
-func validateHostPorts(mappings []HostPort) error {
-	for _, m := range mappings {
-		if m.Auto && len(mappings) > 1 {
-			return fmt.Errorf("\"auto\" must be the only host port entry")
 		}
 	}
 	return nil

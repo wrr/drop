@@ -46,18 +46,14 @@ func hostPortArgs(argName string, mappings []config.HostPort) []string {
 	}
 	var args []string
 	for _, m := range mappings {
-		if m.Auto {
-			args = append(args, argName, "auto")
-		} else {
-			// Note: pasta --tcp-ns and --udp-ns use guest port first
-			// convention(guestPort[:hostPort]), Drop doesn't follow this
-			// convention in its config:
-			portSpec := fmt.Sprintf("%d", m.GuestPort)
-			if m.HostPort != m.GuestPort {
-				portSpec += fmt.Sprintf(":%d", m.HostPort)
-			}
-			args = append(args, argName, portSpec)
+		// Note: pasta --tcp-ns and --udp-ns use guest port first
+		// convention(guestPort[:hostPort]), Drop doesn't follow this
+		// convention in its config:
+		portSpec := fmt.Sprintf("%d", m.GuestPort)
+		if m.HostPort != m.GuestPort {
+			portSpec += fmt.Sprintf(":%d", m.HostPort)
 		}
+		args = append(args, argName, portSpec)
 	}
 	return args
 }

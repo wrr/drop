@@ -318,12 +318,10 @@ func TestParseHostPort(t *testing.T) {
 			error: "",
 		},
 		{
-			name:  "auto",
-			input: "auto",
-			expected: HostPort{
-				Auto: true,
-			},
-			error: "",
+			name:     "auto not supported",
+			input:    "auto",
+			expected: HostPort{},
+			error:    "invalid port number 'auto'",
 		},
 		{
 			name:     "invalid port number",
@@ -461,7 +459,7 @@ set_vars = ["FOO=foobar", "BAR=baz"]
 [net]
 mode = "isolated"
 tcp_published_ports = ["8080", "3000:3001"]
-tcp_host_ports = ["auto"]
+tcp_host_ports = ["22"]
 udp_published_ports = ["5000"]
 udp_host_ports = ["12000:1700", "9000"]
 `,
@@ -487,7 +485,7 @@ udp_host_ports = ["12000:1700", "9000"]
 						{HostIP: "127.0.0.1", HostPort: 8080, GuestPort: 8080},
 						{HostIP: "127.0.0.1", HostPort: 3000, GuestPort: 3001},
 					},
-					TCPHostPorts:      []HostPort{{Auto: true}},
+					TCPHostPorts:      []HostPort{{HostPort: 22, GuestPort: 22}},
 					UDPPublishedPorts: []PublishedPort{{HostIP: "127.0.0.1", HostPort: 5000, GuestPort: 5000}},
 					UDPHostPorts:      []HostPort{{HostPort: 12000, GuestPort: 1700}, {HostPort: 9000, GuestPort: 9000}},
 				},
@@ -614,24 +612,6 @@ udp_published_ports = ["8080", "auto"]
 `,
 			expected: Config{},
 			error:    "invalid udp_published_ports: \"auto\" must be the only published port entry",
-		},
-		{
-			name: "invalid tcp_host_ports, auto not the only option",
-			tomlStr: `
-[net]
-tcp_host_ports = ["8080", "auto"]
-`,
-			expected: Config{},
-			error:    "invalid tcp_host_ports: \"auto\" must be the only host port entry",
-		},
-		{
-			name: "invalid udp_host_ports, auto not the only option",
-			tomlStr: `
-[net]
-udp_host_ports = ["8080", "auto"]
-`,
-			expected: Config{},
-			error:    "invalid udp_host_ports: \"auto\" must be the only host port entry",
 		},
 		{
 			name: "invalid udp_published_ports",
