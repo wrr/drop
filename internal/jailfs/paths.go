@@ -407,6 +407,16 @@ func removeOrphanedRunDirs(runDirsPath string) error {
 			continue
 		}
 		runDir := filepath.Join(runDirsPath, entry.Name())
+		info, err := os.Stat(runDir)
+		if err != nil {
+			return err
+		}
+		// Checked before isRunDirLocked which takes a lock for a moment
+		// and could make a starting instance fail to lock its fresh run
+		// dir.
+		if !info.ModTime().Before(orphanedRemoveTime) {
+			continue
+		}
 		locked, err := isRunDirLocked(runDir)
 		if err != nil {
 			return err
@@ -415,14 +425,8 @@ func removeOrphanedRunDirs(runDirsPath string) error {
 			// Still in use, not orphaned
 			continue
 		}
-		info, err := os.Stat(runDir)
-		if err != nil {
+		if err := removeRunDir(runDir); err != nil {
 			return err
-		}
-		if info.ModTime().Before(orphanedRemoveTime) {
-			if err := removeRunDir(runDir); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
