@@ -18,6 +18,7 @@ package firewall
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"slices"
@@ -31,7 +32,6 @@ import (
 
 	"github.com/wrr/drop/internal/config"
 	"github.com/wrr/drop/internal/dns"
-	"github.com/wrr/drop/internal/log"
 	"github.com/wrr/drop/internal/netns"
 )
 
@@ -45,6 +45,7 @@ type Firewall struct {
 	resolver      dns.Resolver
 	nft           *nftables.Conn
 	resolvedAddrs *resolvedAddrs
+	log           *firewallLogger
 	stop          func()
 	// Used when the user can't be asked, Allow or Deny.
 	askFallback Action
@@ -95,8 +96,12 @@ func (t *resolvedAddrs) add(domain string, addrs []netip.Addr) {
 //
 // The caller should call the Firewall.Stop() function on program
 // termination.
-func New(pid int, cfg *config.Firewall, rules *RuleSet, resolver dns.Resolver) (*Firewall, error) {
+func New(pid int, cfg *config.Firewall, rules *RuleSet, resolver dns.Resolver, log *slog.Logger) (*Firewall, error) {
 	askFallback, err := parseAction(cfg.AskFallback)
+	if err != nil {
+		return nil, err
+	}
+	logMode, err := parseLogMode(cfg.Log)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +129,7 @@ func New(pid int, cfg *config.Firewall, rules *RuleSet, resolver dns.Resolver) (
 	fw := Firewall{
 		rules:         rules,
 		resolver:      resolver,
+		log:           newFirewallLogger(logMode, log),
 		nft:           nft,
 		resolvedAddrs: newResolvedAddrs(),
 		stop:          stop,
@@ -155,16 +161,26 @@ func (f *Firewall) Stop() {
 func (f *Firewall) LookupNetIP(ctx context.Context, network, domainRooted string) ([]netip.Addr, error) {
 	// Within the firewall domains are kept without the trailing dot.
 	domain := strings.TrimSuffix(domainRooted, ".")
+	actionLog := f.log.newActionLogger()
+	actionLog.domain(domain)
+	defer actionLog.done()
 	if !isValidDomain(domain) {
-		return nil, notFound(domainRooted, "invalid domain name")
+		e := "invalid domain name"
+		actionLog.denyWithReason(e)
+		return nil, notFound(domainRooted, e)
 	}
-	if f.filterDomain(domain) == Deny {
+	action := f.filterDomain(domain, actionLog)
+	actionLog.action(action)
+	if action == Deny {
 		return nil, notFound(domainRooted, "firewall deny")
 	}
 	// Resolver should get rooted domain, so it doesn't expand it.
 	addrs, err := f.resolver.LookupNetIP(ctx, network, domainRooted)
 	if err == nil {
 		f.resolvedAddrs.add(domain, addrs)
+		f.log.Debug("dns lookup", "domain", domain, "addrs", addrs)
+	} else {
+		f.log.Debug("dns lookup", "domain", domain, "err", err)
 	}
 	return addrs, err
 }
@@ -172,7 +188,7 @@ func (f *Firewall) LookupNetIP(ctx context.Context, network, domainRooted string
 // filterDomain returns the action for a DNS query, Allow or Deny. If
 // the rules require Ask, prompts the user and handles the user
 // answer.
-func (f *Firewall) filterDomain(domain string) Action {
+func (f *Firewall) filterDomain(domain string, actionLog *actionLogger) Action {
 	action := f.rules.ResolverAction(domain)
 	if action != Ask {
 		return action
@@ -186,7 +202,7 @@ func (f *Firewall) filterDomain(domain string) Action {
 		formatQuestion := func(maxWidth int) []string {
 			return resolverQuestion(domain, maxWidth)
 		}
-		action = f.ask(destination{domain: domain}, formatQuestion)
+		action = f.ask(destination{domain: domain}, formatQuestion, actionLog)
 	}
 	return action
 }
@@ -200,18 +216,11 @@ func (f *Firewall) serveQueue(ctx context.Context, queue *nfqueue.Nfqueue) error
 		// firewall prompt is shown.
 		go func() {
 			verdict := nfqueue.NfDrop
-			if a.Payload == nil {
-				info("packet without payload")
-			} else if dst, err := parseDestination(*a.Payload); err != nil {
-				info("parse destination error: %v", err)
-			} else {
-				action := f.filterConnection(dst)
-				if action == Allow {
-					verdict = nfqueue.NfAccept
-				}
+			if f.filterPayload(a.Payload) == Allow {
+				verdict = nfqueue.NfAccept
 			}
 			if err := queue.SetVerdict(*a.PacketID, verdict); err != nil {
-				info("set verdict: %v", err)
+				f.log.Error("nfqueue set verdict", "err", err)
 			}
 		}()
 		// Keep reading.
@@ -222,7 +231,7 @@ func (f *Firewall) serveQueue(ctx context.Context, queue *nfqueue.Nfqueue) error
 		// Stopping the firewall (ctx.Err() != nil) makes the pending
 		// read fail; that error is expected and not logged.
 		if ctx.Err() == nil {
-			info("queue: %v", err)
+			f.log.Error("nfqueue read", "err", err)
 		}
 		// Keep reading. A transient error should not stop the firewall,
 		// which would block all new connections.
@@ -234,15 +243,38 @@ func (f *Firewall) serveQueue(ctx context.Context, queue *nfqueue.Nfqueue) error
 	return nil
 }
 
+// filterPayload returns the action for a queued packet, Allow or
+// Deny.
+func (f *Firewall) filterPayload(payload *[]byte) Action {
+	actionLog := f.log.newActionLogger()
+	defer actionLog.done()
+	if payload == nil {
+		e := "nfqueue packet without payload"
+		f.log.Error(e)
+		actionLog.denyWithReason(e)
+		return Deny
+	}
+	dst, err := parseDestination(*payload)
+	if err != nil {
+		actionLog.denyWithReason(fmt.Sprintf("parse destination: %v", err))
+		return Deny
+	}
+	action := f.filterConnection(dst, actionLog)
+	actionLog.action(action)
+	return action
+}
+
 // filterConnection returns the action for an outgoing connection,
 // Allow or Deny. If the rules require Ask, prompts the user and
 // handles the user answer.
-func (f *Firewall) filterConnection(dst destination) Action {
+func (f *Firewall) filterConnection(dst destination, actionLog *actionLogger) Action {
+	actionLog.destination(dst)
 	domains := f.resolvedAddrs.domains(dst.addr)
 	if len(domains) > 0 {
 		// Set the last domain that resolved to this address. All
 		// the resolved domains are allowed.
 		dst.domain = domains[len(domains)-1]
+		actionLog.domains(domains)
 	}
 	action := f.rules.connectionAction(dst)
 	if action == Ask {
@@ -255,22 +287,24 @@ func (f *Firewall) filterConnection(dst destination) Action {
 			formatQuestion := func(maxWidth int) []string {
 				return connectionQuestion(dst, domains, maxWidth)
 			}
-			action = f.ask(dst, formatQuestion)
+			action = f.ask(dst, formatQuestion, actionLog)
 		}
 	}
 	return action
 }
 
-func (f *Firewall) ask(dst destination, formatQuestion func(maxWidth int) []string) Action {
+func (f *Firewall) ask(dst destination, formatQuestion func(maxWidth int) []string, actionLog *actionLogger) Action {
 	if f.prompter == nil {
+		actionLog.setReason("ask fallback: prompts unavailable")
 		return f.askFallback
 	}
 	choice, err := f.prompter.Ask(formatQuestion, promptChoices)
 	if err != nil {
-		info("prompt: %v", err)
+		actionLog.setReason("ask fallback: " + err.Error())
 		return f.askFallback
 	}
 	action := Deny
+	actionLog.promptChoice(choice)
 	if choice.Key == 'a' || choice.Key == 'A' {
 		action = Allow
 	}
@@ -278,7 +312,7 @@ func (f *Firewall) ask(dst destination, formatQuestion func(maxWidth int) []stri
 	f.rules.Add(rule)
 	if choice.Key == 'A' || choice.Key == 'D' {
 		if err := f.rules.Save(rule); err != nil {
-			info("%v", err)
+			f.log.Error("save firewall rule", "err", err)
 		}
 	}
 	return action
@@ -415,8 +449,4 @@ func exprs(parts ...[]expr.Any) []expr.Any {
 		out = append(out, p...)
 	}
 	return out
-}
-
-func info(format string, args ...any) {
-	log.Info("firewall: "+format, args...)
 }

@@ -34,6 +34,9 @@ type Firewall struct {
 	// ToggleUnset when no config file sets it, which leaves the firewall
 	// enabled if the [net.firewall] table is present.
 	Enabled Toggle `toml:"enabled"`
+	// Firewall decisions to log: "all", "denied" or "none". Internal
+	// errors are logged regardless.
+	Log string `toml:"log"`
 	// An action when no rule matches: "allow", "deny" or "ask".
 	DefaultAction string `toml:"default_action"`
 	// What to do with if "ask" prompt cannot be shown: "allow" or
@@ -51,6 +54,9 @@ type Firewall struct {
 }
 
 func setFirewallDefaults(fw *Firewall) {
+	if fw.Log == "" {
+		fw.Log = "all"
+	}
 	if fw.DefaultAction == "" {
 		fw.DefaultAction = "ask"
 	}
@@ -69,6 +75,9 @@ func mergeFirewall(base, sub *Firewall) *Firewall {
 	merged := *base
 	if sub.Enabled != ToggleUnset {
 		merged.Enabled = sub.Enabled
+	}
+	if sub.Log != "" {
+		merged.Log = sub.Log
 	}
 	if sub.DefaultAction != "" {
 		merged.DefaultAction = sub.DefaultAction
@@ -106,6 +115,11 @@ func validateFirewall(net Net) error {
 	fw := net.Firewall
 	if fw == nil {
 		return nil
+	}
+	switch fw.Log {
+	case "all", "denied", "none":
+	default:
+		return fmt.Errorf("invalid firewall log '%s': must be 'all', 'denied' or 'none'", fw.Log)
 	}
 	switch fw.DefaultAction {
 	case "allow", "deny", "ask":

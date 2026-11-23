@@ -19,14 +19,18 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/wrr/drop/internal/pty"
 )
@@ -40,11 +44,16 @@ func newTestFirewall(defaultAction, askFallback Action, p prompter) (*Firewall, 
 	resolver := &stubResolver{}
 	rules := newEmptyRuleSet(defaultAction)
 	addrs := newResolvedAddrs()
-	fw := &Firewall{rules: rules, resolver: resolver, resolvedAddrs: addrs, askFallback: askFallback}
+	fw := &Firewall{rules: rules, resolver: resolver, resolvedAddrs: addrs,
+		askFallback: askFallback, log: newFirewallLogger(logAll, slog.New(slog.DiscardHandler))}
 	if p != nil {
 		fw.SetPrompter(p)
 	}
 	return fw, resolver
+}
+
+func (f *Firewall) filterTestConnection(dst destination) Action {
+	return f.filterConnection(dst, f.log.newActionLogger())
 }
 
 func (s *stubResolver) LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error) {
@@ -264,11 +273,11 @@ var testDst = destination{addr: netip.MustParseAddr("192.0.2.1"), port: 443, pro
 func TestFilterConnectionUsesResolvedDomain(t *testing.T) {
 	fw, _ := newTestFirewall(Deny, Deny, nil)
 	addTestRules(t, fw.rules, []string{"allow example.com"})
-	if got := fw.filterConnection(testDst); got != Deny {
+	if got := fw.filterTestConnection(testDst); got != Deny {
 		t.Errorf("not resolved: got %v, want deny", got)
 	}
 	fw.resolvedAddrs.add("example.com", []netip.Addr{testDst.addr})
-	if got := fw.filterConnection(testDst); got != Allow {
+	if got := fw.filterTestConnection(testDst); got != Allow {
 		t.Errorf("resolved for example.com: got %v, want allow", got)
 	}
 }
@@ -299,20 +308,20 @@ func TestFilterConnectionAsks(t *testing.T) {
 		fw.resolvedAddrs.add("example.com", []netip.Addr{testDst.addr})
 
 		go p.Answer(c.key)
-		if got := fw.filterConnection(testDst); got != c.want {
+		if got := fw.filterTestConnection(testDst); got != c.want {
 			t.Errorf("key %q: got %v, want %v", c.key, got, c.want)
 		}
 		if !slices.Equal(p.question, wantQuestion) {
 			t.Errorf("key %q: question %q, want %q", c.key, p.question, wantQuestion)
 		}
 		// The answer is remembered for this port and protocol only.
-		if got := fw.filterConnection(testDst); got != c.want {
+		if got := fw.filterTestConnection(testDst); got != c.want {
 			t.Errorf("key %q: second got %v, want %v", c.key, got, c.want)
 		}
 		otherPort := testDst
 		otherPort.port = 80
 		go p.Answer('d')
-		fw.filterConnection(otherPort)
+		fw.filterTestConnection(otherPort)
 		if p.asked != 2 {
 			t.Errorf("key %q: asked %d times, want 2", c.key, p.asked)
 		}
@@ -336,7 +345,7 @@ func TestFilterConnectionAsksOnceForConcurrentAttempts(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range results {
 		wg.Go(func() {
-			results[i] = fw.filterConnection(testDst)
+			results[i] = fw.filterTestConnection(testDst)
 		})
 	}
 	time.Sleep(100 * time.Millisecond)
@@ -364,8 +373,111 @@ func TestAnswerRule(t *testing.T) {
 	}
 	for _, c := range cases {
 		if got := answerRule(Deny, c.dst).String(); got != c.want {
-			t.Errorf("answerRule(%v, %d, %q) = %q, want %q",
-				c.dst.addr, c.dst.port, c.dst.proto, got, c.want)
+			t.Errorf("answerRule(Deny, %s) = %q, want %q", c.dst, got, c.want)
+		}
+	}
+}
+
+// captureLog makes fw log all decisions to the returned builder.
+func captureLog(fw *Firewall) *strings.Builder {
+	var b strings.Builder
+	fw.log = newFirewallLogger(logAll, slog.New(slog.NewTextHandler(&b, nil)))
+	return &b
+}
+
+func TestLookupNetIPLogged(t *testing.T) {
+	cases := []struct {
+		name     string
+		domain   string
+		fallback Action
+		p        *fakePrompter
+		want     []string
+	}{
+		{"invalid name", "*.com.", Deny, nil,
+			[]string{"msg=dns", `domain=*.com`, "action=deny", `reason="invalid domain name"`}},
+		{"denied by rule", "denied.com.", Allow, nil,
+			[]string{"domain=denied.com", "action=deny"}},
+		{"no prompter", "example.com.", Allow, nil,
+			[]string{"action=allow", `reason="ask fallback: prompts unavailable"`}},
+		{"prompter error", "example.com.", Deny, &fakePrompter{err: errors.New("terminal size unknown")},
+			[]string{"action=deny", `reason="ask fallback: terminal size unknown"`}},
+	}
+	for _, c := range cases {
+		var p prompter
+		if c.p != nil {
+			p = c.p
+		}
+		fw, _ := newTestFirewall(Ask, c.fallback, p)
+		addTestRules(t, fw.rules, []string{"deny denied.com"})
+		out := captureLog(fw)
+		lookupDenied(t, fw, c.domain)
+		for _, w := range c.want {
+			if !strings.Contains(out.String(), w) {
+				t.Errorf("%s: log %q does not contain %q", c.name, out, w)
+			}
+		}
+	}
+}
+
+func TestPromptAnswerLogged(t *testing.T) {
+	p := newFakePrompter()
+	fw, _ := newTestFirewall(Ask, Deny, p)
+	out := captureLog(fw)
+	go p.Answer('A')
+	lookupDenied(t, fw, "example.com.")
+	// Saving fails without saved_rules_file.
+	for _, w := range []string{"prompt=A action=allow", `level=ERROR msg="save firewall rule"`} {
+		if !strings.Contains(out.String(), w) {
+			t.Errorf("log %q does not contain %q", out, w)
+		}
+	}
+}
+
+func TestFilterConnectionRecordsDestination(t *testing.T) {
+	fw, _ := newTestFirewall(Allow, Deny, nil)
+	fw.resolvedAddrs.add("a.com", []netip.Addr{testDst.addr})
+	fw.resolvedAddrs.add("b.com", []netip.Addr{testDst.addr})
+	actionLog := fw.log.newActionLogger()
+	fw.filterConnection(testDst, actionLog)
+	if actionLog.dst != testDst {
+		t.Errorf("dst = %v, want %v", actionLog.dst, testDst)
+	}
+	if want := []string{"a.com", "b.com"}; !slices.Equal(actionLog.resolvedFrom, want) {
+		t.Errorf("resolvedFrom = %q, want %q", actionLog.resolvedFrom, want)
+	}
+}
+
+func TestFilterPayload(t *testing.T) {
+	ports := []byte{0x30, 0x39, 0x01, 0xbb}
+	allowed := ipv4Packet(20, unix.IPPROTO_TCP, "192.0.2.1", ports...)
+	denied := ipv4Packet(20, unix.IPPROTO_TCP, "198.51.100.1", ports...)
+	truncated := ipv4Packet(20, unix.IPPROTO_TCP, "192.0.2.1", 0x30, 0x39)
+	cases := []struct {
+		name    string
+		payload *[]byte
+		want    Action
+		wantLog []string
+	}{
+		{"no payload", nil, Deny,
+			[]string{`level=ERROR msg="nfqueue packet without payload"`, "msg=connect action=deny"}},
+		{"truncated", &truncated, Deny,
+			[]string{`action=deny reason="parse destination: truncated tcp header"`}},
+		{"allowed", &allowed, Allow,
+			[]string{"msg=connect destination=192.0.2.1:443/tcp action=allow"}},
+		{"denied", &denied, Deny,
+			[]string{"msg=connect destination=198.51.100.1:443/tcp action=deny"}},
+	}
+	for _, c := range cases {
+		fw, _ := newTestFirewall(Allow, Deny, nil)
+		addTestRules(t, fw.rules, []string{"deny 198.51.100.1"})
+		out := captureLog(fw)
+		if got := fw.filterPayload(c.payload); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+		for _, w := range c.wantLog {
+			if !strings.Contains(out.String(), w) {
+				t.Errorf("%s: log %q does not contain %q", c.name, out, w)
+			}
 		}
 	}
 }

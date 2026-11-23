@@ -18,13 +18,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
-	"strings"
 
 	"github.com/miekg/dns" // Until v2 is stable
 
-	"github.com/wrr/drop/internal/log"
 	"github.com/wrr/drop/internal/netns"
 )
 
@@ -40,6 +39,7 @@ type Resolver interface {
 
 type server struct {
 	resolver Resolver
+	logger   *slog.Logger
 }
 
 // ListenLoopbackUDP returns a UDP socket bound to 127.0.0.1:port in
@@ -68,8 +68,8 @@ func ListenLoopbackUDP(pid int, port uint16) (net.PacketConn, error) {
 //
 // Takes ownership of conn, closing it when the server fails to start
 // or the shutdown function is called.
-func StartServer(conn net.PacketConn, resolver Resolver) (func(), error) {
-	s := &server{resolver: resolver}
+func StartServer(conn net.PacketConn, resolver Resolver, logger *slog.Logger) (func(), error) {
+	s := &server{resolver: resolver, logger: logger}
 	srv := &dns.Server{
 		PacketConn: conn,
 		Handler:    dns.HandlerFunc(s.handle),
@@ -98,36 +98,38 @@ func (s *server) handle(w dns.ResponseWriter, req *dns.Msg) {
 		// Accept only allows requests with question count set to 1 in the
 		// header, but it allows requests that end just after the header,
 		// without including any questions.
-		info("format error, no question in request")
+		s.logger.Debug("dns query without question")
 		reply.Rcode = dns.RcodeFormatError
-		if err := w.WriteMsg(reply); err != nil {
-			info("send answer: %v", err)
-		}
+		s.send(w, reply)
 		return
 	}
 	question := req.Question[0]
-	info("query %s %s", dns.TypeToString[question.Qtype], question.Name)
+	qtype := dns.TypeToString[question.Qtype]
 
 	switch {
 	case !req.RecursionDesired:
 		// The host resolver always recurses.
-		info("refused %s, recursion not desired", question.Name)
+		s.logger.Debug("dns query refused: recursion not desired",
+			"type", qtype, "name", question.Name)
 		reply.Rcode = dns.RcodeRefused
 	case question.Qclass != dns.ClassINET:
 		// IN is the only class in practical use.
-		info("refused %s class query for %s",
-			dns.Class(question.Qclass).String(), question.Name)
+		s.logger.Debug("dns query refused: "+dns.Class(question.Qclass).String()+" class",
+			"type", qtype, "name", question.Name)
 		reply.Rcode = dns.RcodeRefused
 	case question.Qtype == dns.TypeA:
 		s.resolve(reply, question)
 	case question.Qtype == dns.TypeAAAA:
 		// No IPv6 support with firewall yet. An empty NOERROR keeps
 		// the client on A, REFUSED would make it fail the lookup.
+		s.logger.Debug("dns query not answered: no IPv6 support",
+			"type", qtype, "name", question.Name)
 	default:
 		// Also an empty NOERROR: clients fall back to A or give up,
 		// REFUSED can be treated as a server problem and
 		// can lead to retriers.
-		info("no data for %s query for %s", dns.TypeToString[question.Qtype], question.Name)
+		s.logger.Debug("dns query not answered: unsupported type",
+			"type", qtype, "name", question.Name)
 	}
 
 	minClientSize := dns.MinMsgSize
@@ -143,9 +145,12 @@ func (s *server) handle(w dns.ResponseWriter, req *dns.Msg) {
 	// Drops records that do not fit the client buffer and sets the
 	// truncated bit. Enables compression when needed.
 	reply.Truncate(minClientSize)
+	s.send(w, reply)
+}
 
+func (s *server) send(w dns.ResponseWriter, reply *dns.Msg) {
 	if err := w.WriteMsg(reply); err != nil {
-		info("send answer: %v", err)
+		s.logger.Error("send dns reply", "err", err)
 	}
 }
 
@@ -167,7 +172,6 @@ func (s *server) resolve(reply *dns.Msg, question dns.Question) {
 		default:
 			reply.Rcode = dns.RcodeServerFailure
 		}
-		info("%v", err)
 		return
 	}
 
@@ -177,7 +181,6 @@ func (s *server) resolve(reply *dns.Msg, question dns.Question) {
 		Class:  dns.ClassINET,
 		Ttl:    ttl,
 	}
-	var answered []netip.Addr
 	for _, addr := range addrs {
 		addr = addr.Unmap()
 		if !addr.Is4() {
@@ -185,22 +188,5 @@ func (s *server) resolve(reply *dns.Msg, question dns.Question) {
 			continue
 		}
 		reply.Answer = append(reply.Answer, &dns.A{Hdr: header, A: addr.AsSlice()})
-		answered = append(answered, addr)
 	}
-	info("answer %s %s", question.Name, formatAddrs(answered))
-}
-
-func info(format string, args ...any) {
-	log.Info("dns: "+format, args...)
-}
-
-func formatAddrs(addrs []netip.Addr) string {
-	if len(addrs) == 0 {
-		return "no addresses"
-	}
-	s := make([]string, 0, len(addrs))
-	for _, addr := range addrs {
-		s = append(s, addr.String())
-	}
-	return strings.Join(s, " ")
 }

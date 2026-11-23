@@ -20,6 +20,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -29,6 +30,7 @@ import (
 	"github.com/wrr/drop/internal/dns"
 	"github.com/wrr/drop/internal/firewall"
 	"github.com/wrr/drop/internal/ipc"
+	"github.com/wrr/drop/internal/log"
 	"github.com/wrr/drop/internal/pasta"
 	"github.com/wrr/drop/internal/pty"
 )
@@ -142,7 +144,13 @@ func Main() error {
 
 	var fw *firewall.Firewall
 	if cfg.Net.IsFirewallEnabled() {
-		fw, err = firewall.New(cmd.pid(), cfg.Net.Firewall, rules, &net.Resolver{PreferGo: true})
+		logFile, err := log.OpenFile(filepath.Join(paths.LogDir, "firewall.log"))
+		if err != nil {
+			return err
+		}
+		defer logFile.Close()
+		logger := log.New(logFile).With("pid", os.Getpid())
+		fw, err = firewall.New(cmd.pid(), cfg.Net.Firewall, rules, &net.Resolver{PreferGo: true}, logger)
 		if err != nil {
 			return err
 		}
@@ -154,7 +162,7 @@ func Main() error {
 		if err != nil {
 			return err
 		}
-		shutdown, err := dns.StartServer(conn, fw)
+		shutdown, err := dns.StartServer(conn, fw, logger)
 		if err != nil {
 			return err
 		}

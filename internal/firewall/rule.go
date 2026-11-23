@@ -85,6 +85,24 @@ func (d destination) hasAddr() bool {
 	return d.addr.IsValid()
 }
 
+// String returns d in the rule syntax, for example 192.0.2.1:443/tcp.
+func (d destination) String() string {
+	if !d.hasAddr() {
+		return d.domain
+	}
+	s := d.addr.String()
+	if d.addr.Is6() {
+		s = "[" + s + "]"
+	}
+	if d.port != 0 {
+		s += ":" + strconv.Itoa(d.port)
+	}
+	if d.proto != "" {
+		s += "/" + d.proto
+	}
+	return s
+}
+
 // String returns the rule in the string format accepted by parseRule.
 func (r Rule) String() string {
 	var b strings.Builder

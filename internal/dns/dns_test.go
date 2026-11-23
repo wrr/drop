@@ -16,8 +16,10 @@ package dns
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -177,7 +179,9 @@ func setupUpstream(t *testing.T, fxt *fixture) string {
 	return conn.LocalAddr().String()
 }
 
-func setupServer(t *testing.T, upstreamAddr string) string {
+var discardLogger = slog.New(slog.DiscardHandler)
+
+func setupServer(t *testing.T, upstreamAddr string, logger *slog.Logger) string {
 	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -189,7 +193,7 @@ func setupServer(t *testing.T, upstreamAddr string) string {
 			return d.DialContext(ctx, network, upstreamAddr)
 		},
 	}
-	stop, err := StartServer(conn, resolver)
+	stop, err := StartServer(conn, resolver, logger)
 	if err != nil {
 		t.Fatalf("start server: %v", err)
 	}
@@ -202,7 +206,7 @@ func setup(t *testing.T) *fixture {
 		answerA: net.IPv4(134, 12, 8, 7),
 	}
 	upstreamAddr := setupUpstream(t, &fxt)
-	fxt.dnsAddress = setupServer(t, upstreamAddr)
+	fxt.dnsAddress = setupServer(t, upstreamAddr, discardLogger)
 	return &fxt
 }
 
@@ -220,7 +224,7 @@ func TestStartErrorReporting(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	stop, err := StartServer(conn, &net.Resolver{})
+	stop, err := StartServer(conn, &net.Resolver{}, discardLogger)
 	if err == nil {
 		stop()
 		t.Fatal("start server: got no error for a closed conn")
@@ -554,4 +558,60 @@ func TestSeveralARecordsAnswered(t *testing.T) {
 		t.Errorf("answer: got %v, want %v", got, want)
 	}
 	fxt.checkUpstreamQueries(t, 1)
+}
+
+// lineWriter passes each log line to a channel, so a test can wait for
+// a line the server logs after sending the reply.
+type lineWriter chan string
+
+func (w lineWriter) Write(p []byte) (int, error) {
+	w <- string(p)
+	return len(p), nil
+}
+
+func TestRefusedQueryLogged(t *testing.T) {
+	fxt := fixture{answerA: net.IPv4(134, 12, 8, 7)}
+	lines := make(lineWriter, 10)
+	logger := slog.New(slog.NewTextHandler(lines, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	fxt.dnsAddress = setupServer(t, setupUpstream(t, &fxt), logger)
+
+	tests := []struct {
+		name   string
+		modify func(q *dns.Msg)
+		want   []string
+	}{
+		{
+			name:   "recursion not desired",
+			modify: func(q *dns.Msg) { q.RecursionDesired = false },
+			want: []string{"level=DEBUG",
+				`msg="dns query refused: recursion not desired"`, "type=A",
+				"name=" + singleAName},
+		},
+		{
+			name:   "non-IN class",
+			modify: func(q *dns.Msg) { q.Question[0].Qclass = dns.ClassCHAOS },
+			want: []string{"level=DEBUG", `msg="dns query refused: CH class"`,
+				"name=" + singleAName},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			query := new(dns.Msg)
+			query.SetQuestion(singleAName, dns.TypeA)
+			tt.modify(query)
+			if _, _, err := new(dns.Client).Exchange(query, fxt.dnsAddress); err != nil {
+				t.Fatalf("exchange: %v", err)
+			}
+			select {
+			case line := <-lines:
+				for _, w := range tt.want {
+					if !strings.Contains(line, w) {
+						t.Errorf("log line %q does not contain %q", line, w)
+					}
+				}
+			case <-time.After(readTimeout):
+				t.Fatal("no log line")
+			}
+		})
+	}
 }

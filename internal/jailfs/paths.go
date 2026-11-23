@@ -27,7 +27,7 @@ import (
 	"github.com/wrr/drop/internal/osutil"
 )
 
-// Paths contains filesystem paths used to setup the jail.
+// Paths contains filesystem paths used by a Drop instance.
 type Paths struct {
 	// Cwd is the directory where Drop was started.
 	Cwd string
@@ -81,6 +81,9 @@ type Paths struct {
 	EmptyDir string
 	// EmptyFile is an empty file used to hide files in the jail.
 	EmptyFile string
+	// LogDir is a directory to store the environment's log files, it
+	// is shared by all instances.
+	LogDir string
 }
 
 // CwdCandidates returns the candidates for the working directory to
@@ -141,6 +144,7 @@ func NewPaths(hostHome string, envId string) (*Paths, func(), error) {
 		PtySocket: filepath.Join(runInTmp, "pty.sock"),
 		EmptyDir:  filepath.Join(internal, "emptyd"),
 		EmptyFile: filepath.Join(internal, "empty"),
+		LogDir:    filepath.Join(env, "log"),
 	}
 
 	toMkdir := []string{paths.FsRoot, paths.Home, paths.Etc, paths.RunEtc, paths.Var}
@@ -371,10 +375,10 @@ func newRunDir(dropHome, envId, tmpRoot string) (string, string, func(), error) 
 		lockFile.Close()
 		// Remove the current instance run dir
 		if err := removeRunDir(runDir); err != nil {
-			log.Info("failed to clean run dir: %v", err)
+			log.Stderr("failed to clean run dir: %v", err)
 		}
 		if err := removeOrphanedRunDirs(filepath.Dir(runDir)); err != nil {
-			log.Info("failed to remove orphaned run dirs: %v", err)
+			log.Stderr("failed to remove orphaned run dirs: %v", err)
 		}
 	}
 	return runDir, runInTmp, cleanRunDir, nil

@@ -88,8 +88,7 @@ func TestParseDestination(t *testing.T) {
 			t.Errorf("%s: error %q, want %q", c.name, err, c.wantErr)
 		}
 		if got != c.want {
-			t.Errorf("%s: got %s %s %d, want %s %s %d", c.name,
-				got.addr, got.proto, got.port, c.want.addr, c.want.proto, c.want.port)
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
 	}
 }

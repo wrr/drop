@@ -121,6 +121,29 @@ func TestRuleString(t *testing.T) {
 	}
 }
 
+func TestDestinationString(t *testing.T) {
+	v4 := netip.MustParseAddr("192.0.2.1")
+	v6 := netip.MustParseAddr("fd00::1")
+	cases := []struct {
+		dst  destination
+		want string
+	}{
+		{destination{domain: "example.com"}, "example.com"},
+		{destination{addr: v4}, "192.0.2.1"},
+		{destination{addr: v4, port: 443}, "192.0.2.1:443"},
+		{destination{addr: v4, port: 443, proto: "tcp"}, "192.0.2.1:443/tcp"},
+		{destination{addr: v6}, "[fd00::1]"},
+		{destination{addr: v6, port: 53, proto: "udp"}, "[fd00::1]:53/udp"},
+		// The domain is logged separately.
+		{destination{domain: "example.com", addr: v4, port: 80, proto: "tcp"}, "192.0.2.1:80/tcp"},
+	}
+	for _, c := range cases {
+		if got := c.dst.String(); got != c.want {
+			t.Errorf("%+v.String() = %q, want %q", c.dst, got, c.want)
+		}
+	}
+}
+
 func TestParseRuleErrors(t *testing.T) {
 	cases := []struct {
 		line, wantErr string

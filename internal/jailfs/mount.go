@@ -144,12 +144,12 @@ func (rt *root) bindAll(mounts []config.Mount, flags uintptr) error {
 
 			trgInfo, _ := os.Lstat(hostTrg)
 			if trgInfo != nil && trgInfo.Mode()&os.ModeSymlink != 0 {
-				log.Info(infoHeader+"but is a symbolic link", src)
+				log.Stderr(infoHeader+"but is a symbolic link", src)
 				continue
 			}
 			if srcInfo.IsDir() {
 				if trgInfo != nil && !trgInfo.IsDir() {
-					log.Info(infoHeader+"but is a file not a directory", src)
+					log.Stderr(infoHeader+"but is a file not a directory", src)
 					continue
 				}
 				if err := rt.bind(src, trg, flags|rdonly, true); err != nil {
@@ -157,7 +157,7 @@ func (rt *root) bindAll(mounts []config.Mount, flags uintptr) error {
 				}
 			} else {
 				if trgInfo != nil && trgInfo.IsDir() {
-					log.Info(infoHeader+"but is a directory not a file", src)
+					log.Stderr(infoHeader+"but is a directory not a file", src)
 					continue
 				}
 				if err := rt.bindFile(src, trg, flags|rdonly); err != nil {
@@ -165,7 +165,7 @@ func (rt *root) bindAll(mounts []config.Mount, flags uintptr) error {
 				}
 			}
 		} else {
-			log.Info("not mounting %s, no such file or directory", src)
+			log.Stderr("not mounting %s, no such file or directory", src)
 		}
 	}
 	return nil
