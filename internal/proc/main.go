@@ -225,7 +225,7 @@ func Main() error {
 					if cleanForwardPty != nil {
 						defer cleanForwardPty()
 					}
-					if fw != nil {
+					if fw != nil && prompter != nil {
 						fw.SetPrompter(prompter)
 					}
 				}

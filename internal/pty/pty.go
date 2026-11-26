@@ -90,6 +90,8 @@ func SetControllingTerminal(pty *os.File) error {
 // * sandboxPty terminal output to the calling process terminal
 // * terminal window size changes from the calling process to the sandboxPty
 // The function takes ownership of sandboxPty.
+// The function returns Prompter only if stdin is a terminal, in other cases,
+// displaying interactive prompts is not possible.
 // The function returns error if none of stdin, stdout,
 // stderr of the calling process is a terminal (PtyNeeded returns false).
 func ForwardPty(sandboxPty *os.File) (*Prompter, func(), error) {
@@ -158,7 +160,11 @@ func ForwardPty(sandboxPty *os.File) (*Prompter, func(), error) {
 		return nil, nil, err
 	}
 	success = true
-	return newPrompter(fwd), cleanup, nil
+	var prompter *Prompter
+	if inputTerm != nil {
+		prompter = newPrompter(fwd)
+	}
+	return prompter, cleanup, nil
 }
 
 // ReplaceTerminal finds which of the stdin, stdout, stderr descriptors
