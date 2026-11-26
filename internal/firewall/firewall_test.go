@@ -45,7 +45,7 @@ func newTestFirewall(defaultAction, askFallback Action, p prompter) (*Firewall, 
 	rules := newEmptyRuleSet(defaultAction)
 	addrs := newResolvedAddrs()
 	fw := &Firewall{rules: rules, resolver: resolver, resolvedAddrs: addrs,
-		askFallback: askFallback, log: newFirewallLogger(logAll, slog.New(slog.DiscardHandler))}
+		askFallback: askFallback, log: newFirewallLogger(slog.New(slog.DiscardHandler))}
 	if p != nil {
 		fw.SetPrompter(p)
 	}
@@ -378,10 +378,10 @@ func TestAnswerRule(t *testing.T) {
 	}
 }
 
-// captureLog makes fw log all decisions to the returned builder.
+// captureLog configures fw to write logs to the returned builder.
 func captureLog(fw *Firewall) *strings.Builder {
 	var b strings.Builder
-	fw.log = newFirewallLogger(logAll, slog.New(slog.NewTextHandler(&b, nil)))
+	fw.log = newFirewallLogger(slog.New(slog.NewTextHandler(&b, nil)))
 	return &b
 }
 

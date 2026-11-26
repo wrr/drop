@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -144,12 +145,17 @@ func Main() error {
 
 	var fw *firewall.Firewall
 	if cfg.Net.IsFirewallEnabled() {
-		logFile, err := log.OpenFile(filepath.Join(paths.LogDir, "firewall.log"))
-		if err != nil {
-			return err
+		var logger *slog.Logger
+		if cfg.Net.Firewall.IsLogEnabled() {
+			logFile, err := log.OpenFile(filepath.Join(paths.LogDir, "firewall.log"))
+			if err != nil {
+				return err
+			}
+			defer logFile.Close()
+			logger = log.New(logFile).With("pid", os.Getpid())
+		} else {
+			logger = slog.New(slog.DiscardHandler)
 		}
-		defer logFile.Close()
-		logger := log.New(logFile).With("pid", os.Getpid())
 		fw, err = firewall.New(cmd.pid(), cfg.Net.Firewall, rules, &net.Resolver{PreferGo: true}, logger)
 		if err != nil {
 			return err

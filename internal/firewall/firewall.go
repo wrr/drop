@@ -106,10 +106,6 @@ func New(pid int, cfg *config.Firewall, rules *RuleSet, resolver dns.Resolver, l
 	if err != nil {
 		return nil, err
 	}
-	logMode, err := parseLogMode(cfg.Log)
-	if err != nil {
-		return nil, err
-	}
 	nft, queue, err := openNetfilter(pid)
 	if err != nil {
 		return nil, err
@@ -134,7 +130,7 @@ func New(pid int, cfg *config.Firewall, rules *RuleSet, resolver dns.Resolver, l
 	fw := Firewall{
 		rules:         rules,
 		resolver:      resolver,
-		log:           newFirewallLogger(logMode, log),
+		log:           newFirewallLogger(log),
 		nft:           nft,
 		resolvedAddrs: newResolvedAddrs(),
 		stop:          stop,

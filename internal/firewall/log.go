@@ -16,45 +16,22 @@ package firewall
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/wrr/drop/internal/pty"
 )
 
-// logMode selects which firewall decisions to log.
-type logMode int
-
-const (
-	logNone logMode = iota
-	logDenied
-	logAll
-)
-
-func parseLogMode(s string) (logMode, error) {
-	switch s {
-	case "none":
-		return logNone, nil
-	case "denied":
-		return logDenied, nil
-	case "all":
-		return logAll, nil
-	}
-	return logNone, fmt.Errorf("invalid firewall log %q, expected all, denied or none", s)
-}
-
 type firewallLogger struct {
 	*slog.Logger
-	mode logMode
 }
 
 func (l *firewallLogger) newActionLogger() *actionLogger {
 	return &actionLogger{fw: l}
 }
 
-func newFirewallLogger(mode logMode, log *slog.Logger) *firewallLogger {
-	return &firewallLogger{Logger: log, mode: mode}
+func newFirewallLogger(log *slog.Logger) *firewallLogger {
+	return &firewallLogger{Logger: log}
 }
 
 type actionLogger struct {
@@ -101,12 +78,6 @@ func (a *actionLogger) promptChoice(c pty.Choice) {
 }
 
 func (a *actionLogger) done() {
-	if a.fw.mode == logNone {
-		return
-	}
-	if a.fw.mode == logDenied && (a.act == nil || *a.act != Deny) {
-		return
-	}
 	msg := "connect"
 	var attrs []slog.Attr
 	if a.query {

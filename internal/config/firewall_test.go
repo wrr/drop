@@ -38,7 +38,7 @@ func TestFirewall(t *testing.T) {
 		firewallIsNil     bool
 		defaultAction     string
 		askFallback       string
-		log               string
+		logDisabled       bool
 		savedRulesFile    string
 		ruleFiles         []string
 		rules             []string
@@ -60,7 +60,6 @@ func TestFirewall(t *testing.T) {
 			isFirewallEnabled: true,
 			defaultAction:     "ask",
 			askFallback:       "deny",
-			log:               "all",
 		},
 		{
 			name: "all settings",
@@ -70,7 +69,7 @@ func TestFirewall(t *testing.T) {
 enabled = true
 default_action = "deny"
 ask_fallback = "allow"
-log = "denied"
+log = false
 rule_files = ["npm.rules", "sub-dir/crate.rules", "~/shared/pip.rules", "/etc/global.rules"]
 saved_rules_file = "decisions.rules"
 `,
@@ -78,7 +77,7 @@ saved_rules_file = "decisions.rules"
 			isFirewallEnabled: true,
 			defaultAction:     "deny",
 			askFallback:       "allow",
-			log:               "denied",
+			logDisabled:       true,
 			ruleFiles: []string{
 				"/config/npm.rules",
 				"/config/sub-dir/crate.rules",
@@ -155,7 +154,7 @@ extends = "sub-dir/base.toml"
 enabled = true
 default_action = "deny"
 ask_fallback = "allow"
-log = "none"
+log = true
 rule_files = ["env.rules"]
 rules = ["allow api.example.com"]
 `,
@@ -164,7 +163,7 @@ rules = ["allow api.example.com"]
 enabled = false
 default_action = "ask"
 ask_fallback = "deny"
-log = "denied"
+log = false
 saved_rules_file = "foo.rules"
 rule_files = ["npm.rules"]
 rules = ["deny telemetry.example.com"]
@@ -173,7 +172,6 @@ rules = ["deny telemetry.example.com"]
 			isFirewallEnabled: true,
 			defaultAction:     "deny",
 			askFallback:       "allow",
-			log:               "none",
 			ruleFiles: []string{
 				"/config/sub-dir/npm.rules",
 				"/config/env.rules",
@@ -183,6 +181,23 @@ rules = ["deny telemetry.example.com"]
 				"deny telemetry.example.com",
 				"allow api.example.com",
 			},
+		},
+		{
+			name: "log disabled in the base config",
+			files: map[string]string{
+				"/config/env.toml": `
+extends = "base.toml"
+[net.firewall]
+default_action = "deny"
+`,
+				"/config/base.toml": `
+[net.firewall]
+log = false
+`,
+			},
+			isFirewallEnabled: true,
+			defaultAction:     "deny",
+			logDisabled:       true,
 		},
 		{
 			name: "disabled in the off net mode",
@@ -236,14 +251,14 @@ ask_fallback = "ask"
 			error: "invalid firewall ask_fallback 'ask'",
 		},
 		{
-			name: "invalid log",
+			name: "log must be a boolean",
 			files: map[string]string{
 				"/config/env.toml": `
 [net.firewall]
-log = "errors"
+log = "all"
 `,
 			},
-			error: "invalid firewall log 'errors'",
+			error: "expected true or false, got string",
 		},
 		{
 			name: "enabled must be a boolean",
@@ -293,8 +308,8 @@ default = "ask"
 			if test.askFallback != "" && fw.AskFallback != test.askFallback {
 				t.Errorf("expected AskFallback '%s', got '%s'", test.askFallback, fw.AskFallback)
 			}
-			if test.log != "" && fw.Log != test.log {
-				t.Errorf("expected Log '%s', got '%s'", test.log, fw.Log)
+			if got := fw.IsLogEnabled(); got == test.logDisabled {
+				t.Errorf("expected IsLogEnabled() %v, got %v", !test.logDisabled, got)
 			}
 			if fw.SavedRulesFile != test.savedRulesFile {
 				t.Errorf("expected SavedRulesFile '%s', got '%s'", test.savedRulesFile, fw.SavedRulesFile)
