@@ -455,16 +455,16 @@ func TestFilterPayload(t *testing.T) {
 	cases := []struct {
 		name    string
 		payload *[]byte
-		want    Action
+		want    packetVerdict
 		wantLog []string
 	}{
-		{"no payload", nil, Deny,
+		{"no payload", nil, verdictDrop,
 			[]string{`level=ERROR msg="nfqueue packet without payload"`, "msg=connect action=deny"}},
-		{"truncated", &truncated, Deny,
+		{"truncated", &truncated, verdictDrop,
 			[]string{`action=deny reason="parse destination: truncated tcp header"`}},
-		{"allowed", &allowed, Allow,
+		{"allowed", &allowed, verdictAccept,
 			[]string{"msg=connect destination=192.0.2.1:443/tcp action=allow"}},
-		{"denied", &denied, Deny,
+		{"denied", &denied, verdictReject,
 			[]string{"msg=connect destination=198.51.100.1:443/tcp action=deny"}},
 	}
 	for _, c := range cases {

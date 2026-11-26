@@ -29,6 +29,7 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
+	"golang.org/x/sys/unix"
 
 	"github.com/wrr/drop/internal/config"
 	"github.com/wrr/drop/internal/dns"
@@ -36,6 +37,10 @@ import (
 )
 
 const queueNum = 0
+
+// Set by the queue on denied packets, which are then passed through
+// the output chain again and rejected by the nftables rules.
+const rejectMark = 1 << 30
 
 // The kernel always gives lo index 1 in every network namespace.
 const loopbackIfindex = 1
@@ -207,6 +212,17 @@ func (f *Firewall) filterDomain(domain string, actionLog *actionLogger) Action {
 	return action
 }
 
+// packetVerdict is what the queue does with a packet.
+type packetVerdict int
+
+const (
+	// Silently dropped (for packets the firewall can't parse).
+	verdictDrop packetVerdict = iota
+	verdictAccept
+	// Rejected with TCP reset or ICMP error.
+	verdictReject
+)
+
 func (f *Firewall) serveQueue(ctx context.Context, queue *nfqueue.Nfqueue) error {
 	handle := func(a nfqueue.Attribute) int {
 		if a.PacketID == nil {
@@ -215,11 +231,17 @@ func (f *Firewall) serveQueue(ctx context.Context, queue *nfqueue.Nfqueue) error
 		// Process concurrently, so other packets are not blocked when a
 		// firewall prompt is shown.
 		go func() {
-			verdict := nfqueue.NfDrop
-			if f.filterPayload(a.Payload) == Allow {
-				verdict = nfqueue.NfAccept
+			id := *a.PacketID
+			var err error
+			switch f.filterPayload(a.Payload) {
+			case verdictAccept:
+				err = queue.SetVerdict(id, nfqueue.NfAccept)
+			case verdictReject:
+				err = queue.SetVerdictWithOption(id, nfqueue.NfRepeat, nfqueue.WithMark(rejectMark))
+			default:
+				err = queue.SetVerdict(id, nfqueue.NfDrop)
 			}
-			if err := queue.SetVerdict(*a.PacketID, verdict); err != nil {
+			if err != nil {
 				f.log.Error("nfqueue set verdict", "err", err)
 			}
 		}()
@@ -243,25 +265,27 @@ func (f *Firewall) serveQueue(ctx context.Context, queue *nfqueue.Nfqueue) error
 	return nil
 }
 
-// filterPayload returns the action for a queued packet, Allow or
-// Deny.
-func (f *Firewall) filterPayload(payload *[]byte) Action {
+// filterPayload returns the verdict for a queued packet.
+func (f *Firewall) filterPayload(payload *[]byte) packetVerdict {
 	actionLog := f.log.newActionLogger()
 	defer actionLog.done()
 	if payload == nil {
 		e := "nfqueue packet without payload"
 		f.log.Error(e)
 		actionLog.denyWithReason(e)
-		return Deny
+		return verdictDrop
 	}
 	dst, err := parseDestination(*payload)
 	if err != nil {
 		actionLog.denyWithReason(fmt.Sprintf("parse destination: %v", err))
-		return Deny
+		return verdictDrop
 	}
 	action := f.filterConnection(dst, actionLog)
 	actionLog.action(action)
-	return action
+	if action == Allow {
+		return verdictAccept
+	}
+	return verdictReject
 }
 
 // filterConnection returns the action for an outgoing connection,
@@ -400,6 +424,27 @@ func installRules(nft *nftables.Conn) error {
 		Chain: output,
 		Exprs: exprs(oifIs(loopbackIfindex), accept()),
 	})
+	// Reject packets the queue marked for rejection.
+	nft.AddRule(&nftables.Rule{
+		Table: table,
+		Chain: output,
+		Exprs: exprs(
+			markHas(rejectMark),
+			l4protoIs(unix.IPPROTO_TCP),
+			[]expr.Any{&expr.Reject{Type: unix.NFT_REJECT_TCP_RST}},
+		),
+	})
+	nft.AddRule(&nftables.Rule{
+		Table: table,
+		Chain: output,
+		Exprs: exprs(
+			markHas(rejectMark),
+			[]expr.Any{&expr.Reject{
+				Type: unix.NFT_REJECT_ICMPX_UNREACH,
+				Code: unix.NFT_REJECT_ICMPX_ADMIN_PROHIBITED,
+			}},
+		),
+	})
 	// Pass everything else to the queue.
 	nft.AddRule(&nftables.Rule{
 		Table: table,
@@ -412,20 +457,26 @@ func installRules(nft *nftables.Conn) error {
 	return nil
 }
 
-// ctStateIn matches if the conntrack state has any of the given bits
-// set.
-func ctStateIn(states uint32) []expr.Any {
+// anyBitSet matches if the 32-bit value that load puts in register 1
+// has any of the given bits set.
+func anyBitSet(load expr.Any, bits uint32) []expr.Any {
 	return []expr.Any{
-		&expr.Ct{Register: 1, Key: expr.CtKeySTATE},
+		load,
 		&expr.Bitwise{
 			SourceRegister: 1,
 			DestRegister:   1,
 			Len:            4,
-			Mask:           binaryutil.NativeEndian.PutUint32(states),
+			Mask:           binaryutil.NativeEndian.PutUint32(bits),
 			Xor:            binaryutil.NativeEndian.PutUint32(0),
 		},
 		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(0)},
 	}
+}
+
+// ctStateIn matches if the conntrack state has any of the given bits
+// set.
+func ctStateIn(states uint32) []expr.Any {
+	return anyBitSet(&expr.Ct{Register: 1, Key: expr.CtKeySTATE}, states)
 }
 
 // oifIs matches if the packet's output interface has the given index.
@@ -437,6 +488,19 @@ func oifIs(ifindex uint32) []expr.Any {
 			Register: 1,
 			Data:     binaryutil.NativeEndian.PutUint32(ifindex),
 		},
+	}
+}
+
+// markHas matches if the packet mark has any of the given bits set.
+func markHas(bits uint32) []expr.Any {
+	return anyBitSet(&expr.Meta{Key: expr.MetaKeyMARK, Register: 1}, bits)
+}
+
+// l4protoIs matches if the packet's transport protocol is proto.
+func l4protoIs(proto uint8) []expr.Any {
+	return []expr.Any{
+		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{proto}},
 	}
 }
 
