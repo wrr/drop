@@ -424,6 +424,27 @@ func installRules(nft *nftables.Conn) error {
 		Chain: output,
 		Exprs: exprs(oifIs(loopbackIfindex), accept()),
 	})
+	// IPv6 housekeeping the kernel sends on its own: multicast listener
+	// reports and neighbor discovery. Pasta handles these itself and
+	// never forwards them.
+	icmp6Local, err := icmp6TypeIn(nft, table,
+		131, // MLDv1 report
+		132, // MLDv1 done
+		133, // router solicitation
+		134, // router advertisement
+		135, // neighbor solicitation
+		136, // neighbor advertisement
+		137, // redirect
+		143, // MLDv2 report
+	)
+	if err != nil {
+		return err
+	}
+	nft.AddRule(&nftables.Rule{
+		Table: table,
+		Chain: output,
+		Exprs: exprs(icmp6Local, accept()),
+	})
 	// Reject packets the queue marked for rejection.
 	nft.AddRule(&nftables.Rule{
 		Table: table,
@@ -455,6 +476,38 @@ func installRules(nft *nftables.Conn) error {
 		return fmt.Errorf("install nftables rules: %v", err)
 	}
 	return nil
+}
+
+// icmp6TypeIn matches IPv6 ICMPv6 packets of any of the given types.
+// Adds the anonymous set of the types to the table.
+func icmp6TypeIn(nft *nftables.Conn, table *nftables.Table, types ...uint8) ([]expr.Any, error) {
+	set := &nftables.Set{
+		Table:     table,
+		Anonymous: true,
+		Constant:  true,
+		KeyType:   nftables.TypeICMP6Type,
+	}
+	var elems []nftables.SetElement
+	for _, t := range types {
+		elems = append(elems, nftables.SetElement{Key: []byte{t}})
+	}
+	if err := nft.AddSet(set, elems); err != nil {
+		return nil, fmt.Errorf("add icmpv6 type set: %v", err)
+	}
+	return []expr.Any{
+		// Ensure the accepted packet is IPv6
+		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.NFPROTO_IPV6}},
+		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.IPPROTO_ICMPV6}},
+		&expr.Payload{
+			DestRegister: 1,
+			Base:         expr.PayloadBaseTransportHeader,
+			Offset:       0,
+			Len:          1,
+		},
+		&expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID},
+	}, nil
 }
 
 // anyBitSet matches if the 32-bit value that load puts in register 1
