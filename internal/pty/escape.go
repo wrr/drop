@@ -47,11 +47,11 @@ func scrollUp(n int) string {
 	return fmt.Sprintf(csi+"%dS", n)
 }
 
-// scrollDown returns the sequence that scrolls the content down by n
-// rows (SD).
-func scrollDown(n int) string {
+// cursorUp returns the sequence that moves the cursor up by n rows
+// (CUU).
+func cursorUp(n int) string {
 	if n == 0 {
 		return ""
 	}
-	return fmt.Sprintf(csi+"%dT", n)
+	return fmt.Sprintf(csi+"%dA", n)
 }

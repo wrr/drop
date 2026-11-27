@@ -117,6 +117,8 @@ type dialog struct {
 	rows, boxRows int
 	// Terminal is too small to show the question.
 	tooSmall bool
+	// Rows the content was scrolled up to make room for the dialog.
+	scrolledRows int
 }
 
 func showDialog(fwd *forwarder, formatQuestion func(maxWidth int) []string, choices []Choice) (*dialog, error) {
@@ -134,16 +136,29 @@ func showDialog(fwd *forwarder, formatQuestion func(maxWidth int) []string, choi
 		formatQuestion: formatQuestion,
 		choices:        choices,
 	}
+	box := d.layout(rows, cols)
+	// If cursorRow fails, the dialog overwrites the bottom rows.
+	if cursorRow, err := fwd.cursorRow(); err == nil {
+		d.scrolledRows = scrollRows(rows, cursorRow, d.boxRows)
+	}
 	// The program may have selected the line drawing charset, by
 	// switching to G1 or loading it into G0, which would mangle the
 	// text, so G0 with ASCII is selected.
-	if err := fwd.write(saveCursor + selectASCII + g0ASCII); err != nil {
-		return nil, err
-	}
-	if err := d.draw(rows, cols); err != nil {
+	s := saveCursor + selectASCII + g0ASCII + scrollUp(d.scrolledRows) + box
+	if err := fwd.write(s); err != nil {
 		return nil, err
 	}
 	return d, nil
+}
+
+// scrollRows returns by how many rows to scroll the content up, so
+// the dialog with boxRows fits below the cursor row. The rows below
+// the cursor are assumed to be empty, which holds for programs that
+// print line by line. Full-screen programs are expected to redraw
+// after the dialog anyway.
+func scrollRows(rows, cursorRow, boxRows int) int {
+	free := rows - 1 - cursorRow
+	return min(max(boxRows-free, 0), boxRows)
 }
 
 // refresh redraws the dialog after a terminal resize.
@@ -159,11 +174,13 @@ func (d *dialog) refresh() error {
 	}
 	// Clear the whole window, ignore error
 	d.fwd.write(eraseRows(0, rows))
-	return d.draw(rows, cols)
+	d.scrolledRows = 0
+	return d.fwd.write(d.layout(rows, cols))
 }
 
-// draw draws the dialog using the given terminal size.
-func (d *dialog) draw(rows, cols int) error {
+// layout returns the sequences that draw the dialog using the given
+// terminal size and sets the dialog geometry.
+func (d *dialog) layout(rows, cols int) string {
 	question := d.formatQuestion(max(cols-frameWidth, 0))
 	lines := make([]string, len(question))
 	for i, line := range question {
@@ -173,20 +190,19 @@ func (d *dialog) draw(rows, cols int) error {
 	if !fits {
 		s, boxRows = tooSmallBox(rows, cols)
 	}
-	if err := d.fwd.write(s); err != nil {
-		return err
-	}
 	d.rows = rows
 	d.boxRows = boxRows
 	d.tooSmall = !fits
-	return nil
+	return s
 }
 
-// dismiss erases the dialog and restores the cursor.
+// dismiss erases the dialog and restores the cursor. The content
+// scrolled up for the dialog stays scrolled up, and the
+// cursor is moved up to the end of the scrolled content.
 func (d *dialog) dismiss() {
 	erase := eraseRows(d.rows-d.boxRows, d.rows)
 	// Ignore error
-	d.fwd.write(erase + restoreCursor)
+	d.fwd.write(erase + restoreCursor + cursorUp(d.scrolledRows))
 }
 
 // eraseRows returns the sequences that erase rows in the [rowStart,

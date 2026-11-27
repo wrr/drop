@@ -82,6 +82,25 @@ func TestCursorLine(t *testing.T) {
 	}
 }
 
+func TestScrollRows(t *testing.T) {
+	cases := []struct {
+		cursorRow, want int
+	}{
+		{0, 0},
+		{5, 0},
+		{6, 1},
+		{9, 4},
+		// Rows are 0-based, a reply out of range scrolls at most the
+		// box height.
+		{12, 4},
+	}
+	for _, c := range cases {
+		if got := scrollRows(10, c.cursorRow, 4); got != c.want {
+			t.Errorf("cursor row %d: scroll %d, want %d", c.cursorRow, got, c.want)
+		}
+	}
+}
+
 func TestAnswerRows(t *testing.T) {
 	choices := []Choice{
 		{Key: 'a', Label: "[a]llow"},
@@ -178,6 +197,8 @@ func TestAskRedrawsOnResize(t *testing.T) {
 		choice, err := newPrompter(tf.fwd).Ask(formatQuestion, []Choice{{Key: 'y', Label: "[y]es"}})
 		done <- result{choice, err}
 	}()
+	readUntil(t, tf.hostOutputReader, cursorPositionQuery)
+	write(t, tf.hostInputWriter, "\x1b[1;1R")
 	readUntil(t, tf.hostOutputReader, "width 36")
 
 	if err := setWinsize(tf.hostOutputReader, &unix.Winsize{Row: 10, Col: 60}); err != nil {
@@ -192,6 +213,35 @@ func TestAskRedrawsOnResize(t *testing.T) {
 	case r := <-done:
 		if r.err != nil || r.choice.Key != 'y' {
 			t.Errorf("Ask = %q, %v, want y", r.choice.Key, r.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ask didn't return")
+	}
+}
+
+func TestAskScrollsContentForDialog(t *testing.T) {
+	tf := newTestForwarder(t, true)
+	if err := setWinsize(tf.hostOutputReader, &unix.Winsize{Row: 10, Col: 40}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		formatQuestion := func(int) []string { return []string{"Allow?"} }
+		_, err := newPrompter(tf.fwd).Ask(formatQuestion, []Choice{{Key: 'y', Label: "[y]es"}})
+		done <- err
+	}()
+	readUntil(t, tf.hostOutputReader, cursorPositionQuery)
+	// The cursor in the last row, the 4 rows box needs all of them.
+	write(t, tf.hostInputWriter, "\x1b[10;1R")
+	readUntil(t, tf.hostOutputReader, saveCursor+selectASCII+g0ASCII+scrollUp(4))
+
+	noInputDiscard(tf.fwd)
+	write(t, tf.hostInputWriter, "y")
+	readUntil(t, tf.hostOutputReader, restoreCursor+cursorUp(4))
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Error(err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Ask didn't return")
