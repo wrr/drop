@@ -65,6 +65,23 @@ func TestPad(t *testing.T) {
 	}
 }
 
+func TestCursorLine(t *testing.T) {
+	cases := []struct {
+		questionLines []string
+		want          int
+	}{
+		{[]string{""}, 0},
+		{[]string{"first", "second?", "thi?rd"}, 1},
+		{[]string{"first?", "second?", "thi?rd"}, 1},
+		{[]string{"first", "second", "thi?rd"}, 2},
+	}
+	for _, c := range cases {
+		if got := cursorLine(c.questionLines); got != c.want {
+			t.Errorf("cursorLine(%q) = %d, want %d", c.questionLines, got, c.want)
+		}
+	}
+}
+
 func TestAnswerRows(t *testing.T) {
 	choices := []Choice{
 		{Key: 'a', Label: "[a]llow"},

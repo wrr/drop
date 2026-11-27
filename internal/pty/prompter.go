@@ -205,6 +205,10 @@ func eraseRows(rowStart, rowEnd int) string {
 func questionBox(lines, answers []string, rows, cols int) (string, int, bool) {
 	width := cols
 	innerWidth := width - frameWidth
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+	cursorIdx := cursorLine(lines)
 	lines = append(lines, answers...)
 	questionRows := 2 + len(lines)
 	needCols := utf8.RuneCountInString(boxTitle) + 2
@@ -225,12 +229,21 @@ func questionBox(lines, answers []string, rows, cols int) (string, int, bool) {
 		box.WriteString(clearLine(top+1+i) + "│ " + pad(line, innerWidth) + " │")
 	}
 	box.WriteString(clearLine(rows-1) + "└" + rule + "┘")
-	lastLine := ""
-	if len(lines) > 0 {
-		lastLine = lines[len(lines)-1]
-	}
-	box.WriteString(moveTo(rows-2, frameWidth/2+utf8.RuneCountInString(lastLine)))
+	col := frameWidth/2 + utf8.RuneCountInString(lines[cursorIdx])
+	box.WriteString(moveTo(top+1+cursorIdx, col))
 	return box.String(), questionRows, true
+}
+
+// cursorLine returns the index of the line after which the cursor
+// should be put: the last line ending with "?", or the last line if
+// no line ends with "?". questionLines can't be empty.
+func cursorLine(questionLines []string) int {
+	for i := len(questionLines) - 1; i >= 0; i-- {
+		if strings.HasSuffix(questionLines[i], "?") {
+			return i
+		}
+	}
+	return len(questionLines) - 1
 }
 
 // tooSmallBox returns the sequences that draw the terminal too small
