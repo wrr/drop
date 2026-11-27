@@ -27,10 +27,31 @@ const (
 	eraseLine     = csi + "2K"
 	resetStyle    = csi + "0m"
 	promptStyle   = csi + "1;33m" // Bold with yellow foreground
+	// DSR, the terminal replies with CSI row;col R.
+	cursorPositionQuery = csi + "6n"
 )
 
 // moveTo returns the sequence that moves the cursor to the row and
 // column, both 0-based. The sequence itself is 1-based.
 func moveTo(row, col int) string {
 	return fmt.Sprintf(csi+"%d;%dH", row+1, col+1)
+}
+
+// scrollUp returns the sequence that scrolls the content up by n
+// rows (SU). If the program set a scroll region (DECSTBM),
+// only the rows within the region scroll.
+func scrollUp(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf(csi+"%dS", n)
+}
+
+// scrollDown returns the sequence that scrolls the content down by n
+// rows (SD).
+func scrollDown(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf(csi+"%dT", n)
 }

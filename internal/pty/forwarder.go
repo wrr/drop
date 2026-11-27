@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -35,7 +37,11 @@ const (
 	// How many single key presses a paused forwarder will capture
 	// reliably.
 	maxCapturedKeys = 16
+	// Some terminals do not reply to the cursor position query.
+	defaultCursorQueryTimeout = 500 * time.Millisecond
 )
+
+var cursorPositionReport = regexp.MustCompile(`\x1b\[(\d+);(\d+)R`)
 
 // forwarder relays input and output between the terminal from the
 // host and the PTY of the sandboxed process. The relaying can be
@@ -48,6 +54,8 @@ type forwarder struct {
 	hostInput *os.File
 
 	stopped chan struct{}
+	// How long cursorRow waits for the reply.
+	cursorQueryTimeout time.Duration
 
 	mu     sync.Mutex
 	paused chan struct{}
@@ -59,6 +67,9 @@ type forwarder struct {
 	// forwarding is paused.
 	pausedResize chan struct{}
 	discardUntil time.Time
+	// Receives all input while cursorRow waits for the reply, nil
+	// otherwise.
+	cursorReport chan []byte
 }
 
 // newForwarder creates forwarder and, on success, takes ownership of
@@ -66,11 +77,12 @@ type forwarder struct {
 // on each value received from resized.
 func newForwarder(sandboxPty, hostOutput, hostInput *os.File, resized <-chan os.Signal) (*forwarder, error) {
 	fwd := &forwarder{
-		sandboxPty: sandboxPty,
-		hostOutput: hostOutput,
-		hostInput:  hostInput,
-		stopped:    make(chan struct{}),
-		paused:     make(chan struct{}),
+		sandboxPty:         sandboxPty,
+		hostOutput:         hostOutput,
+		hostInput:          hostInput,
+		stopped:            make(chan struct{}),
+		paused:             make(chan struct{}),
+		cursorQueryTimeout: defaultCursorQueryTimeout,
 	}
 	if err := fwd.copyWindowSize(); err != nil {
 		return nil, fmt.Errorf("copy window size: %v", err)
@@ -158,6 +170,15 @@ func (f *forwarder) routeInput(input []byte) bool {
 	defer f.mu.Unlock()
 	if !f.isPaused() {
 		return true
+	}
+	if f.cursorReport != nil {
+		// Keys pressed while waiting for the cursor position
+		// are discarded by cursorRow.
+		select {
+		case f.cursorReport <- bytes.Clone(input):
+		default:
+		}
+		return false
 	}
 	if time.Now().Before(f.discardUntil) {
 		// Discard keys entered immediately after the forwarding was
@@ -305,6 +326,48 @@ func (f *forwarder) write(s string) error {
 	}
 	_, err := f.hostOutput.WriteString(s)
 	return err
+}
+
+// cursorRow returns the 0-based row of the host terminal cursor,
+// asking the terminal with the cursor position query. Must be called
+// when paused.
+func (f *forwarder) cursorRow() (int, error) {
+	reports := make(chan []byte, maxCapturedKeys)
+	f.mu.Lock()
+	if !f.isPaused() {
+		f.mu.Unlock()
+		return 0, errors.New("forwarding not paused")
+	}
+	f.cursorReport = reports
+	f.mu.Unlock()
+	defer func() {
+		f.mu.Lock()
+		f.cursorReport = nil
+		f.mu.Unlock()
+	}()
+	if err := f.write(cursorPositionQuery); err != nil {
+		return 0, err
+	}
+	timeout := time.After(f.cursorQueryTimeout)
+	// The reply can be split between reads.
+	var input []byte
+	for {
+		select {
+		case b := <-reports:
+			input = append(input, b...)
+			if m := cursorPositionReport.FindSubmatch(input); m != nil {
+				row, err := strconv.Atoi(string(m[1]))
+				if err != nil {
+					return 0, fmt.Errorf("cursor position report %q: %v", m[0], err)
+				}
+				return row - 1, nil
+			}
+		case <-timeout:
+			return 0, errors.New("no cursor position report")
+		case <-f.stopped:
+			return 0, errors.New("forwarder stopped")
+		}
+	}
 }
 
 // winSize returns the number of rows and columns of the host output

@@ -310,3 +310,28 @@ func TestWaitEventReportsResize(t *testing.T) {
 		t.Errorf("waitEvent resized = %v, %v, want true", resized, err)
 	}
 }
+
+func TestCursorRow(t *testing.T) {
+	tf := newTestForwarder(t, true)
+	if _, err := tf.fwd.cursorRow(); err == nil || !strings.Contains(err.Error(), "not paused") {
+		t.Errorf("expected an error when not paused, got %v", err)
+	}
+	if err := tf.fwd.pause(); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		readFull(t, tf.hostOutputReader, len(cursorPositionQuery))
+		// A key pressed while waiting and the reply split between reads.
+		write(t, tf.hostInputWriter, "a\x1b[12")
+		time.Sleep(10 * time.Millisecond)
+		write(t, tf.hostInputWriter, ";40R")
+	}()
+	if row, err := tf.fwd.cursorRow(); err != nil || row != 11 {
+		t.Errorf("cursorRow = %d, %v, want 11", row, err)
+	}
+
+	tf.fwd.cursorQueryTimeout = 5 * time.Millisecond
+	if _, err := tf.fwd.cursorRow(); err == nil || !strings.Contains(err.Error(), "no cursor position report") {
+		t.Errorf("expected an error without a reply, got %v", err)
+	}
+}
